@@ -156,19 +156,20 @@ func TestGeminiToolCallLive(t *testing.T) {
 			if toolCall.ID == "" {
 				t.Error("tool call has no id — the response could not be matched to it")
 			}
-			// The handoff asks two things at once; the answer to the second must
-			// arrive as stay_on_line, or reporting is decided by a default
-			// rather than by the person.
+			// Staying is the default now, so an omitted stay_on_line is the
+			// expected shape. What must never happen is a false nobody asked
+			// for: the operator is still on the call.
 			stay, present := toolCall.Args["stay_on_line"].(bool)
-			if !present {
-				t.Errorf("run_prompt omitted stay_on_line: %v", toolCall.Args)
+			if present && !stay {
+				t.Errorf("run_prompt hung up on a listener who never said they were going: %v",
+					toolCall.Args)
 			}
 			t.Logf("run_prompt after %d turns (stay_on_line=%v, %d chars): %s",
 				turn, stay, len(prompt), prompt)
 
 			// Answering is mandatory: the model is paused until it arrives.
 			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
-				"output": DeliveryTurn.Spoken(),
+				"output": DeliveryTurn.Confirmation("Live Voice Dialog"),
 			}); err != nil {
 				t.Fatalf("RespondTool: %v", err)
 			}

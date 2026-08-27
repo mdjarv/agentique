@@ -14,6 +14,10 @@ import type { VoiceStatus } from "~/stores/voice-store";
  * better than a generic fallback, and an unknown token is still a clue.
  */
 const REASON_WORDS: Record<string, string> = {
+  // The operator asked to hang up and the assistant did. It reads as the plain
+  // ending it is: nothing failed, nothing timed out, and — the thing worth
+  // saying on a call that was following a run — nothing was cancelled.
+  hangup: "You hung up. Any work you started keeps running",
   idle: "Hung up after silence",
   timeout: "Hung up after silence",
   "engine-closed": "The voice engine closed the call",

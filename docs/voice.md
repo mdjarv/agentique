@@ -388,6 +388,48 @@ None of it is audible, and all of it is proof the call is not abandoned.
 
 Costs stay out of the UI. This is an operational limit, not a price display.
 
+## Hanging up is a verb
+
+The idle guard is **not** how a call ends when the operator says so. It used to
+be the only way: asked to hang up, the assistant said it was hanging up — the
+one thing it is good at — and nothing happened. The call then sat open on
+whatever the idle rule decided, which on a call following a run is the *working*
+ceiling: half an hour of open microphone after a goodbye.
+
+`hang_up` (`internal/voice/hangup.go`) is the verb. The order is what makes it
+safe:
+
+1. The tool **arms** the hangup and answers with the farewell to speak, so the
+   call cannot die before the operator hears it. A model that ended the call
+   itself would sometimes call the tool before speaking, and a call that
+   vanishes mid-sentence is indistinguishable from one that crashed.
+2. The **goodbye's turn completing** closes it. An interrupted goodbye still
+   closes it — they asked to hang up, and talking over the farewell is not a
+   retraction — and so does a `turn_complete` frame that failed to send, because
+   a socket that cannot be written to is a reason to end a call, never to hold
+   one open.
+3. `goodbyeGrace` (12s) is the backstop. "Close when the turn completes" is a
+   promise about an engine, and an engine that is mid-reconnect, wedged or
+   voiceless never completes one — which would drop the call straight back into
+   the fault this exists to fix. Arming is idempotent, so an assistant that
+   keeps saying farewell does not keep extending its own deadline.
+
+Sending `closed` **is** the mechanism, exactly as it is for the idle guard: the
+client tears down on that frame and the socket closing unblocks the read loop.
+`endCall` sends it once — the turn completing and the grace expiring genuinely
+race, and two frames would sound the hangup tone twice. The reason token is
+`hangup`, which `lib/voice/copy.ts` renders as the plain ending it is, saying in
+the same line that running work was not cancelled.
+
+The overdue check runs **before** the idle rule in `pumpKeepalive`, because an
+explicit ask must outrank a phase — and the phase on a call that was following a
+run is the thirty-minute ceiling.
+
+Only the operator ends a call. Nothing hangs up because a run finished, because
+the assistant ran out of things to do, or because the conversation went quiet:
+that last one is the idle guard's job, and it is a billing limit rather than a
+judgement about the conversation.
+
 ## Saying it out loud
 
 A report or notice reaching the browser is only half of it. Speaking is the
@@ -766,6 +808,23 @@ says it: "Started", "Added to what it is already doing", "Queued — it will sta
 that when the current work finishes". Only the server knows which, which is why
 the contract reports it rather than letting the model infer.
 
+### A send never lands in silence
+
+`Delivery.Confirmation` is what `run_prompt` answers with: not a status to
+interpret but the sentence to say, naming the session, the work, and which of
+the three outcomes it was.
+
+The read-back is a question, and a question answered with silence is
+indistinguishable from one that was never heard. Everything past the operator's
+yes is invisible from a car — the `dispatched` frame lands on a screen nobody is
+looking at, and a run makes no sound of its own. The "silence is fine" rule
+covers the minutes *while* work runs, and the instruction now says so, because
+read unqualified it swallowed the one second where quiet reads as failure.
+
+It is a statement, never another question: the consent gate is behind it, and
+asking again sounds like the send did not happen. `Delivery.Clause` is the
+fragment form for that sentence; `Spoken` remains the standalone one.
+
 ### Recent history reaches it as a summary, not a transcript
 
 The drafter needs to know what this session has been doing. Handing over the
@@ -810,12 +869,22 @@ Both are skipped by `-short` and without `AGENTIQUE_VOICE_API_KEY`. The number
 of turns before a dispatch is not fixed: the drafter may clarify first, and
 always reads back, so the test keeps agreeing until the tool is called.
 
-### The handoff asks both questions at once
+### The handoff asks one question
 
-The read-back and the stay-on-the-line question are one utterance, not two
-turns: *"Does that sound right, and do you want to stay on while it runs?"*
-Two questions in a row is one too many for someone driving, and the answers
-arrive together anyway.
+*"To Live Voice Dialog: add a retry around the reconnect. Sound right?"* — the
+read-back, and nothing else. It used to ask a second thing in the same breath,
+whether they wanted to stay on the line, and that question has an obvious
+answer: they are on the call. Staying is now the default, `stay_on_line` is
+optional, and only an explicit false stops the call following the run — which
+the operator says out loud without being asked ("I'll check it later").
+
+Absent therefore means **staying**, which is why `runPrompt` reads the
+argument's *presence* rather than its zero value. A model that omits the field
+must never silently hang up on someone who is still listening.
+
+The cost is deliberate: every voice-dispatched run now carries the reporting
+instruction, since the call is following it. That is what "stay on the line"
+always bought, and it is now bought by default.
 
 ## The handoff contract
 

@@ -27,16 +27,67 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 	}
 }
 
+// The second after a yes is the one moment silence is read as failure, so the
+// tool answers with a sentence to say rather than a status to interpret.
+func TestDeliveryConfirmationIsAStatementNamingTheSession(t *testing.T) {
+	got := DeliveryTurn.Confirmation("Live Voice Dialog")
+	lower := strings.ToLower(got)
+	for _, want := range []string{
+		"live voice dialog", // they cannot see which session has it
+		"now",               // immediately, not at the next convenient pause
+		"do not go quiet",   // the failure this exists to prevent
+	} {
+		if !strings.Contains(lower, want) {
+			t.Errorf("confirmation is missing %q: %s", want, got)
+		}
+	}
+	if !strings.Contains(lower, strings.ToLower(DeliveryTurn.Clause())) {
+		t.Errorf("confirmation does not say what happened to the prompt: %s", got)
+	}
+
+	// An unnamed session degrades to the focus. Never a blank, and never an id —
+	// displayFor already guarantees the caller cannot hand one over.
+	blank := strings.ToLower(DeliveryTurn.Confirmation("   "))
+	if !strings.Contains(blank, "focused") {
+		t.Errorf("an unnamed session must still be referred to: %s", blank)
+	}
+}
+
+// Queued work is not started work. The clauses are what the operator hears, so
+// conflating any two of them is a lie about whether anything is happening.
+func TestDeliveryClauseDistinguishesTheThreeOutcomes(t *testing.T) {
+	seen := map[string]bool{}
+	for _, d := range []Delivery{DeliveryTurn, DeliveryMidTurn, DeliveryQueued} {
+		clause := d.Clause()
+		if clause == "" {
+			t.Errorf("%q has no clause", d)
+		}
+		if seen[clause] {
+			t.Errorf("%q reuses another outcome's clause: %q", d, clause)
+		}
+		seen[clause] = true
+	}
+	if !strings.Contains(strings.ToLower(DeliveryQueued.Clause()), "queue") {
+		t.Error("a queued prompt must say it is waiting, or the user thinks it started")
+	}
+	if strings.Contains(strings.ToLower(DeliveryQueued.Clause()), "has started") {
+		t.Error("queued work must never be confirmed as started")
+	}
+}
+
 func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 	got := strings.ToLower(SystemInstruction(Briefing{Persona: Persona{}}))
 	for _, want := range []string{
-		"never answer the question yourself", // the likeliest failure
-		"silence is not consent",             // the safety contract
-		ToolRunPrompt,                        // it must know the tool's name
-		"read the prompt back",               // the hands-free readback
-		"greeting them is one sentence",      // the pickup greeting is not an introduction
-		"never repeat it later",              // and it happens once
-		"drop the greeting and listen",       // the operator outranks the ritual
+		"never answer the question yourself",            // the likeliest failure
+		"silence is not consent",                        // the safety contract
+		ToolRunPrompt,                                   // it must know the tool's name
+		"read the prompt back",                          // the hands-free readback
+		"greeting them is one sentence",                 // the pickup greeting is not an introduction
+		"never repeat it later",                         // and it happens once
+		"drop the greeting and listen",                  // the operator outranks the ritual
+		"the moment it is sent, say so",                 // a send never lands in silence
+		"silence is fine **while work is running**",     // and that is the only silence allowed
+		"staying on the line unless they say otherwise", // one question at the handoff, not two
 	} {
 		if !strings.Contains(got, strings.ToLower(want)) {
 			t.Errorf("system instruction is missing %q", want)
@@ -385,19 +436,31 @@ func TestHangingUpSaysThereWillBeNoUpdates(t *testing.T) {
 	}
 }
 
-// Absent means no: an open microphone is the expensive answer, so it has to be
-// asked for rather than defaulted into.
-func TestAbsentStayOnLineDoesNotFollow(t *testing.T) {
+// Absent means staying. They are on the call already, so leaving is the answer
+// that gets said out loud — and the assistant no longer asks, which means most
+// dispatches arrive with the field omitted entirely.
+func TestAbsentStayOnLineKeepsFollowing(t *testing.T) {
 	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
-	got := toolCall(t, d, "sess-1", map[string]any{"prompt": "do the thing"})
+	c := newTestCall(d, NewRegistry(), "sess-1")
+	got := c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "do the thing",
+	}})
 	if _, bad := got["error"]; bad {
 		t.Fatalf("result = %v, want a dispatch", got)
 	}
 	d.mu.Lock()
 	reporting := d.gotReporting
 	d.mu.Unlock()
-	if reporting {
-		t.Error("an absent stay_on_line must not turn reporting on")
+	if !reporting {
+		t.Error("an absent stay_on_line must still turn reporting on")
+	}
+	if !c.following("sess-1") {
+		t.Error("an absent stay_on_line must leave the call following the run")
+	}
+	// Only an explicit false stops it, so a model that omits the field can never
+	// silently hang up on someone.
+	if out, _ := got["output"].(string); strings.Contains(strings.ToLower(out), "no further updates") {
+		t.Errorf("result = %q, want it to keep promising updates", out)
 	}
 }
 

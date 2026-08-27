@@ -1,6 +1,10 @@
 package voice
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 // Delivery is how a dispatched prompt reached its session.
 //
@@ -21,7 +25,8 @@ const (
 	DeliveryQueued Delivery = "queued"
 )
 
-// Spoken renders a delivery as something to say out loud.
+// Spoken renders a delivery as something to say out loud. A whole sentence,
+// because it is sometimes the whole of what there is to say.
 func (d Delivery) Spoken() string {
 	switch d {
 	case DeliveryMidTurn:
@@ -29,10 +34,55 @@ func (d Delivery) Spoken() string {
 	case DeliveryQueued:
 		return "Queued — it will start that when the current work finishes."
 	case DeliveryTurn:
-		return "Started."
+		return "Started — it is working on it now."
 	default:
 		return "Sent."
 	}
+}
+
+// Clause is the same outcome as a fragment, for a sentence that has already
+// named the session and the work. Present tense and definite: the operator is
+// being told what *is* happening, not what may have been arranged.
+func (d Delivery) Clause() string {
+	switch d {
+	case DeliveryMidTurn:
+		return "it has been added to the work already running there and is being picked up now"
+	case DeliveryQueued:
+		return "it is queued and starts the moment the current work finishes"
+	case DeliveryTurn:
+		return "it has started and is running now"
+	default:
+		return "it has been sent"
+	}
+}
+
+// Confirmation is what the assistant must say the instant a prompt lands.
+//
+// The read-back before the send is a question, and a question answered with
+// silence is indistinguishable from one that was never heard. Everything past
+// the operator's yes is invisible to someone in a car: the dispatch card lands
+// on a screen they are not looking at, and a run makes no sound of its own. The
+// "silence is fine" rule covers the minutes *while* work runs; it must not
+// swallow the second after a yes, which is the one moment the listener has no
+// way to tell a send from a misheard sentence.
+//
+// So the tool answers with a sentence to say rather than a status to interpret,
+// and it is a statement, not another question — the consent gate is behind us
+// and asking again here would read as the send not having happened.
+//
+// session is what to call the target out loud; it is never an id ([displayFor]
+// guarantees that), and an empty one degrades to the focus rather than being
+// read as a blank.
+func (d Delivery) Confirmation(session string) string {
+	target := "the session you are focused on"
+	if named := strings.TrimSpace(session); named != "" {
+		target = named
+	}
+	return fmt.Sprintf("SAY THIS OUT LOUD NOW, before anything else and as one sentence: that it "+
+		"has gone to %s, what you sent in a few words of your own, and that %s. State it, do not "+
+		"ask it — they already said yes, and asking again sounds like it did not go. Do not go "+
+		"quiet here: they cannot see the screen, so an unconfirmed send is indistinguishable from "+
+		"a request you never heard. Then stop and wait.", target, d.Clause())
 }
 
 // Dispatcher hands a drafted prompt to the session that does the work.

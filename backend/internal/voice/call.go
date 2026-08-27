@@ -230,6 +230,15 @@ type call struct {
 	// on the line. Each promise is bounded by the work's own timeout, so it
 	// cannot stick.
 	pendingAsync atomic.Int64
+
+	// hangupGrace is when an armed hangup stops waiting for the goodbye, as
+	// unix nanos. Zero means nobody has asked the call to end. See hangup.go.
+	hangupGrace atomic.Int64
+	// closeOnce guards the closing frame, and closeSent reports that it went.
+	// Two paths race to end an armed call — the goodbye's turn completing and
+	// its grace expiring — and the browser must be told exactly once.
+	closeOnce sync.Once
+	closeSent atomic.Bool
 }
 
 // followState is what one call knows about one session it is following.
@@ -544,6 +553,8 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 		return c.toolListProjects(ctx, ev.Args)
 	case ToolCreateSession:
 		return c.toolCreateSession(ctx, ev.Args)
+	case ToolHangUp:
+		return c.toolHangUp()
 	default:
 		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
 	}
@@ -580,9 +591,16 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 	if prompt == "" {
 		return map[string]any{"error": "The prompt was empty. Say what the agent should do."}
 	}
-	// Absent means no: keeping a microphone open is the expensive answer, so it
-	// is the one that has to be asked for rather than defaulted into.
-	stayOnLine, _ := ev.Args["stay_on_line"].(bool)
+	// Absent means yes. They are on the call already, so leaving is the answer
+	// that gets said out loud — asking every dispatch turned one question (is
+	// this the right prompt, for the right session?) into two, and the second
+	// had an obvious answer. Only an explicit false stops the following, which
+	// is why this reads the argument's presence rather than its zero value: a
+	// model that omits the field must not silently mean "hang up".
+	stayOnLine := true
+	if said, present := ev.Args["stay_on_line"].(bool); present {
+		stayOnLine = said
+	}
 
 	// Live voice has no spoken approval, so a session that would stop and ask
 	// is refused here rather than stalling silently with the call sounding fine.
@@ -630,8 +648,10 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 		"session", target, "delivery", delivery, "staying", stayOnLine)
 
 	// Only the server knows which of the three happened, so it is reported
-	// rather than left for the model to guess.
-	spoken := delivery.Spoken()
+	// rather than left for the model to guess — and it comes back as the
+	// sentence to say, not a status, because the moment after a yes is the one
+	// place in the call where silence is read as failure.
+	spoken := delivery.Confirmation(displayFor(row))
 
 	if !stayOnLine {
 		// Declining to stay does NOT release an existing binding. A second
@@ -643,15 +663,21 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 		// followed the phase stays "gathering", and the short conversational
 		// idle rule closes the call once they stop talking — the billing guard
 		// does the hanging up, which is why "ping me later" needs no teardown.
+		//
+		// The extra clause rides *inside* the confirmation rather than after it:
+		// the confirmation ends by telling the model to stop and wait, and a
+		// second instruction past that point is one it has already been told to
+		// ignore.
 		if c.followingAny() {
 			return map[string]any{
-				"output": spoken + " You are still following the earlier run, so its updates will " +
-					"keep coming.",
+				"output": spoken + " In the same sentence, say they are still following the earlier " +
+					"run, so its updates will keep coming.",
 			}
 		}
 		return map[string]any{
-			"output": spoken + " They are not staying on the line, so there will be no further " +
-				"updates on this call — tell them it is running and they can check the session on screen.",
+			"output": spoken + " In the same sentence, say there will be no further updates on this " +
+				"call, since they are not staying on the line, and that the session will be there on " +
+				"screen.",
 		}
 	}
 
@@ -856,6 +882,12 @@ func (c *call) pumpEngine(ctx context.Context) {
 				c.log.Warn("voice forward failed", "error", err)
 				return
 			}
+			// The goodbye's turn completing is what ends an armed call, and
+			// forward is where turns complete. Stop pumping into a call that
+			// has already been told it is over.
+			if c.ended() {
+				return
+			}
 		}
 	}
 }
@@ -869,7 +901,14 @@ func (c *call) forward(ev Event) error {
 	case TurnCompleteEvent:
 		// Both the natural end of a turn and an interruption must reach the
 		// client, because both mean "flush whatever is queued".
-		return c.sendControl(serverMessage{Type: msgTurnComplete, Interrupted: e.Interrupted})
+		err := c.sendControl(serverMessage{Type: msgTurnComplete, Interrupted: e.Interrupted})
+		// On an armed call this turn was the goodbye, and the flush above is
+		// what gets it played. An interrupted one still ends the call: they
+		// asked to hang up, and talking over the farewell is not a retraction.
+		// Nor is a frame that failed to send — a socket that cannot be written
+		// to is a reason to end the call, never to hold it open.
+		c.goodbyeSpoken()
+		return err
 
 	case TranscriptEvent:
 		return c.sendControl(serverMessage{
@@ -920,12 +959,25 @@ func (c *call) pumpKeepalive(ctx context.Context) {
 			}
 
 		case <-idle.C:
-			if !c.idleExpired(time.Now()) {
+			now := time.Now()
+			// The backstop for a goodbye that never arrives. It is checked
+			// first because an armed call has already been told to end: the
+			// idle rule's phase — which on a call following a run is the
+			// thirty-minute ceiling — must not outrank an explicit ask.
+			if c.hangupOverdue(now) {
+				c.log.Info("voice call hanging up", "after", "grace")
+				c.endCall(hangupReason)
+				return
+			}
+			if c.ended() {
+				return
+			}
+			if !c.idleExpired(now) {
 				continue
 			}
 			c.log.Info("voice call idle, closing",
 				"timeout", c.idleLimit(), "phase", c.currentPhase().String())
-			_ = c.sendControl(serverMessage{Type: msgClosed, Reason: "idle"})
+			c.endCall("idle")
 			return
 		}
 	}

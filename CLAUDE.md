@@ -677,6 +677,19 @@ into a closed socket. Slow work is visible on the wire (`activity` frames), and
 a delivered summary gets its screen copy (`summary` frame) before it is spoken.
 Costs still never appear in the UI.
 
+**Hanging up is a verb, and it is the operator's.** The idle guard is a billing
+limit, never how a call ends when someone says "that's all" — before `hang_up`
+the assistant could only *say* it was hanging up, and the call then sat on the
+working ceiling for half an hour. The tool **arms** and answers with the
+farewell to speak; the goodbye's turn completing closes the call, bounded by
+`goodbyeGrace` because an engine mid-reconnect never completes one. An
+interrupted goodbye still closes it, and so does a `turn_complete` that failed
+to send: a socket that cannot be written to is a reason to end a call, never to
+hold one open. Arming is idempotent, `endCall` sends `closed` exactly once, and
+the overdue check runs **before** the idle rule — an explicit ask outranks a
+phase. Nothing else ever hangs up: not a finished run, not an assistant out of
+things to do.
+
 **Speaking is `TextInjector`, type-asserted and best-effort, and it happens
 after the screen copy** — a call whose engine has no voice still shows the
 message. A notice is the server's own words; a report is agent-written text
@@ -699,6 +712,18 @@ through `ComposerTextareaHandle` and stops. One path into the session pipeline,
 the visible send button. Hands-free does not change that contract, only the
 confirmation channel: spoken verbatim readback, an explicit affirmative (never
 silence), and an announced undo window.
+
+**A send never lands in silence, and the handoff asks one question.**
+`run_prompt` answers with `Delivery.Confirmation` — the sentence to say, naming
+the session, the work and which of the three deliveries it was — because the
+read-back is a question and a question answered with quiet is indistinguishable
+from one that was never heard. It is a statement, never another question: the
+consent gate is behind it, and asking again sounds like the send did not happen.
+"Silence is fine" is scoped to *while work runs* for the same reason. The second
+question is gone: staying on the line is the default, `stay_on_line` is
+optional, and only an explicit false stops the follow — so `runPrompt` reads the
+argument's **presence**, since a model that omits it must not silently hang up
+on someone still listening.
 
 **The call is the app's, not a session's.** `?sessionId=` is only the *initial*
 focus; the call outlives navigation (it is owned by `voice-store`, never a
