@@ -267,13 +267,14 @@ control it is about. Inline it costs width, which is honest — the name pays.
 the mark and `UpdatePopoverRows` — on the `REST_GLYPH` precedent, so a row cannot
 show a different picture from the mark that opened it. `MARK_GLYPH` is not four
 pictures: a release and a rebuild are the same offer (a newer build, costing the
-current turn) and share `CircleArrowUp`; only **restart** differs, because it
+current turn) and share `ArrowBigUpDash`; only **restart** differs, because it
 fetches and compiles nothing, which is the split `sourceVerdict` already makes.
-`CircleArrowUp` is a **closed round form**, and that is why it is findable beside
-the cluster's field of vertical strokes — an arrow drawn in strokes disappears
-into them. Accent colour separates asking from reporting; 14px against the 11px
-vendor marks. `GitBranch` held the slot and was wrong twice: it said "git", not
-"upgrade", and it lost its branch node by 12px the way `FolderGit2` does at 10px.
+That glyph means **only** upgrade, where a circled up-arrow is also scroll-to-top
+and collapse — and since it shares the stroke vocabulary of the meters beside it,
+it carries its own weight instead: heavier strokes, 14px against their 11px
+marks, in the accent colour, which is what separates asking from reporting.
+`GitBranch` held the slot and was wrong twice: it named the channel rather than
+the offer, and it lost its branch node by 12px the way `FolderGit2` does at 10px.
 
 `useUpdateWaiting` is the one predicate behind both the glyph and the button's
 tooltip and accessible name, and that trigger stays mounted for a machine with no

@@ -12,7 +12,7 @@
  * words here rather than inherit a blank mark.
  */
 
-import { CircleArrowUp, type LucideIcon, RotateCw } from "lucide-react";
+import { ArrowBigUpDash, type LucideIcon, RotateCw } from "lucide-react";
 import type { UpdateStatus } from "~/lib/generated-types";
 import { sourceVerdict } from "~/lib/update-source";
 
@@ -31,19 +31,21 @@ export type MarkKind =
  *
  * Downloading a release and compiling a checkout are the same offer to a reader
  * — there is a newer build, and taking it costs the current turn — so they wear
- * the same mark and the row's words say which. `CircleArrowUp` is a closed round
- * form, which is what makes it findable beside the usage cluster's field of
- * vertical strokes; an arrow drawn in strokes disappears into them.
+ * the same mark and the row's words say which. `ArrowBigUpDash` is the glyph
+ * that means ONLY that: a circled up-arrow is also scroll-to-top and collapse,
+ * where an arrow lifting off a bar is an upgrade and nothing else. It shares the
+ * stroke vocabulary of the meters it sits beside, so it carries its weight
+ * instead — heavier strokes and 14px against their 11px marks.
  *
  * A restart is the one that is genuinely a different act: nothing to fetch,
  * nothing to compile, just bounce the process. Same split `sourceVerdict` makes
  * when it ranks `staged` above everything else.
  */
 export const MARK_GLYPH: Record<MarkKind, LucideIcon> = {
-  release: CircleArrowUp,
-  rebuild: CircleArrowUp,
+  release: ArrowBigUpDash,
+  rebuild: ArrowBigUpDash,
   restart: RotateCw,
-  fleet: CircleArrowUp,
+  fleet: ArrowBigUpDash,
 };
 
 export interface Waiting {
