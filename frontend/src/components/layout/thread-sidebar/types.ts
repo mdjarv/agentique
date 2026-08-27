@@ -7,8 +7,9 @@
  * or `~/lib/generated-types`.
  */
 import type { RestToken } from "~/lib/session/rest-state";
+import type { WorkspaceKind } from "~/lib/session/workspace";
 
-export type { RestToken };
+export type { RestToken, WorkspaceKind };
 
 /** Corner-badge state on the project icon. `null` = at rest, no badge. */
 export type ThreadBadge =
@@ -55,9 +56,16 @@ export interface ThreadRowVM {
   untitled: boolean;
   /** Routing slug — qualified with a machine suffix for remote projects. */
   projectSlug: string;
-  /** The slug as read: suffix dropped, since the row names the machine. */
+  /** The project as a reader names it — its name, not its slug. */
   projectLabel: string;
   projectInitials: string;
+  /**
+   * Where the session's edits land — its own worktree, or the project's
+   * checkout. Derived by `workspaceKind` from the same field the session
+   * header reads, so one session cannot read as a worktree in the rail and
+   * local in the pane it opens.
+   */
+  workspace: WorkspaceKind;
   /** Bright project color (hex) — tinted to ~12% for the icon background. */
   projectColorBg: string;
   /** Theme-appropriate project accent (hex) — icon initials / glyph color. */
@@ -78,6 +86,14 @@ export interface ThreadRowVM {
   workKind?: WorkKind;
   /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */
   restToken: RestToken;
+  /**
+   * `restToken` is a parked one — no process attached, work unfinished. The
+   * row wears this on the chip's corner instead of spelling it on the repo
+   * line: parked is the row's least consequential fact and was its longest
+   * word, and the chip is the one element at a constant x on every row shape,
+   * so a mark there can be scanned down the column without reading.
+   */
+  parked: boolean;
   timeLabel: string;
   struck: boolean;
   unread: boolean;
@@ -118,7 +134,7 @@ export interface DraftRowVM {
   projectId: string;
   /** Routing slug — machine-qualified for a remote project, like a session's. */
   projectSlug: string;
-  /** The slug as read: suffix dropped, since the row names the machine. */
+  /** The project as a reader names it — its name, not its slug. */
   projectLabel: string;
   /** Human project name — search matches it, the row does not show it. */
   projectName: string;

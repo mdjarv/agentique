@@ -6,7 +6,7 @@
  * the landing deck's cards — and they must agree. A session that says
  * "evicted" in the rail cannot say "stopped" on the overview.
  */
-import { Check, CircleStop, CloudOff, GitMerge, type LucideIcon, Unplug } from "lucide-react";
+import { Check, CloudOff, GitMerge, type LucideIcon, Moon, Unplug } from "lucide-react";
 
 /**
  * The one-word outcome a resting row folds into its identity line. Closed,
@@ -24,7 +24,10 @@ export type RestToken = "" | "merged" | "stopped" | "finished" | "away" | "evict
 export const REST_GLYPH: Record<Exclude<RestToken, "">, LucideIcon> = {
   merged: GitMerge,
   finished: Check,
-  stopped: CircleStop,
+  // A moon, not a stop button: `CircleStop` is a control, and offering one on a
+  // row where nothing is running invites a press that does nothing. What the
+  // state means is asleep — the next message wakes it.
+  stopped: Moon,
   evicted: Unplug,
   away: CloudOff,
 };
@@ -33,6 +36,26 @@ export const REST_GLYPH: Record<Exclude<RestToken, "">, LucideIcon> = {
 export function isParked(token: RestToken): boolean {
   return token === "stopped" || token === "evicted" || token === "away";
 }
+
+/**
+ * The single mark every parked state wears in the sidebar, on the chip's
+ * corner.
+ *
+ * One glyph for all three, where `REST_GLYPH` has three. That is not a
+ * contradiction: the row shows *that* a session is parked, and the three
+ * parked tokens differ only in why the process went away — which the next
+ * message makes moot in every case. It is also forced by the size. The corner
+ * mark is 9px, where `Unplug`'s six strokes and `CloudOff`'s slashed cloud
+ * turn to mush; a moon is one closed curve and survives.
+ *
+ * Nothing is lost: the word is still in the row's aria-label and the chip's
+ * tooltip, and the deck's cards — which have room — still print glyph and word
+ * from `REST_GLYPH`.
+ */
+export const PARKED_GLYPH: LucideIcon = Moon;
+
+/** What the chip's parked corner says on hover. */
+export const PARKED_TITLE = "No process attached — the next message resumes it";
 
 export interface DeriveRestTokenInput {
   state: string;

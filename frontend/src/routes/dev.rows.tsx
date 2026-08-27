@@ -8,6 +8,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ThreadRow } from "~/components/layout/thread-sidebar/ThreadRow";
 import type { ThreadRowVM } from "~/components/layout/thread-sidebar/types";
+import { isParked } from "~/lib/session/rest-state";
 
 export const Route = createFileRoute("/dev/rows")({
   component: DevRows,
@@ -21,6 +22,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     projectSlug: "agentkit",
     projectLabel: "agentkit",
     projectInitials: "AK",
+    workspace: "worktree",
     projectColorBg: "#73daca",
     projectColorFg: "#73daca",
     badge: null,
@@ -35,6 +37,10 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     canArchive: true,
     lastActivity: Date.now(),
     ...overrides,
+    // Derived last, from whatever token the override settled on: a fixture
+    // that says `restToken: "stopped"` and `parked: false` would render a
+    // state the real sidebar cannot produce.
+    parked: isParked(overrides.restToken ?? ""),
   };
 }
 
@@ -190,6 +196,19 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
   {
     label: "parked — evicted",
     vm: vm({ badge: "off", awake: false, restToken: "evicted", timeLabel: "2d" }),
+  },
+  {
+    // Both chip marks at once — the notches are cut at opposite corners
+    // precisely so this row can wear both.
+    label: "parked + unread",
+    vm: vm({
+      name: "Multi machine versioning",
+      badge: "unread",
+      awake: false,
+      unread: true,
+      restToken: "evicted",
+      timeLabel: "18m",
+    }),
   },
   {
     label: "parked — machine away",

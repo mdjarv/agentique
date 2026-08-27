@@ -1,13 +1,4 @@
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowUp,
-  Clock,
-  FolderGit2,
-  Gauge,
-  GitBranch,
-  Server,
-} from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, Clock, Gauge, Server } from "lucide-react";
 import { useState } from "react";
 import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
@@ -37,6 +28,7 @@ import { useNow } from "~/hooks/useNow";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
+import { WORKSPACE_GLYPH, WORKSPACE_LABEL, workspaceTitle } from "~/lib/session/workspace";
 import { cn, sessionShortId } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
@@ -412,6 +404,9 @@ function MobileSubline({
   );
 }
 
+const WorktreeGlyph = WORKSPACE_GLYPH.worktree;
+const LocalGlyph = WORKSPACE_GLYPH.local;
+
 function ReadOnlyIndicators({
   effort,
   isWorktree,
@@ -438,23 +433,27 @@ function ReadOnlyIndicators({
           <span className="max-sm:hidden">{effortLabel}</span>
         </span>
       )}
+      {/* Glyphs come from WORKSPACE_GLYPH, the same table the sidebar row
+          reads, so a session cannot wear a branch in the rail and a folder
+          here. Only the treatment differs: the header warns in amber once, at
+          the top of the thing you are about to type into. */}
       {isWorktree ? (
         <span
           className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0"
-          title={worktreeBranch ? `Worktree: ${worktreeBranch}` : "Worktree"}
+          title={workspaceTitle("worktree", worktreeBranch)}
         >
-          <GitBranch className="h-2.5 w-2.5 shrink-0" />
+          <WorktreeGlyph className="h-2.5 w-2.5 shrink-0" />
           <span className="truncate max-w-[8ch] sm:max-w-[12ch]">
-            {worktreeBranch ?? "worktree"}
+            {worktreeBranch ?? WORKSPACE_LABEL.worktree}
           </span>
         </span>
       ) : (
         <span
           className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-warning/40 bg-warning/10 text-warning shrink-0"
-          title="Running directly in the project's working directory (no worktree isolation)"
+          title={workspaceTitle("local")}
         >
-          <FolderGit2 className="h-2.5 w-2.5 shrink-0" />
-          <span className="max-sm:hidden">local</span>
+          <LocalGlyph className="h-2.5 w-2.5 shrink-0" />
+          <span className="max-sm:hidden">{WORKSPACE_LABEL.local}</span>
         </span>
       )}
     </>

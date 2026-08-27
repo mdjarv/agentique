@@ -22,7 +22,8 @@ import { displaySlug } from "~/lib/machines/slug";
 import { sessionModelLabel } from "~/lib/model-catalog";
 import { getProjectColor } from "~/lib/project-colors";
 import { projectInitials, projectLabel } from "~/lib/project-label";
-import { deriveRestToken } from "~/lib/session/rest-state";
+import { deriveRestToken, isParked } from "~/lib/session/rest-state";
+import { workspaceKind } from "~/lib/session/workspace";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -146,6 +147,14 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const todoTotal = data.todos?.length ?? 0;
       const todoDone = data.todos?.filter((t) => t.status === "completed").length ?? 0;
       const isArchived = !!meta.archivedAt;
+      const restToken = deriveRestToken({
+        state: meta.state,
+        merged: !!meta.worktreeMerged,
+        connected: meta.connected,
+        machineOffline: project.machineId
+          ? machineStatuses[project.machineId] !== "connected"
+          : false,
+      });
 
       const vm: ThreadRowVM = {
         sessionId: meta.id,
@@ -156,6 +165,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         projectSlug: project.slug,
         projectLabel: repLabel,
         projectInitials: projectInitials(repLabel),
+        workspace: workspaceKind(meta.worktreeBranch),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: rep.icon || undefined,
@@ -174,14 +184,8 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
             questionSummary: questionSummary(data),
           }) ?? undefined,
         workKind: deriveWorkKind(pulse?.lastToolCategory),
-        restToken: deriveRestToken({
-          state: meta.state,
-          merged: !!meta.worktreeMerged,
-          connected: meta.connected,
-          machineOffline: project.machineId
-            ? machineStatuses[project.machineId] !== "connected"
-            : false,
-        }),
+        restToken,
+        parked: isParked(restToken),
         timeLabel: sessionTime(meta),
         struck: isTerminal && !!meta.worktreeMerged,
         unread: data.hasUnseenCompletion,

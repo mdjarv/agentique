@@ -21,9 +21,10 @@ import {
 } from "lucide-react";
 import { memo } from "react";
 import { REST_GLYPH, type RestToken } from "~/lib/session/rest-state";
+import { WORKSPACE_GLYPH, workspaceTitle } from "~/lib/session/workspace";
 import { cn } from "~/lib/utils";
 import { Chip, MachineTag } from "./RowIdentity";
-import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
+import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind, WorkspaceKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
@@ -117,6 +118,7 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
       colorFg={vm.projectColorFg}
       hued={hued}
       unread={vm.unread}
+      parked={vm.parked}
     />
   );
 }
@@ -156,6 +158,23 @@ function rowAriaLabel(vm: ThreadRowVM): string {
   // see ("away"). Every other badge names something happening right now.
   const spoken = vm.badge && vm.badge !== "off" ? BADGE_ARIA[vm.badge] : vm.restToken;
   return [name, spoken || "at rest", vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
+}
+
+/**
+ * Where the session's edits land, beside the project it lands in.
+ *
+ * Glyph only, and in the repo line's own faint ink rather than the header's
+ * amber: the header warns once, at the top of the thing you are about to type
+ * into, while the rail shows every row at once. Painting a colour on each local
+ * row would be a claim on attention that repeats down the whole list.
+ */
+function WorkspaceMark({ kind }: { kind: WorkspaceKind }) {
+  const Glyph = WORKSPACE_GLYPH[kind];
+  return (
+    <Glyph className="size-2.5 shrink-0" role="img" aria-label={workspaceTitle(kind)}>
+      <title>{workspaceTitle(kind)}</title>
+    </Glyph>
+  );
 }
 
 /** The outcome word with its mark, folded into the repo line at rest. */
@@ -316,6 +335,7 @@ export const ThreadRow = memo(function ThreadRow({
             </span>
             <span className="mt-px flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground-faint">
               <span className="min-w-0 truncate">{vm.projectLabel}</span>
+              <WorkspaceMark kind={vm.workspace} />
               <SessionMachineTag vm={vm} />
               {vm.unread && (
                 <span className="ml-auto">
@@ -358,10 +378,15 @@ export const ThreadRow = memo(function ThreadRow({
           >
             {vm.projectLabel}
           </span>
+          <WorkspaceMark kind={vm.workspace} />
           <SessionMachineTag vm={vm} />
-          {/* Unread rows show the outcome word too: their third line is gone,
-              so "done" / "merged" has nowhere else to live. */}
-          {(!awake || vm.unread) && vm.restToken && <RestMark token={vm.restToken} />}
+          {/* Only an OUTCOME earns words here. Parked states ride the chip's
+              corner instead: they are the row's least consequential fact and
+              were its longest word, and giving them up is what lets "finished"
+              and "merged" read louder without being made louder.
+              Unread rows show the word too — their third line is gone, so
+              "finished" / "merged" has nowhere else to live. */}
+          {(!awake || vm.unread) && vm.restToken && !vm.parked && <RestMark token={vm.restToken} />}
           <TimeSlot label={vm.timeLabel} yielded={selected} />
         </span>
 

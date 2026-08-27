@@ -1057,3 +1057,24 @@
     #000 5.4px
   );
 }
+
+/* The parked mark's gap, bottom-right — same trick as the unread notch, at the
+   opposite corner so a row that is both unread and parked keeps both marks. */
+.chip-rest-notched {
+  mask-image: radial-gradient(
+    circle at calc(100% + 1px) calc(100% + 1px),
+    transparent 5.4px,
+    #000 6.1px
+  );
+}
+
+/* Both at once. The layers must INTERSECT: mask layers compose with `add` by
+   default, and each gradient is opaque everywhere except its own hole, so
+   their union fills both holes straight back in. */
+.chip-notched.chip-rest-notched {
+  mask-image:
+    radial-gradient(circle at calc(100% + 1.5px) 1.5px, transparent 4.7px, #000 5.4px),
+    radial-gradient(circle at calc(100% + 1px) calc(100% + 1px), transparent 5.4px, #000 6.1px);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}

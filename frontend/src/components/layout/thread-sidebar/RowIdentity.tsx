@@ -7,6 +7,7 @@
  */
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { PARKED_GLYPH, PARKED_TITLE } from "~/lib/session/rest-state";
 import { cn } from "~/lib/utils";
 
 export interface ChipProps {
@@ -25,6 +26,11 @@ export interface ChipProps {
    * {@link Chip} for why the mark rides the chip and not the row's own colour.
    */
   unread?: boolean;
+  /**
+   * No process is attached, but the work is unfinished — stopped, evicted or
+   * away. Renders the moon in the opposite corner; see {@link Chip}.
+   */
+  parked?: boolean;
 }
 
 /**
@@ -44,7 +50,7 @@ export interface ChipProps {
  * green, which is right — grey means filed, the dot means unseen, and those are
  * different claims.
  */
-export function Chip({ iconId, initials, colorBg, colorFg, hued, unread }: ChipProps) {
+export function Chip({ iconId, initials, colorBg, colorFg, hued, unread, parked }: ChipProps) {
   const Icon = useProjectIcon(iconId ?? "");
   const square = (
     <span
@@ -54,6 +60,7 @@ export function Chip({ iconId, initials, colorBg, colorFg, hued, unread }: ChipP
         // Cut the corner away rather than ringing the dot — the gap is then the
         // row's actual ground in every state. See `.chip-notched` in index.css.
         unread && "chip-notched",
+        parked && "chip-rest-notched",
       )}
       style={hued ? { backgroundColor: `${colorBg}26`, color: colorFg } : undefined}
     >
@@ -65,13 +72,21 @@ export function Chip({ iconId, initials, colorBg, colorFg, hued, unread }: ChipP
     </span>
   );
 
-  // The dot is a *sibling* of the square: a mask paints its children too, so a
-  // dot nested inside would be cut away by the very notch it sits in.
-  if (!unread) return <span className="flex shrink-0">{square}</span>;
+  // Both marks are *siblings* of the square: a mask paints its children too, so
+  // anything nested inside would be cut away by the very notch it sits in.
+  if (!unread && !parked) return <span className="flex shrink-0">{square}</span>;
   return (
-    <span className="relative flex shrink-0">
+    <span className="relative flex shrink-0" title={parked ? PARKED_TITLE : undefined}>
       {square}
-      <span className="absolute -right-0.5 -top-0.5 size-[7px] rounded-full bg-success" />
+      {unread && (
+        <span className="absolute -right-0.5 -top-0.5 size-[7px] rounded-full bg-success" />
+      )}
+      {parked && (
+        <PARKED_GLYPH
+          className="absolute -bottom-[3px] -right-[3px] size-[9px] text-muted-foreground-faint"
+          strokeWidth={2.6}
+        />
+      )}
     </span>
   );
 }

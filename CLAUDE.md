@@ -315,6 +315,47 @@ cards — because a session that says "evicted" in the rail cannot say "stopped"
 on the overview. Grey stays the shelf's and Archived's language: both render
 `compact`, which is grey and collapsed by construction.
 
+**A parked row wears its mark on the chip, not in words.** `stopped`,
+`evicted` and `away` are one concept — `isParked`, the process is gone, the
+work is not, and the next message resumes it either way — so in the rail they
+are one mark: `PARKED_GLYPH`, a moon, in a notch cut from the chip's
+bottom-right. The word is dropped. It was the row's longest string for its
+least consequential fact, and giving it up is what lets `finished` and `merged`
+read louder without being made louder; those keep glyph *and* word, because an
+outcome is worth a read. The word survives in the chip's tooltip and the row's
+aria-label, and the deck's cards — which have the room — still print both from
+`REST_GLYPH`.
+
+It rides the chip for the same reason the unread notch does: the chip is the
+one element at a constant x on **every** row shape, so a mark there is found by
+glancing down a column instead of read. Anywhere on the repo line, its position
+moves with the project's name. The two notches are cut at **opposite** corners
+so one row can wear both, and `.chip-notched.chip-rest-notched` must
+`mask-composite: intersect` — mask layers compose with `add`, and each gradient
+is opaque outside its own hole, so their union fills both holes back in.
+
+The glyph is a moon and not `CircleStop`, which is a stop *button*: it offered
+an action on a row where nothing is running. One moon covers all three parked
+tokens where `REST_GLYPH` has three, and that is forced as well as principled —
+the corner mark is 9px, where `Unplug` and `CloudOff` turn to mush.
+
+### Where a session's edits land
+
+A row says whether a session works in its own worktree or straight in the
+project's checkout, because nothing else on it carries that and it changes what
+a stray edit costs. `lib/session/workspace.ts` owns the pairing —
+`workspaceKind` reads `worktreeBranch` (not the path, which is set for both),
+and `WORKSPACE_GLYPH` gives each kind one glyph. The sidebar row and the
+session header both read that table, so a session cannot show a branch in the
+rail and a folder in the pane it opens.
+
+Only the treatment differs, and deliberately: the header warns in amber once,
+at the top of the thing you are about to type into; the rail renders the glyph
+in the repo line's own faint ink, because a colour repeated down forty rows
+stops being a warning. Local is `FolderOpen`, not `FolderGit2` — at 10px the
+branch node inside the folder collapses into noise, and the two glyphs then
+differ by a detail too small to see.
+
 The deck's "Needs you" band holds all three reasons a session waits on the
 operator — approval, question, unread completion — ordered so the two that hold
 a process come first. Unread is **server state**: `sessions.unseen_completed_at`
