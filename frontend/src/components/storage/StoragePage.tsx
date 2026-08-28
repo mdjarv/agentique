@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { SelectionBar } from "~/components/storage/SelectionBar";
+import { StorageBreakdown } from "~/components/storage/StorageBreakdown";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +30,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteOrphanedWorktree, reclaimSessions } from "~/lib/api";
-import type { CategoryUsage, ProjectStorage, SessionStorage } from "~/lib/generated-types";
+import type { ProjectStorage, SessionStorage } from "~/lib/generated-types";
 import { deleteSession, deleteSessionsBulk } from "~/lib/session/actions";
 import {
   deriveRestToken,
@@ -38,6 +39,7 @@ import {
   PARKED_TITLE,
   REST_GLYPH,
 } from "~/lib/session/rest-state";
+import { buildBreakdown } from "~/lib/storage/breakdown";
 import { canDelete, canReclaim, freedBytes, reconcile, summarize } from "~/lib/storage/selection";
 import { cn, formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useStorageStore } from "~/stores/storage-store";
@@ -67,17 +69,6 @@ type DeleteTarget =
   | { kind: "delete-bulk"; sessions: SessionStorage[] };
 
 const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + freedBytes(s), 0);
-
-const categoryColors: Record<string, string> = {
-  worktrees: "bg-sky-500",
-  backups: "bg-amber-500",
-  database: "bg-violet-500",
-  "session-files": "bg-emerald-500",
-  certs: "bg-rose-500",
-  other: "bg-muted-foreground/40",
-  "chrome-profiles": "bg-orange-500",
-  scratchpads: "bg-teal-500",
-};
 
 export function StoragePage() {
   const ws = useWebSocket();
@@ -115,6 +106,7 @@ export function StoragePage() {
     [allSessions, selected],
   );
   const summary = useMemo(() => summarize(selectedSessions), [selectedSessions]);
+  const breakdown = useMemo(() => (usage ? buildBreakdown(usage) : null), [usage]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -298,12 +290,13 @@ export function StoragePage() {
           </div>
         )}
 
-        {usage && (
-          <CategoryBreakdown
-            categories={usage.categories}
-            total={usage.dataDirBytes}
-            tempCategories={usage.tempCategories ?? []}
-            tempTotal={usage.tempBytes ?? 0}
+        {breakdown && (
+          <StorageBreakdown
+            breakdown={breakdown}
+            busy={busy}
+            onReclaim={() =>
+              setDeleteTarget({ kind: "reclaim", sessions: allSessions.filter(canReclaim) })
+            }
           />
         )}
 
@@ -494,63 +487,6 @@ function dialogBody(t: DeleteTarget | null): string {
     default:
       return "";
   }
-}
-
-function CategoryBreakdown({
-  categories,
-  total,
-  tempCategories,
-  tempTotal,
-}: {
-  categories: CategoryUsage[];
-  total: number;
-  tempCategories: CategoryUsage[];
-  tempTotal: number;
-}) {
-  const shown = categories.filter((c) => c.bytes > 0);
-  const shownTemp = tempCategories.filter((c) => c.bytes > 0);
-  if (shown.length === 0 && shownTemp.length === 0) return null;
-  return (
-    <div className="rounded-lg border bg-card/40 px-4 py-3">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-        Breakdown — data directory
-      </div>
-      <CategoryBars categories={shown} total={total} />
-      {shownTemp.length > 0 && (
-        <>
-          {/* Its own group and its own total: "Agentique data" is a claim about
-              one directory, and quietly widening it would make that number wrong
-              in a different way. */}
-          <div className="mt-3 pt-3 border-t text-xs uppercase tracking-wider text-muted-foreground mb-2">
-            Elsewhere — temporary files
-          </div>
-          <CategoryBars categories={shownTemp} total={tempTotal} />
-        </>
-      )}
-    </div>
-  );
-}
-
-function CategoryBars({ categories, total }: { categories: CategoryUsage[]; total: number }) {
-  return (
-    <div className="space-y-1.5">
-      {categories.map((c) => {
-        const pct = total > 0 ? (c.bytes / total) * 100 : 0;
-        return (
-          <div key={c.key} className="flex items-center gap-2 text-xs">
-            <span className="w-24 shrink-0 text-muted-foreground">{c.label}</span>
-            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className={cn("h-full rounded-full", categoryColors[c.key] ?? "bg-primary")}
-                style={{ width: `${Math.max(pct, 1)}%` }}
-              />
-            </div>
-            <span className="w-16 text-right tabular-nums shrink-0">{formatBytes(c.bytes)}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function ProjectCard({

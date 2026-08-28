@@ -121,7 +121,37 @@ id was requested), but the reported "elsewhere" total will include them.
 
 ## Surfaces
 
-**The Storage page** is the one people use. Each session row carries a checkbox;
+**The breakdown is grouped by what you can do about a row, not by which
+directory it sits in.** `lib/storage/breakdown.ts` gives every row one of three
+verdicts — `live` (in use; nothing removes it), `sweep` (a verb on this page
+does), `policy` (a retention rule or a setting does) — and that verdict is the
+row's colour and its position in the list. The old arrangement grouped by
+location, data directory then elsewhere, and coloured each category its own hue:
+eight inks carrying no information, so a 3.8 GB Worktrees bar whose largest part
+was a *running* session looked exactly like a bar a button could clear.
+
+That is why the **worktrees category is split three ways** — live, finished,
+orphaned. It is the one category spanning two verdicts and it holds most of the
+bytes. The split is exact rather than estimated: every directory under the
+worktrees root is an orphan, a session the server judged `reclaimable`, or a
+session it did not, so the three reconcile to the category total the backend
+reported. Note that `reclaimableBytes` on the wire is worktree **plus** temp, so
+the finished-worktree row sums `session.bytes` itself; reading the wire figure
+there would count the browser-profile and scratchpad rows twice.
+
+Each row also carries a one-line detail saying what it *is*, because a category
+name is a word for a directory and not an explanation of why the number is that
+size or what would change it.
+
+**A row gets a button only where a verb exists.** Today that is exactly one:
+Reclaim, on the finished-worktree row, where the bytes are. Backups are held by
+a retention setting and temp files go when their session does, so a control on
+either would name an action the server cannot perform. Orphans get no button on
+their row either — the orphans card below lists them individually and owns
+"Delete all", and an action taken on a listed thing belongs on the surface that
+lists it.
+
+**The session rows.** Each carries a checkbox;
 a sticky bar acts on the selection with both verbs. A verb that does not apply to
 every selected row is disabled and names itself — "Can't delete — 1 of 2 are not
 eligible" — because a verb that quietly skipped the ineligible rows would be a
