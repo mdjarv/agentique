@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -234,4 +235,126 @@ func rendered(answer map[string]any) string {
 	}
 	write(answer)
 	return b.String()
+}
+
+// --- Three more ways a machine that exists produces no evidence of itself -----------------
+
+// TestAskingForAnIdleMachineByNameDeadEnds is the other half of the invisibility:
+// the operator does not have to wait to be told the list, they can name the
+// machine. find_session is where that lands, and it answers about SESSIONS.
+//
+// The refusal is true and misleading at once. Nothing in it distinguishes "that
+// machine has nothing running" from "there is no such machine", which are
+// different answers to the question that was actually asked.
+func TestAskingForAnIdleMachineByNameDeadEnds(t *testing.T) {
+	c := newToolCall(localDirectory(), &fakeDispatcher{}, "")
+	c.setWorld(connectedWorld())
+
+	answer := c.toolFindSession(context.Background(), map[string]any{"query": "printer-room"})
+	if candidates, ok := answer["candidates"].([]map[string]any); ok && len(candidates) != 0 {
+		t.Fatalf("found %d candidates for a machine with no sessions: %v", len(candidates), candidates)
+	}
+	note, _ := answer["note"].(string)
+	if !strings.Contains(note, "Nothing matches") {
+		t.Errorf("note = %q, want the no-match wording", note)
+	}
+	if strings.Contains(strings.ToLower(note), "machine has no") {
+		t.Error("the no-match note now separates an idle machine from an unknown one — " +
+			"a real improvement, and this test is what needs rewriting")
+	}
+}
+
+// TestAnUnlabelledMachineLosesItsIdToo goes one step past machineWords. A row
+// whose machine has no catalog label still carries a MachineID, and rowPayload
+// emits MachineName only — so by the time the model sees the row it is
+// indistinguishable from a local one, and there is not even an id to read out.
+func TestAnUnlabelledMachineLosesItsIdToo(t *testing.T) {
+	c := newToolCall(nil, &fakeDispatcher{}, "")
+	c.setWorld([]wireSessionRow{{
+		SessionID:      "sess-anon",
+		Name:           "Top Bar Redesign",
+		ProjectName:    "Agentique",
+		MachineID:      "m-laptop",
+		State:          "idle",
+		LastActivityAt: "2026-08-28T12:00:00Z",
+	}})
+
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	rows, ok := answer["sessions"].([]map[string]any)
+	if !ok || len(rows) != 1 {
+		t.Fatalf("sessions = %v, want one row", answer["sessions"])
+	}
+	if _, present := rows[0]["machine"]; present {
+		t.Errorf("machine = %v, want the key absent when there is no label", rows[0]["machine"])
+	}
+	if strings.Contains(rendered(answer), "m-laptop") {
+		t.Error("the machine id now reaches the model; an id is not a name, but it is more " +
+			"than nothing and this test should say so instead")
+	}
+}
+
+// TestTheSpokenCapCanHideAMachineEntirely is the failure mode that survives even
+// when every machine does have sessions.
+//
+// list_sessions truncates to maxSpokenRows across all machines at once, ordered
+// by attention and then recency, so the quietest machine drops out first. What
+// comes back says `omitted`, counted in SESSIONS — which is the wrong unit for
+// the question "what machines do I have", and the only unit on the wire.
+func TestTheSpokenCapCanHideAMachineEntirely(t *testing.T) {
+	rows := make([]wireSessionRow, 0, maxSpokenRows+1)
+	for i := range maxSpokenRows + 1 {
+		rows = append(rows, wireSessionRow{
+			SessionID:      fmt.Sprintf("sess-busy-%d", i),
+			Name:           "Reconnect Drops",
+			ProjectName:    "Agentique",
+			MachineID:      "m-laptop",
+			MachineName:    "thinkpad",
+			State:          "idle",
+			LastActivityAt: fmt.Sprintf("2026-08-28T12:00:%02dZ", i),
+		})
+	}
+	// One session on a second machine, and the least recent thing in the world.
+	rows = append(rows, wireSessionRow{
+		SessionID:      "sess-quiet",
+		Name:           "Nightly Import",
+		ProjectName:    "Alltix",
+		MachineID:      "m-mini",
+		MachineName:    "mac-mini",
+		State:          "idle",
+		LastActivityAt: "2020-01-01T00:00:00Z",
+	})
+
+	c := newToolCall(nil, &fakeDispatcher{}, "")
+	c.setWorld(rows)
+
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	for _, name := range machinesIn(t, answer) {
+		if name == "mac-mini" {
+			t.Fatal("the cap no longer drops the quietest machine — update this test")
+		}
+	}
+	if got, _ := answer["omitted"].(int); got != 2 {
+		t.Errorf("omitted = %v, want 2 sessions", answer["omitted"])
+	}
+	// Two sessions omitted, one machine omitted. Nothing on the wire says the
+	// second number exists.
+}
+
+// TestListProjectsCarriesNoMachine closes the last route. list_projects is the
+// only other tool that could name a machine, and it is deliberately local-only:
+// a project on another machine cannot host a session created from here, so it is
+// not listed and its machine is never named.
+func TestListProjectsCarriesNoMachine(t *testing.T) {
+	c := newToolCall(directoryWithTwo(), &fakeDispatcher{}, "")
+
+	answer := c.toolListProjects(context.Background(), nil)
+	rows, ok := answer["projects"].([]map[string]any)
+	if !ok || len(rows) == 0 {
+		t.Fatalf("projects = %v, want rows", answer["projects"])
+	}
+	for _, row := range rows {
+		if _, present := row["machine"]; present {
+			t.Errorf("a project payload names a machine: %v", row)
+		}
+	}
 }

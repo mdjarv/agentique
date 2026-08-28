@@ -255,3 +255,62 @@ describe("buildWorldSessions", () => {
     expect(rows).toHaveLength(WORLD_ROW_CAP);
   });
 });
+
+// What a voice call can learn about MACHINES, from the only place it learns it.
+//
+// A machine reaches the call as a label on a session row and nowhere else —
+// there is no machine tool on the other end (see backend
+// `internal/voice/machines_test.go`). So the snapshot is the whole surface, and
+// these are the cases where a machine that exists produces no evidence of
+// itself.
+describe("buildWorldSessions, as the call's only source of machines", () => {
+  it("says nothing about a paired machine that owns no session", () => {
+    const rows = buildWorldSessions({
+      sessions: sessions(makeSession()),
+      projects: [makeProject()],
+      // Paired, labelled, holding a checkout — and idle.
+      machineNames: { "m-idle": "nuc" },
+    });
+    expect(rows.some((r) => r.machineName === "nuc")).toBe(false);
+    expect(rows.some((r) => r.machineId === "m-idle")).toBe(false);
+  });
+
+  it("drops a machine whose only sessions are archived", () => {
+    const rows = buildWorldSessions({
+      sessions: sessions(
+        makeSession({
+          meta: makeMeta({
+            id: "filed",
+            projectId: "proj-remote",
+            archivedAt: "2026-08-20T00:00:00Z",
+          }),
+        }),
+      ),
+      projects: [makeProject({ id: "proj-remote", slug: "agentique~ab12cd34", machineId: "m-1" })],
+      machineNames: { "m-1": "zbook" },
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it("sends an id with no name when the machine has no label", () => {
+    const [row] = buildWorldSessions({
+      sessions: sessions(makeSession({ meta: makeMeta({ projectId: "proj-remote" }) })),
+      projects: [makeProject({ id: "proj-remote", slug: "agentique~ab12cd34", machineId: "m-1" })],
+      machineNames: {},
+    });
+    // The server drops the id on its way to the model, so this row is
+    // indistinguishable from a local one by the time it is spoken about.
+    expect(row?.machineId).toBe("m-1");
+    expect(row?.machineName).toBeUndefined();
+  });
+
+  it("gives a local session no machine at all", () => {
+    const [row] = buildWorldSessions({
+      sessions: sessions(makeSession()),
+      projects: [makeProject()],
+      machineNames: { "m-1": "zbook" },
+    });
+    expect(row?.machineId).toBeUndefined();
+    expect(row?.machineName).toBeUndefined();
+  });
+});
