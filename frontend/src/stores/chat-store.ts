@@ -68,6 +68,7 @@ type StateExtras = Partial<
     | "mergeConflictFiles"
     | "gitOperation"
     | "gitVersion"
+    | "evictedAt"
     | "worktreeBranch"
     | "worktreePath"
   >
@@ -520,6 +521,13 @@ export const useChatStore = create<ChatState>((set) => ({
         // server-side, and honouring that here is what moves the row back out of
         // Archived the moment you send, rather than when the turn ends.
         archivedAt: extras?.archivedAt,
+        // The eviction mark reads exactly like archivedAt, for the same reason:
+        // it is session state, so every snapshot states it, and an absent one
+        // means "not evicted". That is what clears the mark when the session is
+        // resumed — the running snapshot simply stops carrying it — and it is
+        // why it must not be preserved through a transient state the way the
+        // computed git fields are.
+        evictedAt: extras?.evictedAt,
         hasDirtyWorktree: staleTransient ? m.hasDirtyWorktree : (extras?.hasDirtyWorktree ?? false),
         hasUncommitted: staleTransient ? m.hasUncommitted : (extras?.hasUncommitted ?? false),
         worktreeMerged: transient ? m.worktreeMerged : (extras?.worktreeMerged ?? false),

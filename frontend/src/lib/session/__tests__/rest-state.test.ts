@@ -19,6 +19,52 @@ describe("deriveRestToken", () => {
   });
 });
 
+// The idle sweep reclaims a CLI through the same StopSession the stop button
+// takes, so both arrive as state "stopped" and only the server's mark separates
+// them. Without it every reclaim read as somebody's deliberate stop.
+describe("an idle-evicted session", () => {
+  it("says evicted, not stopped", () => {
+    expect(
+      deriveRestToken({ state: "stopped", merged: false, connected: false, evicted: true }),
+    ).toBe("evicted");
+  });
+
+  it("still says stopped when nothing marked it", () => {
+    expect(
+      deriveRestToken({ state: "stopped", merged: false, connected: false, evicted: false }),
+    ).toBe("stopped");
+  });
+
+  // A peer that predates the field never speaks it. Silence has to read as the
+  // answer every release before this one gave, not as an eviction.
+  it("reads an absent mark as a plain stop", () => {
+    expect(deriveRestToken({ state: "stopped", merged: false, connected: false })).toBe("stopped");
+  });
+
+  // Merged outranks it for the reason it outranks a plain stop: it is a fact
+  // about the work, where this is a fact about a process.
+  it("does not hide merged work", () => {
+    expect(
+      deriveRestToken({ state: "stopped", merged: true, connected: false, evicted: true }),
+    ).toBe("merged");
+  });
+
+  // Unlike the `!connected` guess, the mark is a record of something that
+  // happened, so a cached row may still report it. This mirrors the existing
+  // rule that an offline machine's stopped session says "stopped", not "away".
+  it("survives being read off an unreachable machine", () => {
+    expect(
+      deriveRestToken({
+        state: "stopped",
+        merged: false,
+        connected: false,
+        machineOffline: true,
+        evicted: true,
+      }),
+    ).toBe("evicted");
+  });
+});
+
 // "evicted" is a claim about something agentique DID (reclaimed the CLI). A
 // machine we cannot reach has its sessions frozen to connected:false so no row
 // claims to be live — reading that as "evicted" turns an honest unknown into a

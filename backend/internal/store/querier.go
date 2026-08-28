@@ -17,6 +17,10 @@ type Querier interface {
 	AppendScheduleRunLateReport(ctx context.Context, arg AppendScheduleRunLateReportParams) error
 	ClaimScheduleRun(ctx context.Context, id string) (int64, error)
 	ClearScheduleActionAttention(ctx context.Context, arg ClearScheduleActionAttentionParams) error
+	// The mark describes the MOST RECENT stop, so resuming clears it: a session
+	// that has run since is no longer a session agentique reclaimed. Also the
+	// release path when the stop behind a claim fails and the session stays alive.
+	ClearSessionEvictedAt(ctx context.Context, id string) error
 	// The read receipt. Idempotent by construction: clearing an already-clear row
 	// touches nothing the client can see.
 	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
@@ -149,6 +153,16 @@ type Querier interface {
 	// multi-byte character anywhere in this file shifts those offsets and corrupts
 	// the generated code for LATER queries.
 	SetSessionArchived(ctx context.Context, id string) error
+	// Stamps "agentique reclaimed this session's CLI; nobody stopped it". Written
+	// by the idle-eviction sweep and by nothing else, because it is a claim about
+	// what agentique DID -- a person's stop and a restart's reap both really did
+	// end something, and must keep reading as a plain stop.
+	//
+	// The timestamp is a parameter rather than strftime('now') because the sweep
+	// already knows when it claimed the session; it must be UTC RFC3339 seconds
+	// ("2006-01-02T15:04:05Z") like every other timestamp here, since SQLite
+	// compares TEXT lexicographically.
+	SetSessionEvictedAt(ctx context.Context, arg SetSessionEvictedAtParams) error
 	// Stamps "this finished while nobody was reading it". The timestamp is a
 	// parameter rather than strftime('now') because the caller is the turn-end
 	// seam, which already knows when the turn completed; it must be UTC RFC3339

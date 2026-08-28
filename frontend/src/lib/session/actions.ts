@@ -503,6 +503,7 @@ export async function refreshGitStatus(ws: WsClient, sessionId: string): Promise
     gitOperation: gs.gitOperation ?? "",
     gitVersion: gs.version,
     unseenCompletedAt: readUnseenCompletedAt(gs) ?? null,
+    evictedAt: gs.evictedAt,
   });
 }
 

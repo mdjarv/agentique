@@ -154,6 +154,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         machineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : false,
+        evicted: !!meta.evictedAt,
       });
 
       const vm: ThreadRowVM = {

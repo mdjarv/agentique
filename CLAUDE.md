@@ -168,6 +168,19 @@ group leadership, and this server's data-dir owner stamp all hold. Matching fail
 closed, and "orphan" means reparented away from us, not `PPID == 1` (systemd is a
 subreaper). Idle eviction is opt-in and lazy-resumes on the next message.
 
+**A reclaim reports itself, because it borrows the stop button's mechanism.**
+The sweep goes through `StopSession`, so what it leaves behind is a row no
+different from one somebody stopped on purpose — and every surface read it that
+way, announcing "Session interrupted" for a session nothing had interrupted.
+`sessions.evicted_at` is the only thing that separates them, so the sweep writes
+it and nothing else does: a restart's reap and a person's stop both really did
+end something. It is stamped **before** the stop, because the mirror on
+`Session` exists for exactly one snapshot — the `stopped` push the eviction
+itself broadcasts — and a reason arriving a refresh later means drawing the
+banner and taking it back. Resuming clears it, so it always describes the most
+recent stop. Suggest a TTL in hours: shorter than a break, and the sweep
+reclaims sessions somebody is still working in.
+
 **A restart is not a pause.** That startup reap is why: the new process comes up
 and kills the CLI groups the old one left, so restarting mid-turn does not
 suspend the turn, it ends it. Sessions survive, because worktrees, history and

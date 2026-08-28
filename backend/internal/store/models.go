@@ -238,6 +238,7 @@ type Session struct {
 	Pinned            int64          `json:"pinned"`
 	PinOrder          int64          `json:"pin_order"`
 	UnseenCompletedAt sql.NullString `json:"unseen_completed_at"`
+	EvictedAt         sql.NullString `json:"evicted_at"`
 }
 
 type SessionEvent struct {

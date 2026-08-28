@@ -128,6 +128,7 @@ export function useDeckRows(): DeckRows {
             state: meta.state,
             merged: !!meta.worktreeMerged,
             connected: meta.connected,
+            evicted: !!meta.evictedAt,
           }),
         });
         continue;

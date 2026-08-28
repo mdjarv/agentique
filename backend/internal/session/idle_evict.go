@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // idleSweepInterval bounds how often the idle-eviction sweep runs, derived from
@@ -43,10 +45,37 @@ func (s *Session) beginIdleEvict(ttl time.Duration, now time.Time) bool {
 
 // clearEvicting releases an eviction claim made by beginIdleEvict. Used when the
 // stop that was meant to follow the claim fails, so the session stays usable.
+//
+// It drops the eviction mark with the claim: a session still running is not one
+// agentique reclaimed, and leaving the mark set would make the next stop —
+// somebody's stop button — read as a sweep's doing.
 func (s *Session) clearEvicting() {
 	s.mu.Lock()
 	s.evicting = false
+	s.evictedAt = ""
 	s.mu.Unlock()
+}
+
+// markEvicted stamps the in-memory eviction mark, so the `stopped` snapshot the
+// stop is about to broadcast already carries the reason.
+//
+// The mirror has to be set before the stop rather than after it. buildLocalSnapshot
+// reads these fields, so a mark written afterwards would reach clients only on
+// the next push — and the push it missed is exactly the one the chat pane turns
+// into a banner.
+func (s *Session) markEvicted(at string) {
+	s.mu.Lock()
+	s.evictedAt = at
+	s.mu.Unlock()
+}
+
+// EvictedAt reports why this session has no process, "" for every reason that is
+// not the idle sweep. Only ever non-empty between a claim and the stop that
+// discards the session, which is why the wire reads the row and not this.
+func (s *Session) EvictedAt() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.evictedAt
 }
 
 // idleFor reports how long the session has been idle relative to now (its last
@@ -98,6 +127,12 @@ func (s *Service) sweepIdleSessions() {
 // atomic (beginIdleEvict) so a session that starts a turn between the snapshot and
 // the claim is skipped. Reuses StopSession, so browser cleanup, git-version
 // seeding, and the stopped-state DB write all happen exactly as for a manual stop.
+//
+// Which is why it stamps the eviction mark first. Reusing the manual stop is
+// right for the mechanism and wrong for the story: the row it leaves behind is
+// byte-identical to one somebody's stop button made, so every surface read a
+// reclaim as an interruption. The mark is the difference, and it goes in before
+// the stop so the snapshot announcing the stop carries it.
 func (s *Service) evictIdleSessions(ttl time.Duration) {
 	now := time.Now()
 	for _, sess := range s.mgr.LiveSessions() {
@@ -106,9 +141,39 @@ func (s *Service) evictIdleSessions(ttl time.Duration) {
 		}
 		id := sess.ID
 		slog.Info("evicting idle session to reclaim resources", "session_id", id, "idle_for", sess.idleFor(now).Round(time.Second))
+		s.stampEvicted(sess, now)
 		if err := s.StopSession(context.Background(), id); err != nil {
 			slog.Warn("idle eviction stop failed; releasing claim", "session_id", id, "error", err)
 			sess.clearEvicting()
+			s.clearEvictedRow(context.Background(), id)
 		}
+	}
+}
+
+// stampEvicted records that this stop is a reclaim, in the row and in the live
+// session's mirror.
+//
+// A failed write is logged and not fatal. The eviction is worth doing either
+// way; the cost of losing the mark is that the session reads as a plain stop,
+// which is what it read as before this existed.
+func (s *Service) stampEvicted(sess *Session, now time.Time) {
+	at := now.UTC().Format(time.RFC3339)
+	if err := s.queries.SetSessionEvictedAt(context.Background(), store.SetSessionEvictedAtParams{
+		EvictedAt: sqlNullString(at),
+		ID:        sess.ID,
+	}); err != nil {
+		slog.Warn("persist eviction mark failed; session will read as a plain stop",
+			"session_id", sess.ID, "error", err)
+		return
+	}
+	sess.markEvicted(at)
+}
+
+// clearEvictedRow drops the persisted eviction mark. Used both when a claimed
+// stop fails and when a session is resumed — the mark describes the most recent
+// stop, so anything that undoes or prevents that stop must undo it too.
+func (s *Service) clearEvictedRow(ctx context.Context, sessionID string) {
+	if err := s.queries.ClearSessionEvictedAt(ctx, sessionID); err != nil {
+		slog.Warn("clear eviction mark failed", "session_id", sessionID, "error", err)
 	}
 }

@@ -49,6 +49,7 @@ func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
 	snap.WorktreeMerged = s.git.worktreeMerged
 	snap.ArchivedAt = s.archivedAt
 	snap.UnseenCompletedAt = s.unseenCompletedAt
+	snap.EvictedAt = s.evictedAt
 	snap.GitOperation = s.git.gitOperation
 	s.git.gitVersion++
 	snap.Version = s.git.gitVersion

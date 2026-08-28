@@ -151,7 +151,13 @@ type Session struct {
 	// resource-reclaiming eviction; validateAndPrepareQuery refuses while it is
 	// set, so a turn can never start on a session being torn down. Guarded by mu.
 	evicting bool
-	pipeline *EventPipeline
+	// evictedAt mirrors the sessions.evicted_at column for the one snapshot that
+	// has to carry it: the `stopped` push the eviction itself broadcasts, which
+	// buildLocalSnapshot builds from memory. Set between the claim and the stop
+	// that discards this session, so it is "" for the whole of a normal life.
+	// Guarded by mu. See idle_evict.go.
+	evictedAt string
+	pipeline  *EventPipeline
 	// meter measures the live context window on demand so the frontend's
 	// meter survives compaction. Signal-driven, never polled; see
 	// context_meter.go. Immutable after newSession.

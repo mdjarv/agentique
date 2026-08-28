@@ -440,10 +440,12 @@ machine-label = ""                # name shown to paired clients. Default:
                                   # else the OS hostname.
 
 [session]
-idle-evict-timeout = ""           # e.g. "30m": stop idle sessions to reclaim the
+idle-evict-timeout = ""           # e.g. "2h": stop idle sessions to reclaim the
                                   # CLI process and its Chromium subtree. The
                                   # session resumes transparently on the next
-                                  # message. "" disables eviction.
+                                  # message. "" disables eviction. Prefer hours:
+                                  # a TTL shorter than a break reclaims sessions
+                                  # you are still working in.
 
 [scheduler]
 disabled                 = false  # schedules persist but never fire

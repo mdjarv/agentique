@@ -53,11 +53,14 @@ type ModelOverride struct {
 
 // SessionConfig tunes session lifecycle behavior.
 type SessionConfig struct {
-	// IdleEvictTimeout, when set to a positive duration (e.g. "30m"), stops a
+	// IdleEvictTimeout, when set to a positive duration (e.g. "2h"), stops a
 	// session that has been idle at least this long to reclaim its CLI process
 	// and Playwright/Chrome subtree. The session resumes transparently on the
 	// next message. "" (the default) disables idle eviction. Env override:
 	// AGENTIQUE_SESSION_IDLE_EVICT_TIMEOUT.
+	//
+	// Prefer hours to minutes. Resuming costs the next message a reconnect, and
+	// a TTL shorter than a break reclaims sessions somebody is still working in.
 	IdleEvictTimeout string `toml:"idle-evict-timeout"`
 }
 

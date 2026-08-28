@@ -75,6 +75,26 @@ and a turn start (`validateAndPrepareQuery`) are mutually exclusive under
 sets `evicting` (turn refused), so a turn can never start on a session being
 torn down. Verified by a `-race` mutual-exclusion test.
 
+**A reclaim says so, because reusing `StopSession` makes it indistinguishable
+from one.** Right for the mechanism, wrong for the story: the row an eviction
+left was byte-identical to the one a person's stop button leaves, so every
+surface read it as a deliberate stop — the chat pane announced "Session
+interrupted" and offered Resume for a session nothing had interrupted, on every
+session left alone past the TTL. `sessions.evicted_at` is the difference. It is
+written by the sweep and by nothing else (a restart's reap and a person's stop
+both really did end something and stay unmarked), it rides `GitSnapshot` and
+`SessionInfo` as the optional `evictedAt`, and it is stamped **before** the
+stop — the mirror on `Session` exists only so the `stopped` push that announces
+the eviction already carries the reason, since a client that learned it one
+refresh later would have drawn the banner and taken it back. Resuming clears it,
+so the mark always describes the most recent stop. Downstream, `deriveRestToken`
+turns it into the `evicted` token and `ChatPanel` suppresses the resume banner,
+on the same argument that suppresses it for a schedule-parked session.
+
+A suggested TTL is hours rather than minutes. The sweep costs the next message a
+lazy resume, which is cheap but not free, and a TTL shorter than a lunch break
+reclaims sessions their operator is still in the middle of using.
+
 ### cgroup containment — systemd unit (the OS-level guarantee)
 When agentique runs as its systemd unit (`internal/service/systemd.go`), every
 session CLI and its Playwright/Chromium subtree lives in the unit's cgroup, so the

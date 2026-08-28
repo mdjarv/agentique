@@ -147,11 +147,16 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 		snap.ArchivedAt = archivedAt
 		snap.GitOperation = gitOp
 		snap.UnseenCompletedAt = live.UnseenCompletedAt()
+		// No EvictedAt: a session with a live runtime has not been reclaimed.
+		// The mirror is only ever set in the moments between the sweep's claim
+		// and the stop that discards it, and that stop broadcasts for itself
+		// (buildLocalSnapshot).
 	} else {
 		snap.State = dbSess.State
 		snap.WorktreeMerged = dbSess.WorktreeMerged != 0
 		snap.ArchivedAt = nullStr(dbSess.ArchivedAt)
 		snap.UnseenCompletedAt = nullStr(dbSess.UnseenCompletedAt)
+		snap.EvictedAt = nullStr(dbSess.EvictedAt)
 	}
 
 	if !snap.WorktreeMerged {
@@ -833,7 +838,16 @@ type GitSnapshot struct {
 	// UnseenCompletedAt is the unread-completion marker, and reads the same way
 	// ArchivedAt does: absent means "nothing waiting", never "unchanged". That
 	// is what lets a read receipt clear the mark by simply not carrying it.
-	UnseenCompletedAt  string   `json:"unseenCompletedAt,omitempty"`
+	UnseenCompletedAt string `json:"unseenCompletedAt,omitempty"`
+	// EvictedAt says this session's `stopped` is the idle sweep's doing rather
+	// than anybody's. It reads like the two above — absent means "not evicted",
+	// never "unchanged" — which is how resuming clears it: the running snapshot
+	// simply stops carrying it.
+	//
+	// It rides the state push and not only the session list because the push is
+	// what announces the stop. A client that learned the reason one refresh
+	// later would have already drawn the banner this exists to suppress.
+	EvictedAt          string   `json:"evictedAt,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`

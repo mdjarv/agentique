@@ -66,6 +66,24 @@ UPDATE sessions SET unseen_completed_at = ?, updated_at = strftime('%Y-%m-%dT%H:
 -- touches nothing the client can see.
 UPDATE sessions SET unseen_completed_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: SetSessionEvictedAt :exec
+-- Stamps "agentique reclaimed this session's CLI; nobody stopped it". Written
+-- by the idle-eviction sweep and by nothing else, because it is a claim about
+-- what agentique DID -- a person's stop and a restart's reap both really did
+-- end something, and must keep reading as a plain stop.
+--
+-- The timestamp is a parameter rather than strftime('now') because the sweep
+-- already knows when it claimed the session; it must be UTC RFC3339 seconds
+-- ("2006-01-02T15:04:05Z") like every other timestamp here, since SQLite
+-- compares TEXT lexicographically.
+UPDATE sessions SET evicted_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
+-- name: ClearSessionEvictedAt :exec
+-- The mark describes the MOST RECENT stop, so resuming clears it: a session
+-- that has run since is no longer a session agentique reclaimed. Also the
+-- release path when the stop behind a claim fails and the session stays alive.
+UPDATE sessions SET evicted_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UnsetWorktreeMerged :exec
 UPDATE sessions SET worktree_merged = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

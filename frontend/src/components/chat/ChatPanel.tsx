@@ -522,6 +522,16 @@ export function ChatPanel({
   // scheduler resumes it on the next fire, so don't offer manual resume.
   const isParkedLoop =
     sessionState === "stopped" && sessionSchedules.some((sc) => sc.enabled && sc.nextRunAt !== "");
+  // Neither is one agentique evicted, and for the stronger reason: nothing
+  // happened. The idle sweep reclaimed a CLI that was sitting idle, and typing
+  // resumes it — the same gesture the banner's button performs, minus the
+  // banner. Announcing "Session interrupted" for that reported a fault where
+  // there was none, and did it to every session left alone over a break.
+  //
+  // The composer stays live either way (`disabled` never covers stopped), so
+  // suppressing this costs nothing and is not a hidden state: the session's
+  // pill still reads Stopped, and the placeholder still says Enter resumes it.
+  const wasEvicted = sessionState === "stopped" && !!meta.evictedAt;
   // The mobile finish action shares the strip below the header; compute it here
   // so the strip renders even when there is nothing else in it.
   const finishKind = isMobile ? finishActionKind(meta, git) : null;
@@ -728,8 +738,9 @@ export function ChatPanel({
               {(contextUsage || compacting) && (
                 <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
               )}
-              {/* Suppressed while parked: the schedule will resume this session. */}
-              {isResumable && !isParkedLoop && (
+              {/* Suppressed while parked: the schedule will resume this session.
+                  Suppressed after an eviction: nothing interrupted it. */}
+              {isResumable && !isParkedLoop && !wasEvicted && (
                 <ResumeBanner
                   state={sessionState as "stopped" | "failed" | "done"}
                   onResume={handleResume}

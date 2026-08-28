@@ -73,27 +73,32 @@ type WirePendingQuestion struct {
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID                 string               `json:"id"`
-	ProjectID          string               `json:"projectId"`
-	Name               string               `json:"name"`
-	State              string               `json:"state"`
-	Connected          bool                 `json:"connected"`
-	Provider           string               `json:"provider,omitempty"`
-	Capabilities       *WireCapabilities    `json:"capabilities,omitempty"`
-	Model              string               `json:"model"`
-	ResolvedModel      string               `json:"resolvedModel,omitempty"`
-	PermissionMode     string               `json:"permissionMode"`
-	AutoApproveMode    string               `json:"autoApproveMode"`
-	Effort             string               `json:"effort,omitempty"`
-	MaxBudget          float64              `json:"maxBudget,omitempty"`
-	MaxTurns           int                  `json:"maxTurns,omitempty"`
-	TotalCost          float64              `json:"totalCost"`
-	TurnCount          int                  `json:"turnCount"`
-	WorktreePath       string               `json:"worktreePath,omitempty"`
-	WorktreeBranch     string               `json:"worktreeBranch,omitempty"`
-	WorktreeMerged     bool                 `json:"worktreeMerged,omitempty"`
-	ArchivedAt         string               `json:"archivedAt,omitempty"`
-	UnseenCompletedAt  *string              `json:"unseenCompletedAt,omitempty"`
+	ID                string            `json:"id"`
+	ProjectID         string            `json:"projectId"`
+	Name              string            `json:"name"`
+	State             string            `json:"state"`
+	Connected         bool              `json:"connected"`
+	Provider          string            `json:"provider,omitempty"`
+	Capabilities      *WireCapabilities `json:"capabilities,omitempty"`
+	Model             string            `json:"model"`
+	ResolvedModel     string            `json:"resolvedModel,omitempty"`
+	PermissionMode    string            `json:"permissionMode"`
+	AutoApproveMode   string            `json:"autoApproveMode"`
+	Effort            string            `json:"effort,omitempty"`
+	MaxBudget         float64           `json:"maxBudget,omitempty"`
+	MaxTurns          int               `json:"maxTurns,omitempty"`
+	TotalCost         float64           `json:"totalCost"`
+	TurnCount         int               `json:"turnCount"`
+	WorktreePath      string            `json:"worktreePath,omitempty"`
+	WorktreeBranch    string            `json:"worktreeBranch,omitempty"`
+	WorktreeMerged    bool              `json:"worktreeMerged,omitempty"`
+	ArchivedAt        string            `json:"archivedAt,omitempty"`
+	UnseenCompletedAt *string           `json:"unseenCompletedAt,omitempty"`
+	// EvictedAt is set only when this session's `stopped` is agentique's doing —
+	// the idle sweep reclaimed its CLI. Absent for every other reason a session
+	// is stopped, which is what lets a client tell "nothing happened here" from
+	// "somebody stopped this".
+	EvictedAt          string               `json:"evictedAt,omitempty"`
 	HasDirtyWorktree   bool                 `json:"hasDirtyWorktree,omitempty"`
 	HasUncommitted     bool                 `json:"hasUncommitted,omitempty"`
 	CommitsAhead       int                  `json:"commitsAhead"`
@@ -1116,14 +1121,17 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		// is only ever written after the row is, so reading it here needs no
 		// liveness check.
 		UnseenCompletedAt: optStr(nullStr(ss.UnseenCompletedAt)),
-		PrUrl:             ss.PrUrl,
-		BehaviorPresets:   ParsePresets(ss.BehaviorPresets),
-		ParentSessionID:   nullStr(ss.ParentSessionID),
-		Pinned:            ss.Pinned != 0,
-		PinOrder:          ss.PinOrder,
-		CreatedAt:         ss.CreatedAt,
-		UpdatedAt:         ss.UpdatedAt,
-		LastQueryAt:       nullStr(ss.LastQueryAt),
+		// Same for the eviction mark, for a stronger reason: a resumed session
+		// clears the column, so a live row never carries one.
+		EvictedAt:       nullStr(ss.EvictedAt),
+		PrUrl:           ss.PrUrl,
+		BehaviorPresets: ParsePresets(ss.BehaviorPresets),
+		ParentSessionID: nullStr(ss.ParentSessionID),
+		Pinned:          ss.Pinned != 0,
+		PinOrder:        ss.PinOrder,
+		CreatedAt:       ss.CreatedAt,
+		UpdatedAt:       ss.UpdatedAt,
+		LastQueryAt:     nullStr(ss.LastQueryAt),
 	}
 }
 
@@ -1565,6 +1573,14 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	}
 	s.wirePostResumeCallbacks(sess, dbSess, channelMemberships, resumeTC)
 	applyPostResumeFlags(sess, dbSess)
+	// The inverse of applyPostResumeFlags, and the reason it is not part of it:
+	// the eviction mark is the one persisted fact a resume must NOT carry over.
+	// It says how this session's last stop happened, and this session has just
+	// stopped being stopped. Guarded on Valid so an ordinary resume costs no
+	// write.
+	if dbSess.EvictedAt.Valid {
+		s.clearEvictedRow(ctx, sessionID)
+	}
 
 	if len(channelMemberships) > 0 {
 		go s.replayPendingDeliveries(context.Background(), sess)

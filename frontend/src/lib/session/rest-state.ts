@@ -63,6 +63,13 @@ export interface DeriveRestTokenInput {
   connected: boolean;
   /** That session's machine is unreachable — we are reading a cached row. */
   machineOffline?: boolean;
+  /**
+   * agentique's idle sweep reclaimed this session's CLI — it is stopped, but
+   * nobody stopped it. Absent from a peer that predates the field, which reads
+   * as "not evicted": the conservative answer, and the one every release before
+   * this one gave.
+   */
+  evicted?: boolean;
 }
 
 /**
@@ -79,10 +86,16 @@ export interface DeriveRestTokenInput {
  * unknown into a false statement, since that CLI is most likely still running
  * over there. An unreachable machine gets "away", and the row's machine tag
  * says which one.
+ *
+ * Which is why the `stopped` branch asks: the sweep's reclaim IS an eviction,
+ * and it reaches a row as state `stopped`, because it takes the same
+ * StopSession a person's stop button takes. Without the server's mark the two
+ * are indistinguishable, and the word that fits both is the one that is wrong
+ * about the common case.
  */
 export function deriveRestToken(input: DeriveRestTokenInput): RestToken {
   if (input.merged) return "merged";
-  if (input.state === "stopped") return "stopped";
+  if (input.state === "stopped") return input.evicted ? "evicted" : "stopped";
   if (input.state === "done") return "finished";
   if (input.machineOffline) return "away";
   if (!input.connected) return "evicted";

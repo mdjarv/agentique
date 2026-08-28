@@ -41,6 +41,11 @@ export function useSessionLifecycleSubscription(
         // opens it. Absent from a peer that predates the field, and the store
         // knows not to read that as "nothing is unread".
         unseenCompletedAt: readUnseenCompletedAt(payload),
+        // Why this session stopped, for the one stop agentique performs itself.
+        // It rides this push and not a later refresh because this is the push
+        // that reports the stop — learning the reason afterwards means drawing
+        // the "Session interrupted" banner first and taking it back.
+        evictedAt: payload.evictedAt,
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,
