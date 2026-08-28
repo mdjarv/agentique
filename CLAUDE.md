@@ -372,11 +372,12 @@ last week.
 So `awake` buys only the third line, never the colour — keep the two separate.
 The state instead rides a **mark**: `REST_GLYPH` in `lib/session/rest-state.ts`
 pairs each `RestToken` with one glyph, and the token union is closed so a new
-outcome must choose its mark rather than inherit a blank. Both surfaces that
-show sessions read that one table — the sidebar rows and the landing deck's
-cards — because a session that says "evicted" in the rail cannot say "stopped"
-on the overview. Grey stays the shelf's and Archived's language: both render
-`compact`, which is grey and collapsed by construction.
+outcome must choose its mark rather than inherit a blank. Every surface that
+shows sessions reads that one table — the sidebar rows, the landing deck's
+cards and the Storage page's rows — because a session that says "evicted" in
+the rail cannot say "stopped" on the overview. Grey stays the shelf's and
+Archived's language: both render `compact`, which is grey and collapsed by
+construction.
 
 **A parked row wears its mark on the chip, not in words.** `stopped`,
 `evicted` and `away` are one concept — `isParked`, the process is gone, the
@@ -388,6 +389,17 @@ read louder without being made louder; those keep glyph *and* word, because an
 outcome is worth a read. The word survives in the chip's tooltip and the row's
 aria-label, and the deck's cards — which have the room — still print both from
 `REST_GLYPH`.
+
+**The Storage page's rows follow the same rule** (`StateMark`), where the
+argument is stronger still: `stopped` is most of what that page lists, and it
+is routinely the wrong reading of *why* — a session evicted to reclaim memory
+or reaped by a restart is indistinguishable there from one somebody stopped on
+purpose. So parked is the moon and nothing else, while `done` prints as
+"finished" (never "done" — that verdict is Archive, the badge beside it) and a
+live state keeps its word, because that is what answers the question the page
+is read for: why this row cannot be reclaimed. `merged` stays its own badge, a
+fact about the branch rather than the process, which is why `StateMark` asks
+`deriveRestToken` with `merged: false`.
 
 It rides the chip for the same reason the unread notch does: the chip is the
 one element at a constant x on **every** row shape, so a mark there is found by

@@ -31,6 +31,13 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import { deleteOrphanedWorktree, reclaimSessions } from "~/lib/api";
 import type { CategoryUsage, ProjectStorage, SessionStorage } from "~/lib/generated-types";
 import { deleteSession, deleteSessionsBulk } from "~/lib/session/actions";
+import {
+  deriveRestToken,
+  isParked,
+  PARKED_GLYPH,
+  PARKED_TITLE,
+  REST_GLYPH,
+} from "~/lib/session/rest-state";
 import { canDelete, canReclaim, freedBytes, reconcile, summarize } from "~/lib/storage/selection";
 import { cn, formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useStorageStore } from "~/stores/storage-store";
@@ -635,6 +642,69 @@ function ProjectCard({
   );
 }
 
+/**
+ * What the row says about the CLI process, in the sidebar's vocabulary.
+ *
+ * A **parked** session wears a mark and no word — the same rule `ThreadRow`
+ * settled on, and for the same reason twice over. `stopped` is by far the most
+ * common state a storage row carries (53 of 79 sessions on a working machine),
+ * and it is the least worth reading: the process is gone, the work is not, and
+ * the next message resumes it either way. It is also frequently a *wrong*
+ * reading of why — a session evicted to reclaim memory, or reaped by a restart,
+ * lands here looking identical to one the operator stopped on purpose. Spending
+ * the row's widest badge on that pushed the name, the size and the real outcome
+ * aside to say something that changes nothing about what you would do with the
+ * row. `PARKED_GLYPH` keeps the fact and gives the width back; the word stays
+ * in the tooltip and the accessible name.
+ *
+ * An **outcome** still gets glyph and word, because it is worth a read — and
+ * `done` prints as "finished", never "done", since the state means the CLI
+ * exited cleanly and "done" reads as the user's own verdict on the work. That
+ * verdict is Archive, which is the badge beside this one.
+ *
+ * Everything else keeps its plain word: `running`, `idle` and `failed` are why
+ * a row cannot be reclaimed, which is the question this page is read to answer.
+ *
+ * `merged` is passed as false because the branch's fate is its own badge here —
+ * a git fact about the worktree, not a state of the process.
+ */
+function StateMark({ state }: { state: string }) {
+  const token = deriveRestToken({ state, merged: false, connected: true });
+
+  if (isParked(token)) {
+    return (
+      <PARKED_GLYPH
+        className="size-3 shrink-0 text-muted-foreground-faint"
+        strokeWidth={2.4}
+        role="img"
+        aria-label={token}
+      >
+        <title>{PARKED_TITLE}</title>
+      </PARKED_GLYPH>
+    );
+  }
+
+  if (token) {
+    const Glyph = REST_GLYPH[token];
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] shrink-0 gap-1 border-primary/40 text-primary"
+      >
+        <Glyph className="size-2.5" />
+        {token}
+      </Badge>
+    );
+  }
+
+  if (!state) return null;
+  return (
+    <Badge variant="outline" className="text-[10px] shrink-0 border-primary/40 text-primary">
+      {state}
+    </Badge>
+  );
+}
+
 function SessionRow({
   session,
   selected,
@@ -703,14 +773,7 @@ function SessionRow({
                 archived
               </Badge>
             ) : (
-              session.state && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] shrink-0 border-primary/40 text-primary"
-                >
-                  {session.state}
-                </Badge>
-              )
+              <StateMark state={session.state} />
             ))}
           {/* Why Delete is unavailable, on the row that causes it. The bar only
               ever reports how many blocked it; this is where the reason lives.
