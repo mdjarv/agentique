@@ -12,6 +12,7 @@
  */
 import { create } from "zustand";
 import {
+  type CallAudioReport,
   primaryVoiceUrl,
   VoiceCall,
   type VoiceCallHandlers,
@@ -117,6 +118,21 @@ interface VoiceState {
 
 let call: VoiceCall | null = null;
 let nextLogId = 0;
+
+/**
+ * Where the running call's audio is going, or null when there is no call.
+ *
+ * A function rather than store state, and read by polling. A route reading
+ * belongs to one diagnostic page; holding it in the store would re-render the
+ * rail card and the phone strip once a second to tell them something neither of
+ * them shows.
+ *
+ * It survives the call ending on purpose — the report is read *after* the
+ * drive, and a call that ends stays on screen for exactly that reason.
+ */
+export function callAudioReport(): CallAudioReport | null {
+  return call?.audioReport() ?? null;
+}
 
 /** Teardown for the store subscriptions that feed the live call. */
 let unwatch: (() => void) | null = null;

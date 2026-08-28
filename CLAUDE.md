@@ -943,6 +943,19 @@ faults reports none. The set is closed: a fourth state is a fourth thing to
 learn by ear. Each clears when its condition stops holding, and clearing hands
 the line back to the server's activity label rather than blanking it.
 
+**Rendering is not audibility, and health cannot see the difference.** Every
+verdict in `health.ts` judges whether the path works; a car can render a whole
+call correctly into a device nobody is listening to, and that looks healthy by
+construction. `lib/voice/audio-route.ts` reads the *route* instead — latency and
+rate, each turned into one hedged reading, every field degrading to a stated
+unknown, because `0 ms` printed for a latency the browser withheld says the
+opposite of what happened. The call keeps two readings, one from the placing
+gesture and one from just after the microphone opens, since the suspected fault
+is a route that *moves* and one reading cannot show a move. **A probe may guess,
+the call may not**: the candidate fixes are three tone probes in
+`lib/voice/audio-check.ts` on `/dev/voice`, one variable apart so the one you
+hear names the fix, and `playback.ts` is unchanged so the control stays a control.
+
 **The audio worklet must be an emitted file, never an inlined one.**
 `audioWorklet.addModule()` is judged under `script-src`, which is `'self'` plus
 index.html's hash — no `data:`, no `blob:`. Vite inlines small assets as `data:`

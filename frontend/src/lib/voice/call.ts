@@ -1,4 +1,5 @@
-import { MicCapture } from "./capture";
+import { type AudioRoute, NO_ROUTE } from "./audio-route";
+import { type CaptureRoute, MicCapture } from "./capture";
 import {
   type AudioHealthSample,
   assessAudioHealth,
@@ -106,6 +107,30 @@ export function primaryVoiceUrl(sessionId?: string): string {
 }
 
 /**
+ * Everything a call knows about its own audio, at one instant.
+ *
+ * Assembled rather than logged, because the question it answers is asked after
+ * the drive: not "what happened" but "where was this going". A health verdict
+ * is in here too, since a report saying the path looked healthy is exactly the
+ * finding when the car was silent.
+ */
+export interface CallAudioReport {
+  /** The playback route in the gesture that placed the call. */
+  placed: AudioRoute;
+  /** The same route once the microphone was open. `state: "none"` until then. */
+  live: AudioRoute;
+  /** And now. */
+  now: AudioRoute;
+  capture: CaptureRoute;
+  /** The rate the server announced its audio at. */
+  outputSampleRate: number;
+  /** Bytes of PCM received: the difference between no audio and unplayed audio. */
+  pcmBytes: number;
+  /** What the watchdog currently makes of it. */
+  health: VoiceAudioHealth;
+}
+
+/**
  * One live voice call: a socket, a microphone, and a playback queue.
  *
  * The socket is separate from the app's main one on purpose. That one is JSON
@@ -165,6 +190,18 @@ export class VoiceCall {
   private health: VoiceAudioHealth = "ok";
 
   /**
+   * The playback route at the two moments worth comparing.
+   *
+   * Kept rather than read on demand because the interesting fact is a
+   * *difference*: the standing suspicion in this subsystem is that opening the
+   * microphone moves the output route, and by the time anyone reads a report
+   * the move has already happened. One reading before the microphone exists
+   * and one immediately after is the smallest thing that can show it.
+   */
+  private placedRoute: AudioRoute = NO_ROUTE;
+  private liveRoute: AudioRoute = NO_ROUTE;
+
+  /**
    * The server's own activity label, held so a health line can be lifted off
    * the status line without erasing what the call was actually working on.
    */
@@ -177,6 +214,19 @@ export class VoiceCall {
   /** Total PCM bytes received from the server this call. */
   get audioBytesReceived(): number {
     return this.pcmBytes;
+  }
+
+  /** Where this call's audio has been going, for someone reading afterwards. */
+  audioReport(): CallAudioReport {
+    return {
+      placed: this.placedRoute,
+      live: this.liveRoute,
+      now: this.playback?.describe() ?? NO_ROUTE,
+      capture: this.mic.describe(),
+      outputSampleRate: this.outputSampleRate,
+      pcmBytes: this.pcmBytes,
+      health: this.health,
+    };
   }
 
   async start(url: string = primaryVoiceUrl()): Promise<void> {
@@ -368,6 +418,10 @@ export class VoiceCall {
       this.audioReady = playback.ready();
       playback.tone(playDialTone);
       this.ring = playback.ring(startRingback);
+      // Read here rather than on demand: this is the one instant the route is
+      // known to predate the microphone, and it is what the reading after it
+      // is compared against.
+      this.placedRoute = playback.describe();
     } catch (err) {
       // No AudioContext at all is a browser that cannot do this. The call is
       // still worth opening — transcripts and dispatch do not need one.
@@ -414,6 +468,10 @@ export class VoiceCall {
       return;
     }
     this.liveSince = Date.now();
+    // The second reading, and the reason there are two: on a Bluetooth handset
+    // this line runs just after the profile switch that a route change would
+    // ride in on.
+    this.liveRoute = this.playback?.describe() ?? NO_ROUTE;
     // Live: the ring stops here, before the blip, because setState is the one
     // door out of connecting.
     this.setState("live");
@@ -534,6 +592,8 @@ export class VoiceCall {
     this.pcmBytes = 0;
     this.health = "ok";
     this.serverActivity = "";
+    this.placedRoute = NO_ROUTE;
+    this.liveRoute = NO_ROUTE;
   }
 
   private fail(detail: string): void {

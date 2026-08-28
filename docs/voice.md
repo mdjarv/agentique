@@ -309,6 +309,54 @@ one number, and it is the whole difference between "no audio came" and "audio
 came and could not be played" — two identical silences and two entirely
 different bugs.
 
+### A fourth silence: rendering is not audibility
+
+The three verdicts above all judge whether the audio path is *working*. There is
+a silence none of them can see, and it is the one a car produces: the context
+runs, its clock advances, every frame is consumed on time, and the sound goes to
+a device nobody is listening to. Live voice worked over a wired Android Auto
+connection and was silent over a wireless one, with transcripts arriving and the
+status line reporting nothing — correctly, because by every measure the app held,
+nothing was wrong.
+
+So `lib/voice/audio-route.ts` reads the *route* rather than the health: the facts
+the browser will give about the output it opened, and two independent readings
+over them. Both are printed as "consistent with" rather than as verdicts — each
+comes from a single threshold, and the operator is standing next to the real
+answer.
+
+| Fact | Reading | Why it separates anything |
+|---|---|---|
+| `outputLatency` | `handset` under 100 ms, `external` at or above | A handset's own speaker is tens of milliseconds; anything crossing a Bluetooth or projection link buffers in the hundreds. The gap between them is wide and empty. |
+| `sampleRate` | `handsfree` at or below 16 kHz, else `media` | HFP/SCO runs at 8 or 16 kHz and every media route runs at 44.1 or 48. A *playback* context on the call profile is on the profile a head unit reserves for telephony. |
+| `sinkId`, `listOutputs()` | — | Empty is the finding, not a failure: Android exposes no output selection, so nothing in this app can move the audio. Whatever fixes a silent car is a different *route*, not a chosen device. |
+
+Every field degrades to a stated unknown, and `-1` means unreported. A diagnostic
+that quietly prints `0 ms` for a latency the browser withheld reads as "no
+latency at all", which is the opposite of the finding.
+
+The call takes **two** readings and keeps both (`CallAudioReport`): one in the
+gesture that placed it, before a microphone exists, and one immediately after the
+microphone opens. The interesting fact is the *difference* — the standing
+suspicion in this subsystem is a route that moves when the mic opens, and one
+reading cannot show a move.
+
+**Three probes, one variable apart** (`lib/voice/audio-check.ts`), on
+`/dev/voice`. A live call is a poor instrument for this: it needs a server, a
+permission, a backend and someone's attention, and yields one bit. A probe is two
+seconds of tone, judged by ear.
+
+| Probe | What it changes | What hearing it means |
+|---|---|---|
+| `call` | Nothing — it uses `PlaybackQueue` itself | The shipped output path works here; the route is not the fault |
+| `buffered` | `latencyHint: "playback"` | WebAudio's low-latency output does not survive this route |
+| `element` | Rendered to a `MediaStream`, played by an `<audio>` element | The route carries media but not Web Audio |
+
+**A probe may guess; the call may not.** The two candidate fixes live in
+`audio-check.ts` and nothing in `playback.ts` changed to add them, so the control
+stays a control. `playNotes` grew an optional destination for exactly one caller
+— the element probe, which cannot reach `ctx.destination` by definition.
+
 ### The worklet must be an emitted file
 
 `audioWorklet.addModule()` is judged under `script-src`, which here is `'self'`

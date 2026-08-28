@@ -7,6 +7,8 @@
  * the queue tracks where the next one begins.
  */
 
+import { type AudioRoute, readRoute } from "./audio-route";
+
 /**
  * Cushion applied when the schedule has fallen behind the clock. Starting a
  * source in the past plays it immediately, so several late frames would all
@@ -73,6 +75,18 @@ export class PlaybackQueue {
    */
   get contextTime(): number {
     return this.ctx.currentTime;
+  }
+
+  /**
+   * Where the browser is sending this queue's audio, as it describes it.
+   *
+   * Separate from [isRunning] because they answer different questions and only
+   * one of them has ever been the fault in a car: running is whether the
+   * browser is playing, this is who receives it. The context stays private —
+   * what leaves is a record, not a handle.
+   */
+  describe(): AudioRoute {
+    return readRoute(this.ctx);
   }
 
   /**

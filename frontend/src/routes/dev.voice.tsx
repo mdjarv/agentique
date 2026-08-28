@@ -11,9 +11,16 @@
  * car Bluetooth — wants one control and a clear readout, tested while the only
  * moving part is an echo.
  *
+ * `AudioDiagnostics` below it answers the question the loopback cannot: not
+ * whether the path works, but where the sound is being sent. A car that plays
+ * one probe and not another has named the fix; a call that renders perfectly
+ * into a device nobody is listening to looks healthy by every other measure
+ * this app has.
+ *
  * Wear headphones on a desktop, or the echo feeds back.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { AudioDiagnostics } from "~/components/voice/AudioDiagnostics";
 import { MicMeter } from "~/components/voice/MicMeter";
 import { cn } from "~/lib/utils";
 import { primaryVoiceUrl } from "~/lib/voice/call";
@@ -81,6 +88,8 @@ function DevVoice() {
           <dd className="font-mono">16000 Hz · mono · s16le · ~32 ms frames</dd>
         </dl>
       </div>
+
+      <AudioDiagnostics />
 
       {log.length > 0 && (
         <section className="flex flex-col gap-2">

@@ -61,9 +61,16 @@ interface Sounding {
  * The nodes come back so a caller that has to *interrupt* a sound can — only
  * the ringback needs that, and only because "stop" has to mean stop rather than
  * "after this burst".
+ *
+ * The destination defaults to the context's own and is a parameter for exactly
+ * one caller: the output probe that plays through a `MediaStreamDestination`
+ * to find out whether a car renders an element's audio when it will not render
+ * a context's. A tone that could only reach `ctx.destination` could not answer
+ * that question.
  */
-function playNotes(ctx: AudioContext, notes: Note[]): Sounding[] {
+function playNotes(ctx: AudioContext, notes: Note[], destination?: AudioNode): Sounding[] {
   const begin = ctx.currentTime;
+  const out = destination ?? ctx.destination;
   const sounding: Sounding[] = [];
 
   for (const note of notes) {
@@ -81,7 +88,7 @@ function playNotes(ctx: AudioContext, notes: Note[]): Sounding[] {
     gain.gain.linearRampToValueAtTime(0, end);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(out);
 
     osc.onended = () => {
       osc.disconnect();
@@ -126,6 +133,34 @@ export function playDialTone(ctx: AudioContext): void {
     { freq: 660, at: 0, duration: 0.09, peak: PEAK },
     { freq: 880, at: 0.11, duration: 0.09, peak: PEAK },
   ]);
+}
+
+/**
+ * How long the output check sounds for.
+ *
+ * Far longer than any status tone, and deliberately: this one is listened *for*
+ * rather than noticed, in a moving car, by someone who has just pressed a
+ * button and is waiting to find out whether the speakers are ours. A blip at
+ * road speed is indistinguishable from silence.
+ */
+export const CHECK_TONE_SECONDS = 2;
+
+/**
+ * The output probe's tone: two long notes, an octave apart.
+ *
+ * Nothing else this app plays is sustained, so hearing it is unambiguous —
+ * which is the whole job, since the operator's ear is the measurement and the
+ * numbers beside it only say where it was sent.
+ */
+export function playCheckTone(ctx: AudioContext, destination?: AudioNode): void {
+  playNotes(
+    ctx,
+    [
+      { freq: 440, at: 0, duration: 0.9, peak: PEAK * 1.5 },
+      { freq: 880, at: 1, duration: 1, peak: PEAK * 1.5 },
+    ],
+    destination,
+  );
 }
 
 /** Seconds of sound in one ring burst. */
