@@ -136,31 +136,78 @@ export function playDialTone(ctx: AudioContext): void {
 }
 
 /**
- * How long the output check sounds for.
+ * Longest a check tone runs before it stops itself.
  *
- * Far longer than any status tone, and deliberately: this one is listened *for*
- * rather than noticed, in a moving car, by someone who has just pressed a
- * button and is waiting to find out whether the speakers are ours. A blip at
- * road speed is indistinguishable from silence.
+ * A cap rather than a duration: the operator stops it when they have heard it
+ * or given up. This only exists so a probe left running in a pocket does not
+ * play for the rest of the day.
  */
-export const CHECK_TONE_SECONDS = 2;
+export const CHECK_TONE_MAX_SECONDS = 60;
+
+/** The two pitches the check alternates between, and how long each holds. */
+const CHECK_LOW = 440;
+const CHECK_HIGH = 660;
+const CHECK_STEP_SECONDS = 0.7;
+
+/** A check tone that is sounding until something stops it. */
+export interface CheckTone {
+  /** Stops it now, fading rather than chopping. Idempotent. */
+  stop(): void;
+}
 
 /**
- * The output probe's tone: two long notes, an octave apart.
+ * The output probe's tone: continuous, alternating pitch, until stopped.
  *
- * Nothing else this app plays is sustained, so hearing it is unambiguous —
- * which is the whole job, since the operator's ear is the measurement and the
- * numbers beside it only say where it was sent.
+ * **It never goes quiet, and that is the design.** A Bluetooth or projection
+ * sink is not always awake: the link negotiates, the amplifier unmutes, and the
+ * first several hundred milliseconds of a stream can be swallowed whole. A short
+ * blip on such a route is indistinguishable from a route that does not work —
+ * which would make this probe answer the wrong question, confidently. Worse,
+ * sinks suspend again after a second or so of silence, so a tone with *gaps*
+ * pays that wake-up cost on every burst and can be swallowed every time.
+ *
+ * So one oscillator runs unbroken and its frequency steps between two pitches.
+ * The gain ramps up once at the start and down once at the stop, and never
+ * touches zero in between: there is no silence anywhere in the middle for a sink
+ * to fall asleep on, and the warble is what makes it obviously a signal rather
+ * than a stuck buzz.
+ *
+ * Steps are scheduled up front on the audio clock, which does not drift under a
+ * busy main thread — the same reason playback schedules its frames.
  */
-export function playCheckTone(ctx: AudioContext, destination?: AudioNode): void {
-  playNotes(
-    ctx,
-    [
-      { freq: 440, at: 0, duration: 0.9, peak: PEAK * 1.5 },
-      { freq: 880, at: 1, duration: 1, peak: PEAK * 1.5 },
-    ],
-    destination,
-  );
+export function startCheckTone(ctx: AudioContext, destination?: AudioNode): CheckTone {
+  const out = destination ?? ctx.destination;
+  const begin = ctx.currentTime;
+  const end = begin + CHECK_TONE_MAX_SECONDS;
+  const peak = PEAK * 1.5;
+
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, begin);
+  gain.gain.linearRampToValueAtTime(peak, begin + RAMP_SECONDS);
+  gain.gain.setValueAtTime(peak, end - RAMP_SECONDS);
+  gain.gain.linearRampToValueAtTime(0, end);
+
+  const steps = Math.ceil(CHECK_TONE_MAX_SECONDS / CHECK_STEP_SECONDS);
+  for (let step = 0; step < steps; step++) {
+    const freq = step % 2 === 0 ? CHECK_LOW : CHECK_HIGH;
+    osc.frequency.setValueAtTime(freq, begin + step * CHECK_STEP_SECONDS);
+  }
+
+  osc.connect(gain);
+  gain.connect(out);
+  osc.onended = () => {
+    osc.disconnect();
+    gain.disconnect();
+  };
+  osc.start(begin);
+  osc.stop(end);
+
+  return {
+    stop: () => silence(ctx, [{ osc, gain }]),
+  };
 }
 
 /** Seconds of sound in one ring burst. */

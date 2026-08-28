@@ -956,6 +956,16 @@ the call may not**: the candidate fixes are three tone probes in
 `lib/voice/audio-check.ts`, one variable apart so the one you hear names the
 fix, and `playback.ts` is unchanged so the control stays a control.
 
+**A probe sounds until stopped and never goes quiet while it does.** A Bluetooth
+or projection sink takes most of a second to start passing audio and suspends
+again after about a second of silence, so a fixed-length tone can be inaudible on
+a route that works and a tone with gaps pays that wake-up on every burst.
+`startCheckTone` is one oscillator whose frequency steps between two pitches —
+the gain ramps up once, down once, and never reaches zero in between. The same
+argument applies to the call's own short sounds, which is why a swallowed dial
+tone is not evidence the route was wrong; keeping the sink awake across a call is
+listed as not implemented in `docs/voice.md`, not assumed.
+
 **A diagnostic for a phone lives where a phone can reach it.** The audio check's
 home is Settings → Voice, not `/dev/voice`: on the phone this app is an
 installed PWA with no address bar, so a page reachable only by typing a path is

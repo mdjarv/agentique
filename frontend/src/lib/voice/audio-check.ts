@@ -14,14 +14,22 @@
  * rather than in `playback.ts` deliberately — a probe may guess, the call may
  * not. Nothing here changes what a call does.
  *
+ * **A probe sounds until it is stopped, never for a fixed duration.** A
+ * Bluetooth or projection sink can take most of a second to wake, and a tone
+ * that ends inside that window is inaudible on a route that works perfectly —
+ * which would make this answer the wrong question, confidently. The operator
+ * holds it open for as long as they need and stops it when they have heard it
+ * or given up. `startCheckTone` is unbroken for the same reason: silence in the
+ * middle lets the sink suspend and pay the wake-up cost again.
+ *
  * Every probe must reach `new AudioContext()` synchronously from the click that
- * asked for it. That is the same rule the call itself obeys and for the same
- * reason: a context built after an await starts suspended, resumes to nothing,
- * and would report a silence it caused.
+ * asked for it, which is why starting one is not `async`. That is the same rule
+ * the call itself obeys and for the same reason: a context built after an await
+ * starts suspended, resumes to nothing, and would report a silence it caused.
  */
 import { type AudioRoute, NO_ROUTE, readRoute } from "./audio-route";
 import { PlaybackQueue } from "./playback";
-import { CHECK_TONE_SECONDS, playCheckTone } from "./tones";
+import { CHECK_TONE_MAX_SECONDS, type CheckTone, startCheckTone } from "./tones";
 
 /**
  * Which way of making a sound is being tried.
@@ -53,48 +61,73 @@ export const PROBE_COPY: Record<ProbePath, { title: string; detail: string }> = 
   },
 };
 
-export interface ProbeResult {
-  path: ProbePath;
-  /** Whether the browser actually let the sound start. */
-  started: boolean;
-  /** Why it did not start, or what went wrong on the way. `""` when it did. */
+/** Whether the browser let this probe make a sound, once it has decided. */
+export interface ProbeReady {
+  ok: boolean;
+  /** Why not, when not. `""` when it started. */
   detail: string;
-  /** Where the browser said it was sending it, read once the output settled. */
-  route: AudioRoute;
+}
+
+/** A probe that is sounding until it is stopped. */
+export interface RunningProbe {
+  path: ProbePath;
+  /**
+   * Settles once the browser has decided whether this can be heard at all.
+   *
+   * Never rejects. Every way a probe can fail is itself a finding, and one that
+   * threw would have reported nothing about the fault it was opened to explain.
+   */
+  ready: Promise<ProbeReady>;
+  /**
+   * Where the browser says it is sending it, right now.
+   *
+   * Meant to be polled while the tone runs. A route that *moves* mid-tone is
+   * the exact fault this subsystem suspects, and a single reading cannot show a
+   * move.
+   */
+  route(): AudioRoute;
+  /** Stops the tone and releases the context. Idempotent. */
+  stop(): Promise<void>;
 }
 
 /**
- * How long to let the output settle before reading its latency.
+ * How long to let the output settle before its latency means anything.
  *
- * `outputLatency` is a property of a stream that is running; read in the same
- * tick the context was resumed it is either zero or missing, and a diagnostic
- * that reports zero for the number the whole question turns on is worse than no
- * diagnostic.
+ * `outputLatency` describes a stream that is running; read in the tick the
+ * context was resumed it is zero or missing, and a diagnostic reporting zero for
+ * the number the whole question turns on is worse than no diagnostic.
  */
-const ROUTE_SETTLE_MS = 300;
+export const ROUTE_SETTLE_MS = 300;
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 /**
- * Plays the check tone one way and reports where it went.
+ * Starts the check tone one way, and hands back the handle that stops it.
  *
- * Resolves when the tone has finished and its context is closed, so the caller
- * can render "playing" for exactly as long as something is playing. It never
- * rejects: a probe that throws has reported nothing, and every way this can
- * fail is itself a finding.
+ * Synchronous by contract: everything that must happen inside the user's
+ * gesture — building the context, starting the tone, asking an element to play
+ * — happens before this returns.
+ *
+ * `onEnded` fires if the cap stops it first, so a surface showing "playing" can
+ * stop saying so without polling for it.
  */
-export async function probeOutput(path: ProbePath): Promise<ProbeResult> {
+export function startProbe(path: ProbePath, onEnded?: () => void): RunningProbe {
   switch (path) {
     case "call":
-      return probeCall();
+      return startCallProbe(onEnded);
     case "buffered":
-      return probeContext("buffered", "playback");
+      return startContextProbe("buffered", "playback", onEnded);
     case "element":
-      return probeElement();
+      return startElementProbe(onEnded);
     default: {
       // Exhaustive: a fourth way to make a sound must say what it is here.
       const unexpected: never = path;
-      return { path: unexpected, started: false, detail: "unknown probe", route: NO_ROUTE };
+      return {
+        path: unexpected,
+        ready: Promise.resolve({ ok: false, detail: "unknown probe" }),
+        route: () => NO_ROUTE,
+        stop: async () => {},
+      };
     }
   }
 }
@@ -105,50 +138,75 @@ export async function probeOutput(path: ProbePath): Promise<ProbeResult> {
  * Imitating `PlaybackQueue` would make this probe a test of the imitation. If
  * the car plays this, the shipped output path works there.
  */
-async function probeCall(): Promise<ProbeResult> {
+function startCallProbe(onEnded?: () => void): RunningProbe {
   let queue: PlaybackQueue;
   try {
     queue = new PlaybackQueue();
   } catch (err) {
-    return { path: "call", started: false, detail: String(err), route: NO_ROUTE };
+    return failed("call", String(err));
   }
-  const started = queue.tone(playCheckTone);
-  const running = await queue.ready();
-  await sleep(ROUTE_SETTLE_MS);
-  const route = queue.describe();
-  await sleep(CHECK_TONE_SECONDS * 1000);
-  await queue.close();
+
+  let tone: CheckTone | null = null;
+  const scheduled = queue.tone((ctx) => {
+    tone = startCheckTone(ctx);
+  });
+
+  const cap = capTimer(onEnded);
   return {
     path: "call",
-    started: started && running,
-    detail: running ? "" : "the browser would not run the audio context",
-    route,
+    ready: queue.ready().then(async (running) => {
+      // The same settle the other two get inside `resume`, so every probe's
+      // first route reading is worth the same amount.
+      await sleep(ROUTE_SETTLE_MS);
+      return {
+        ok: scheduled && running,
+        detail: running ? "" : "the browser would not run the audio context",
+      };
+    }),
+    route: () => queue.describe(),
+    stop: async () => {
+      cap.clear();
+      tone?.stop();
+      await queue.close();
+    },
   };
 }
 
 /** A bare context with one option changed, so only that option is being tested. */
-async function probeContext(path: ProbePath, latencyHint: AudioContextLatencyCategory) {
+function startContextProbe(
+  path: ProbePath,
+  latencyHint: AudioContextLatencyCategory,
+  onEnded?: () => void,
+): RunningProbe {
   let ctx: AudioContext;
   try {
     ctx = new AudioContext({ latencyHint });
   } catch (err) {
-    return { path, started: false, detail: String(err), route: NO_ROUTE };
+    return failed(path, String(err));
   }
-  let started = false;
+
+  let tone: CheckTone | null = null;
   let detail = "";
   try {
-    playCheckTone(ctx);
-    started = true;
+    tone = startCheckTone(ctx);
   } catch (err) {
     detail = String(err);
   }
-  const running = await resume(ctx);
-  if (!running) detail = "the browser would not run the audio context";
-  await sleep(ROUTE_SETTLE_MS);
-  const route = readRoute(ctx);
-  await sleep(CHECK_TONE_SECONDS * 1000);
-  await closeQuietly(ctx);
-  return { path, started: started && running, detail, route };
+
+  const cap = capTimer(onEnded);
+  return {
+    path,
+    ready: resume(ctx).then((running) => ({
+      ok: tone !== null && running,
+      detail: running ? detail : "the browser would not run the audio context",
+    })),
+    route: () => readRoute(ctx),
+    stop: async () => {
+      cap.clear();
+      tone?.stop();
+      await closeQuietly(ctx);
+    },
+  };
 }
 
 /**
@@ -158,12 +216,12 @@ async function probeContext(path: ProbePath, latencyHint: AudioContextLatencyCat
  * on mobile, and it is removed again — a hidden `<audio>` left behind would
  * hold the route open after the probe that borrowed it is over.
  */
-async function probeElement(): Promise<ProbeResult> {
+function startElementProbe(onEnded?: () => void): RunningProbe {
   let ctx: AudioContext;
   try {
     ctx = new AudioContext();
   } catch (err) {
-    return { path: "element", started: false, detail: String(err), route: NO_ROUTE };
+    return failed("element", String(err));
   }
 
   const sink = ctx.createMediaStreamDestination();
@@ -176,9 +234,10 @@ async function probeElement(): Promise<ProbeResult> {
   audio.srcObject = sink.stream;
   document.body.appendChild(audio);
 
+  let tone: CheckTone | null = null;
   let detail = "";
   try {
-    playCheckTone(ctx, sink);
+    tone = startCheckTone(ctx, sink);
   } catch (err) {
     detail = String(err);
   }
@@ -192,20 +251,47 @@ async function probeElement(): Promise<ProbeResult> {
       detail = `the audio element refused to play: ${String(err)}`;
       return false;
     });
-  const running = await resume(ctx);
-  if (!running) detail = "the browser would not run the audio context";
-  const played = await playing;
 
-  await sleep(ROUTE_SETTLE_MS);
-  const route = readRoute(ctx);
-  await sleep(CHECK_TONE_SECONDS * 1000);
+  const cap = capTimer(onEnded);
+  return {
+    path: "element",
+    ready: Promise.all([playing, resume(ctx)]).then(([played, running]) => ({
+      ok: played && running && tone !== null && !detail,
+      detail: running ? detail : "the browser would not run the audio context",
+    })),
+    route: () => readRoute(ctx),
+    stop: async () => {
+      cap.clear();
+      tone?.stop();
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+      await closeQuietly(ctx);
+    },
+  };
+}
 
-  audio.pause();
-  audio.srcObject = null;
-  audio.remove();
-  await closeQuietly(ctx);
+/** A probe that never got as far as making a sound. */
+function failed(path: ProbePath, detail: string): RunningProbe {
+  return {
+    path,
+    ready: Promise.resolve({ ok: false, detail }),
+    route: () => NO_ROUTE,
+    stop: async () => {},
+  };
+}
 
-  return { path: "element", started: played && running && !detail, detail, route };
+/**
+ * The backstop that stops a forgotten probe.
+ *
+ * The tone stops itself on the audio clock regardless — `startCheckTone`
+ * schedules its own end — so this exists only to tell the surface, and to let
+ * the context go.
+ */
+function capTimer(onEnded?: () => void): { clear: () => void } {
+  if (!onEnded) return { clear: () => {} };
+  const timer = setTimeout(onEnded, CHECK_TONE_MAX_SECONDS * 1000);
+  return { clear: () => clearTimeout(timer) };
 }
 
 async function resume(ctx: AudioContext): Promise<boolean> {
@@ -217,6 +303,8 @@ async function resume(ctx: AudioContext): Promise<boolean> {
       // and the state below is what says which happened.
     }
   }
+  // Give the output a moment to exist before anyone reads its latency.
+  await sleep(ROUTE_SETTLE_MS);
   return ctx.state === "running";
 }
 

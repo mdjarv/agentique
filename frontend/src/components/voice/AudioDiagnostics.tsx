@@ -29,13 +29,14 @@
  * can reach and the page you can type cannot describe the same check
  * differently.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
-import { PROBE_COPY, type ProbePath, type ProbeResult, probeOutput } from "~/lib/voice/audio-check";
+import { PROBE_COPY, type ProbePath, type RunningProbe, startProbe } from "~/lib/voice/audio-check";
 import {
   type AudioRoute,
   DISTANCE_COPY,
   listOutputs,
+  NO_ROUTE,
   type OutputDevices,
   PROFILE_COPY,
   readDistance,
@@ -51,7 +52,7 @@ export const AUDIO_CHECK_COPY = {
   probes: {
     title: "Can you hear this?",
     description:
-      "Two seconds of tone, three ways to send it. They differ by one thing each, so the one you hear is the one to ship. Play them where the fault is — in the car, on the connection that was silent.",
+      "One tone, three ways to send it. They differ by one thing each, so the one you hear is the one to ship. Play them where the fault is — in the car, on the connection that was silent.",
   },
   routes: {
     title: "Where this call's audio went",
@@ -60,31 +61,105 @@ export const AUDIO_CHECK_COPY = {
   },
 } as const;
 
+/** What a probe left behind, whether it is still sounding or done. */
+interface ProbeState {
+  /** Still making a noise. */
+  playing: boolean;
+  /** Seconds it has been sounding. */
+  elapsed: number;
+  /** Set once the browser has ruled, and only when it ruled against. */
+  detail: string;
+  route: AudioRoute;
+}
+
 /**
  * Press, listen, read.
  *
- * One probe at a time: two contexts making noise at once would tell you
- * nothing about which one you were hearing, which is the only thing being
- * asked. They are also refused while a call is up, because the call owns the
- * route and a probe that moves it mid-call has changed the thing it measures.
+ * **A probe plays until it is stopped**, and the button says so. A sink that
+ * takes most of a second to wake — which is every Bluetooth and projection
+ * route — swallows the beginning of a stream, so a tone with a fixed duration
+ * can be inaudible on a path that works perfectly. Holding it open moves that
+ * decision to the ear that is listening, and the elapsed seconds are shown
+ * because "I heard it after about two seconds" is itself the finding.
+ *
+ * The route is re-read every second while it sounds, for the same reason the
+ * call keeps two readings: a route that *moves* is what is being hunted, and it
+ * moves at a moment nobody is holding a stopwatch for.
+ *
+ * One probe at a time: two contexts making noise at once would say nothing
+ * about which one was heard, which is the only thing being asked. They are
+ * refused while a call is up, because the call owns the route and a probe that
+ * moves it mid-call has changed the thing it measures.
  */
 export function OutputProbes() {
   const status = useVoiceStore((s) => s.status);
   const callUp = status === "connecting" || status === "live";
-  const [running, setRunning] = useState<ProbePath | null>(null);
-  const [results, setResults] = useState<Partial<Record<ProbePath, ProbeResult>>>({});
+  const [active, setActive] = useState<ProbePath | null>(null);
+  const [states, setStates] = useState<Partial<Record<ProbePath, ProbeState>>>({});
+  const probe = useRef<RunningProbe | null>(null);
 
-  const run = (path: ProbePath) => {
-    if (running) return;
-    setRunning(path);
-    // The probe is reached synchronously from this handler and must stay that
-    // way: the context it builds is only allowed to make a sound because this
-    // click is still the browser's idea of a user gesture.
-    void probeOutput(path).then((result) => {
-      setResults((prev) => ({ ...prev, [path]: result }));
-      setRunning(null);
+  // Stable, so `stop` below is stable, so the unmount effect that calls it does
+  // not re-run on every render — which would stop the tone the moment anything
+  // else on the page changed.
+  const update = useCallback((path: ProbePath, patch: Partial<ProbeState>) => {
+    setStates((prev) => ({
+      ...prev,
+      [path]: { playing: false, elapsed: 0, detail: "", route: NO_ROUTE, ...prev[path], ...patch },
+    }));
+  }, []);
+
+  const stop = useCallback(() => {
+    const running = probe.current;
+    if (!running) return;
+    probe.current = null;
+    setActive(null);
+    update(running.path, { playing: false, route: running.route() });
+    void running.stop();
+  }, [update]);
+
+  const start = (path: ProbePath) => {
+    if (probe.current) return;
+    // Reached synchronously from this handler and it must stay that way: the
+    // context it builds is only allowed to make a sound because this click is
+    // still the browser's idea of a user gesture.
+    const running = startProbe(path, stop);
+    probe.current = running;
+    setActive(path);
+    update(path, { playing: true, elapsed: 0, detail: "", route: running.route() });
+    void running.ready.then((ready) => {
+      if (probe.current !== running) return;
+      update(path, { detail: ready.ok ? "" : ready.detail, route: running.route() });
     });
   };
+
+  // The tick is the probe's, so nothing renders on a second when nothing is
+  // playing, and it stops with the probe rather than outliving it.
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      const running = probe.current;
+      if (!running) return;
+      setStates((prev) => {
+        const previous = prev[active];
+        if (!previous) return prev;
+        return {
+          ...prev,
+          [active]: { ...previous, elapsed: previous.elapsed + 1, route: running.route() },
+        };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  // A probe must never outlive the surface that started it: navigating away
+  // from a page still making a noise is how a tone ends up playing over the
+  // call the operator went to start.
+  useEffect(() => stop, [stop]);
+
+  // The call owns the route, so it wins.
+  useEffect(() => {
+    if (callUp) stop();
+  }, [callUp, stop]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -97,43 +172,58 @@ export function OutputProbes() {
       <ul className="flex flex-col gap-2">
         {PROBE_ORDER.map((path) => {
           const copy = PROBE_COPY[path];
-          const result = results[path];
-          const busy = running === path;
+          const state = states[path];
+          const playing = active === path;
+          const blocked = callUp || (active !== null && !playing);
           return (
             <li key={path} className="rounded-lg border border-border/60 bg-card p-3">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  disabled={callUp || running !== null}
-                  onClick={() => run(path)}
+                  disabled={blocked}
+                  onClick={() => (playing ? stop() : start(path))}
                   className={cn(
-                    "h-9 shrink-0 rounded-md px-3.5 text-xs font-medium transition-colors",
-                    "bg-agent text-background hover:bg-agent/90",
+                    "h-9 w-16 shrink-0 rounded-md text-xs font-medium transition-colors",
+                    playing
+                      ? "bg-destructive/15 text-destructive hover:bg-destructive/25"
+                      : "bg-agent text-background hover:bg-agent/90",
                     "disabled:cursor-not-allowed disabled:opacity-40",
-                    !callUp && running === null && "cursor-pointer",
+                    !blocked && "cursor-pointer",
                   )}
                 >
-                  {busy ? "Playing…" : "Play"}
+                  {playing ? "Stop" : "Play"}
                 </button>
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-[12.5px] font-medium">{copy.title}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-[12.5px] font-medium">{copy.title}</span>
+                    {playing && (
+                      <span className="shrink-0 font-mono text-[11px] text-agent">
+                        {state?.elapsed ?? 0}s
+                      </span>
+                    )}
+                  </span>
                   <span className="text-[11.5px] text-muted-foreground">{copy.detail}</span>
                 </span>
               </div>
-              {result && (
+              {state && (state.detail || state.route.state !== "none") && (
                 <div className="mt-2 border-t border-border/60 pt-2">
-                  {!result.started && (
+                  {state.detail && (
                     <p className="mb-1 text-[11px] text-destructive">
-                      It never played{result.detail ? `: ${result.detail}` : ""}
+                      It never played: {state.detail}
                     </p>
                   )}
-                  <RouteFacts route={result.route} />
+                  <RouteFacts route={state.route} />
                 </div>
               )}
             </li>
           );
         })}
       </ul>
+
+      <p className="px-1 text-[11.5px] text-muted-foreground-faint">
+        It keeps sounding until you stop it. A Bluetooth or car route can take a second to wake, and
+        a short beep on one of those is silent even when the path works.
+      </p>
 
       <OutputDeviceNote />
     </div>

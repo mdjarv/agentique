@@ -343,8 +343,21 @@ reading cannot show a move.
 
 **Three probes, one variable apart** (`lib/voice/audio-check.ts`). A live call is
 a poor instrument for this: it needs a server, a permission, a backend and
-someone's attention, and yields one bit. A probe is two seconds of tone, judged
-by ear.
+someone's attention, and yields one bit. A probe is a tone, judged by ear.
+
+**A probe sounds until it is stopped, and never goes quiet while it does.** Both
+halves matter, and both are about a sink that is not awake. A Bluetooth or
+projection route can take most of a second to start passing audio, so a tone with
+a fixed duration can be entirely inaudible on a path that works perfectly — which
+would make the probe answer the wrong question, confidently. And such a sink
+*suspends again* after about a second of silence, so a tone with gaps pays the
+wake-up cost on every burst. `startCheckTone` is therefore one oscillator running
+unbroken with its frequency stepping between two pitches: the gain ramps up once
+and down once and never touches zero in between, and the warble is what keeps it
+legible as a signal rather than a fault. The surface shows the elapsed seconds,
+because "I heard it after about two" is itself the finding, and re-reads the
+route every second while it runs — a route that moves does so at a moment nobody
+is holding a stopwatch for.
 
 | Probe | What it changes | What hearing it means |
 |---|---|---|
@@ -1049,3 +1062,13 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
   it audible and nameable, which is what the second car test was missing. Fixing
   it, if it is ours to fix, is still meant to be worked out against the real
   handset and head unit while the only moving part is an echo.
+- **Nothing keeps the sink awake between replies.** A Bluetooth or projection
+  sink suspends after a second or so of silence and swallows the first few
+  hundred milliseconds of whatever follows. Every sound this app makes is
+  short — a 0.2s dial tone, 0.4s ring bursts across 1.8s gaps — and a reply is
+  separated from the last one by however long the operator was speaking, so the
+  start of each is at risk. `startCheckTone` avoids it *within a probe* by never
+  going quiet, and the same trick would work on a call (an inaudible continuous
+  source holding the stream open for its duration), but that is a change to the
+  call's own audio path and has not been made. Until it is, do not read a
+  swallowed dial tone as proof the route was wrong.

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asAudioContext, FakeAudioContext } from "./__tests__/fake-audio";
-import { playConnectedTone, playDialTone, playHangupTone, startRingback } from "./tones";
+import {
+  CHECK_TONE_MAX_SECONDS,
+  playConnectedTone,
+  playDialTone,
+  playHangupTone,
+  startCheckTone,
+  startRingback,
+} from "./tones";
 
 describe("call tones", () => {
   let fake: FakeAudioContext;
@@ -180,5 +187,75 @@ describe("ringback", () => {
 
     const stops = fake.oscillators.map((o) => o.stoppedAt);
     expect(stops.every((at) => at !== null)).toBe(true);
+  });
+});
+
+describe("check tone", () => {
+  let fake: FakeAudioContext;
+
+  beforeEach(() => {
+    FakeAudioContext.reset();
+    fake = new FakeAudioContext();
+    fake.currentTime = 5;
+  });
+
+  // The load-bearing property. A Bluetooth or projection sink suspends after a
+  // moment of silence and swallows the start of the next stream, so a tone with
+  // gaps pays the wake-up cost on every burst and can be inaudible on a route
+  // that works. One oscillator, running throughout, is what avoids that.
+  it("is one unbroken oscillator rather than a burst per note", () => {
+    startCheckTone(asAudioContext(fake));
+
+    expect(fake.oscillators).toHaveLength(1);
+    const osc = fake.oscillators[0];
+    expect(osc?.startedAt).toBe(5);
+    expect(osc?.stoppedAt).toBe(5 + CHECK_TONE_MAX_SECONDS);
+  });
+
+  it("never lets the gain reach zero between the fade in and the fade out", () => {
+    startCheckTone(asAudioContext(fake));
+
+    const gain = fake.gains[0];
+    const scheduled = [...(gain?.gain.setValues ?? []), ...(gain?.gain.ramps ?? [])];
+    const silent = scheduled.filter((point) => point.value === 0);
+
+    // Exactly two: the value it starts from, and the one it ends at.
+    expect(silent).toHaveLength(2);
+    expect(silent[0]?.at).toBe(5);
+    expect(silent[1]?.at).toBe(5 + CHECK_TONE_MAX_SECONDS);
+  });
+
+  it("warbles between two pitches, so it reads as a signal and not a fault", () => {
+    startCheckTone(asAudioContext(fake));
+
+    const steps = fake.oscillators[0]?.frequency.setValues ?? [];
+    expect(steps.length).toBeGreaterThan(10);
+    const pitches = new Set(steps.map((step) => step.value));
+    expect(pitches.size).toBe(2);
+    // Scheduled on the audio clock, which does not drift under a busy main
+    // thread — the same reason playback schedules its frames.
+    expect(steps[0]?.at).toBe(5);
+    expect(steps[1]?.at).toBeGreaterThan(5);
+  });
+
+  it("plays into the destination it is given, which the element probe needs", () => {
+    const sink = { fake: "stream destination" };
+    startCheckTone(asAudioContext(fake), sink as unknown as AudioNode);
+
+    expect(fake.gains[0]?.connected).toContain(sink);
+    expect(fake.gains[0]?.connected).not.toContain(fake.destination);
+  });
+
+  it("fades when stopped rather than chopping, and stops idempotently", () => {
+    const tone = startCheckTone(asAudioContext(fake));
+    fake.currentTime = 12;
+
+    tone.stop();
+    tone.stop();
+
+    const osc = fake.oscillators[0];
+    expect(osc?.stoppedAt).toBeGreaterThan(12);
+    expect(osc?.stoppedAt).toBeLessThan(13);
+    expect(fake.gains[0]?.gain.ramps.at(-1)?.value).toBe(0);
   });
 });
