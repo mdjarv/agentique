@@ -848,6 +848,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/storage/usage", sth.HandleUsage)
 	mux.HandleFunc("DELETE /api/storage/worktrees", sth.HandleDeleteWorktree)
 	mux.HandleFunc("POST /api/storage/reclaim", sth.HandleReclaim)
+	mux.HandleFunc("POST /api/storage/backups/trim", sth.HandleTrimBackups)
+	mux.HandleFunc("DELETE /api/storage/scratchpads", sth.HandleDeleteForeignScratchpad)
 
 	// Subscription usage: one probe per machine, shared by every client
 	// (docs/usage.md). Deliberately NOT gated on [update] disabled — that

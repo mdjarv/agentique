@@ -409,7 +409,12 @@ func main() {
 	g.register(storage.TempArtifact{}, "TempArtifact")
 	g.register(storage.SessionStorage{}, "SessionStorage")
 	g.register(storage.ProjectStorage{}, "ProjectStorage")
+	// Leaf-first: StorageUsage embeds BackupSummary, and an unregistered
+	// pointer field emits as `unknown` rather than failing.
+	g.register(storage.BackupSummary{}, "BackupSummary")
 	g.register(storage.StorageUsage{}, "StorageUsage")
+	g.register(storage.TrimBackupsRequest{}, "TrimBackupsRequest")
+	g.register(storage.TrimBackupsResponse{}, "TrimBackupsResponse")
 	g.register(storage.ReclaimRequest{}, "ReclaimRequest")
 	g.register(storage.ReclaimedArtifact{}, "ReclaimedArtifact")
 	g.register(storage.ReclaimSkip{}, "ReclaimSkip")

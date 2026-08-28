@@ -5,6 +5,8 @@ import type {
   ReclaimRequest,
   ReclaimResponse,
   StorageUsage,
+  TrimBackupsRequest,
+  TrimBackupsResponse,
 } from "~/lib/generated-types";
 import { throwIfNotOk } from "~/lib/http";
 import { apiFetch, machineIdForProject } from "~/lib/machines/api";
@@ -142,6 +144,36 @@ export async function reclaimSessions(sessionIds: string[]): Promise<ReclaimResp
   });
   await throwIfNotOk(res, "Failed to reclaim sessions");
   return res.json();
+}
+
+/**
+ * Remove the oldest periodic database backups, keeping the newest `keep`.
+ *
+ * Pre-migration snapshots are a separate namespace and are never candidates,
+ * and the server clamps `keep` up to its own floor — this cannot empty the
+ * backup directory however small a number it is handed.
+ */
+export async function trimBackups(keep: number): Promise<TrimBackupsResponse> {
+  const res = await fetch(`${BASE}/storage/backups/trim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keep } satisfies TrimBackupsRequest),
+  });
+  await throwIfNotOk(res, "Failed to trim backups");
+  return res.json();
+}
+
+/**
+ * Remove one Claude scratchpad belonging to a checkout agentique does not
+ * manage. The server accepts only a direct child of the scratchpad root that
+ * carries no agentique worktree prefix — a scratchpad that belongs to a session
+ * is refused, because that one goes when the session is reclaimed.
+ */
+export async function deleteForeignScratchpad(path: string): Promise<void> {
+  const res = await fetch(`${BASE}/storage/scratchpads?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+  await throwIfNotOk(res, "Failed to remove scratchpad");
 }
 
 export interface DirectoryEntry {

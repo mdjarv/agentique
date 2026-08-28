@@ -100,6 +100,62 @@ describe("buildBreakdown", () => {
     expect(classes).toEqual([...classes].sort(rank));
   });
 
+  // A verb is offered only where the server can perform it AND it would do
+  // something. A Trim button on an already-minimal backup directory, or a
+  // Review on a machine with no foreign scratchpads, is a control that answers
+  // nothing when pressed.
+  it("offers Trim only when there are backups to trim", () => {
+    const trimmable = usage({
+      categories: [{ key: "backups", label: "Backups", bytes: 500 }],
+      backups: { periodicCount: 6, periodicBytes: 500, snapshotCount: 2, trimmable: 3 },
+    });
+    expect(row(trimmable, "backups")?.action).toBe("trim-backups");
+
+    const atMinimum = usage({
+      categories: [{ key: "backups", label: "Backups", bytes: 500 }],
+      backups: { periodicCount: 2, periodicBytes: 500, snapshotCount: 2, trimmable: 0 },
+    });
+    expect(row(atMinimum, "backups")?.action).toBeUndefined();
+
+    // An older peer sends no summary at all.
+    const legacy = usage({ categories: [{ key: "backups", label: "Backups", bytes: 500 }] });
+    expect(row(legacy, "backups")?.action).toBeUndefined();
+  });
+
+  it("names both backup namespaces, since Trim only touches one of them", () => {
+    const u = usage({
+      categories: [{ key: "backups", label: "Backups", bytes: 500 }],
+      backups: { periodicCount: 6, periodicBytes: 500, snapshotCount: 2, trimmable: 3 },
+    });
+    const detail = row(u, "backups")?.detail ?? "";
+    expect(detail).toContain("6 periodic");
+    expect(detail).toContain("2 snapshots");
+    expect(detail).toContain("never trimmed");
+  });
+
+  it("offers Review only when foreign scratchpads exist", () => {
+    const withForeign = usage({
+      tempCategories: [{ key: "foreign-scratchpads", label: "Other", bytes: 4200 }],
+      foreignScratchpads: 3,
+    });
+    const r = row(withForeign, "foreign-scratchpads");
+    expect(r?.action).toBe("clear-foreign");
+    expect(r?.detail).toContain("3 checkouts");
+
+    const none = usage({ tempCategories: [], foreignScratchpads: 0 });
+    expect(row(none, "foreign-scratchpads")).toBeUndefined();
+  });
+
+  // Foreign scratchpads are not `sweep`: no verb on this page clears them as a
+  // set, and colouring them green would promise exactly that.
+  it("classes foreign scratchpads as policy, never as something Reclaim frees", () => {
+    const u = usage({
+      tempCategories: [{ key: "foreign-scratchpads", label: "Other", bytes: 4200 }],
+      foreignScratchpads: 3,
+    });
+    expect(row(u, "foreign-scratchpads")?.cls).toBe("policy");
+  });
+
   // The verb is offered only where the server has something to act on.
   it("offers Reclaim only on the finished row, and only when there is one", () => {
     const withWork = buildBreakdown(usage()).rows.filter((r) => r.action === "reclaim");

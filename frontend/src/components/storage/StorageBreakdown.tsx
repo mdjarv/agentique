@@ -20,8 +20,8 @@
  * and temp files go when their session does — a "clean" control on either
  * would name an action the server cannot perform.
  */
-import { Loader2, RotateCcw } from "lucide-react";
-import type { Breakdown, BreakdownClass } from "~/lib/storage/breakdown";
+import { Loader2, RotateCcw, Scissors, Trash2 } from "lucide-react";
+import type { Breakdown, BreakdownAction, BreakdownClass } from "~/lib/storage/breakdown";
 import { cn, formatBytes } from "~/lib/utils";
 
 /** One ink per verdict. Grey reports, green offers, blue is somebody else's rule. */
@@ -37,16 +37,48 @@ const LEGEND: { cls: BreakdownClass; text: string }[] = [
   { cls: "policy", text: "Kept by a setting" },
 ];
 
+/**
+ * What each verb looks like and how loudly it asks.
+ *
+ * `reclaim` is reversible and wears the same green as the rows it clears.
+ * The other two are not: trimming drops backups you cannot get back, and
+ * clearing a foreign scratchpad removes a directory agentique did not create.
+ * Both are therefore muted until hover and turn destructive-red there — visible
+ * enough to find, quiet enough that they never read as the recommended action
+ * on a page whose safe verb is the green one.
+ */
+const ACTION_UI: Record<BreakdownAction, { label: string; icon: typeof RotateCcw; tone: string }> =
+  {
+    reclaim: {
+      label: "Reclaim",
+      icon: RotateCcw,
+      tone: "border-success/40 text-success hover:bg-success/10",
+    },
+    "trim-backups": {
+      label: "Trim",
+      icon: Scissors,
+      tone: "border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive hover:bg-destructive/10",
+    },
+    "clear-foreign": {
+      label: "Review",
+      icon: Trash2,
+      tone: "border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive hover:bg-destructive/10",
+    },
+  };
+
 export function StorageBreakdown({
   breakdown,
   busy,
-  onReclaim,
+  onAction,
+  actionTitle,
 }: {
   breakdown: Breakdown;
   busy: boolean;
-  onReclaim: () => void;
+  onAction: (action: BreakdownAction) => void;
+  /** What the verb would do to *this* machine, for the row's tooltip. */
+  actionTitle: (action: BreakdownAction) => string;
 }) {
-  const { rows, total, sweepBytes } = breakdown;
+  const { rows, total } = breakdown;
   if (rows.length === 0) return null;
 
   return (
@@ -91,21 +123,13 @@ export function StorageBreakdown({
                 {formatBytes(row.bytes)}
               </span>
 
-              {row.action === "reclaim" ? (
-                <button
-                  type="button"
-                  onClick={onReclaim}
-                  disabled={busy}
-                  className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-success/40 px-2 py-1 text-[11px] font-medium text-success transition-colors hover:bg-success/10 disabled:cursor-default disabled:opacity-50"
-                  title={`Free ${formatBytes(sweepBytes)} — the sessions and their branches stay`}
-                >
-                  {busy ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <RotateCcw className="size-3" />
-                  )}
-                  Reclaim
-                </button>
+              {row.action ? (
+                <RowAction
+                  action={row.action}
+                  busy={busy}
+                  onAction={onAction}
+                  title={actionTitle(row.action)}
+                />
               ) : (
                 // Holds the column so every bar ends at the same x, whether or
                 // not its row has a verb.
@@ -116,14 +140,49 @@ export function StorageBreakdown({
         })}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/50 pt-2.5 font-mono text-[10px] text-muted-foreground-faint">
-        {LEGEND.map((l) => (
-          <span key={l.cls} className="flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-[2px]", CLASS_BAR[l.cls])} />
-            {l.text}
-          </span>
-        ))}
-      </div>
+      <BreakdownLegend />
+    </div>
+  );
+}
+
+function RowAction({
+  action,
+  busy,
+  onAction,
+  title,
+}: {
+  action: BreakdownAction;
+  busy: boolean;
+  onAction: (action: BreakdownAction) => void;
+  title: string;
+}) {
+  const { label, icon: Icon, tone } = ACTION_UI[action];
+  return (
+    <button
+      type="button"
+      onClick={() => onAction(action)}
+      disabled={busy}
+      title={title}
+      className={cn(
+        "flex w-[5.4rem] shrink-0 cursor-pointer items-center justify-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-default disabled:opacity-50",
+        tone,
+      )}
+    >
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <Icon className="size-3" />}
+      {label}
+    </button>
+  );
+}
+
+function BreakdownLegend() {
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/50 pt-2.5 font-mono text-[10px] text-muted-foreground-faint">
+      {LEGEND.map((l) => (
+        <span key={l.cls} className="flex items-center gap-1.5">
+          <span className={cn("size-2 rounded-[2px]", CLASS_BAR[l.cls])} />
+          {l.text}
+        </span>
+      ))}
     </div>
   );
 }

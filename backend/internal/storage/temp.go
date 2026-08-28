@@ -23,6 +23,11 @@ import (
 const (
 	TempKindChrome     = "chrome-profile"
 	TempKindScratchpad = "scratchpad"
+	// TempKindForeignScratchpad is a Claude scratchpad under the same root that
+	// belongs to a checkout agentique does not manage — someone running the CLI
+	// directly in a repo rather than through a session. Reported, never reaped
+	// as part of a session: see the note below.
+	TempKindForeignScratchpad = "foreign-scratchpad"
 )
 
 // scratchpadPrefix is the mangled-path prefix every agentique worktree
@@ -31,7 +36,15 @@ const (
 // path-mangling scheme is spelled in exactly one place.
 //
 // Anything under the scratchpad root without this prefix belongs to some other
-// checkout on this machine and is none of our business.
+// checkout on this machine. It is still **reported**, as its own kind: the
+// exclusion is a rule about what agentique may reap on a session's behalf, and
+// a directory nobody can see is one nobody can decide about. On the machine
+// this was written for it hid 4.05 GB across 217 directories — more than the
+// page called reclaimable — while the volume bar read 94% full.
+//
+// Reporting it is not owning it. A foreign scratchpad is never attributed to a
+// session, never part of a reclaim, and never swept: the only way it goes is an
+// operator naming it, one directory at a time, through DeleteForeignScratchpad.
 func scratchpadPrefix() string {
 	base := filepath.Clean(paths.WorktreeDir())
 	dir := janitor.ScratchpadDir(base)
@@ -81,13 +94,22 @@ func discoverTempArtifacts(sessions []sessionRef) []TempArtifact {
 	scratchDirs, _ := janitor.DiscoverScratchpadDirs()
 	for _, raw := range scratchDirs {
 		dir := filepath.Clean(raw)
-		if prefix == "" || !strings.HasPrefix(filepath.Base(dir), prefix) {
-			continue // another checkout's scratchpad — not ours to report or reap
+		ours := prefix != "" && strings.HasPrefix(filepath.Base(dir), prefix)
+		kind := TempKindForeignScratchpad
+		// A foreign scratchpad has no owner by construction, and must not be
+		// given one: `owner` is keyed by the path a session *would* use, so a
+		// lookup can only hit for a directory we already matched by prefix.
+		// Reading it unconditionally would be correct today and a
+		// mis-attribution the moment the mangling scheme changes.
+		sessionID := ""
+		if ours {
+			kind = TempKindScratchpad
+			sessionID = owner[dir]
 		}
 		out = append(out, TempArtifact{
-			Kind:      TempKindScratchpad,
+			Kind:      kind,
 			Path:      dir,
-			SessionID: owner[dir],
+			SessionID: sessionID,
 			Bytes:     janitor.DirSize(dir),
 		})
 	}

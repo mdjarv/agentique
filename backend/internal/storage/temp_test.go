@@ -71,9 +71,12 @@ func TestDiscoverTempArtifactsAttributesToSessions(t *testing.T) {
 }
 
 // The scratchpad root is shared with every other checkout on the machine. A
-// scratchpad for a repo agentique does not manage must not be reported — the
-// page would invite the user to reclaim someone else's working directory.
-func TestDiscoverTempArtifactsIgnoresForeignScratchpads(t *testing.T) {
+// scratchpad for a repo agentique does not manage is reported as its own kind
+// and attributed to nobody: the page under-stated the disk by 4 GB while it
+// stayed silent, and a directory nobody can see is one nobody can decide about.
+//
+// Its kind is what keeps it out of every sweep — reporting is not owning.
+func TestDiscoverTempArtifactsReportsForeignScratchpadsSeparately(t *testing.T) {
 	isolate(t)
 
 	root := janitor.ScratchpadRoot()
@@ -83,13 +86,53 @@ func TestDiscoverTempArtifactsIgnoresForeignScratchpads(t *testing.T) {
 	mkdirWith(t, janitor.ScratchpadDir(wt), 200)
 
 	got := discoverTempArtifacts([]sessionRef{{ID: "abc", WorktreePath: wt}})
-	for _, a := range got {
+	if len(got) != 2 {
+		t.Fatalf("expected our scratchpad and the foreign one, got %d: %+v", len(got), got)
+	}
+
+	var foreign *TempArtifact
+	for i, a := range got {
 		if strings.Contains(a.Path, "unrelated") {
-			t.Fatalf("reported a foreign scratchpad: %s", a.Path)
+			foreign = &got[i]
 		}
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected only our scratchpad, got %d: %+v", len(got), got)
+	if foreign == nil {
+		t.Fatal("the foreign scratchpad was not reported")
+	}
+	if foreign.Kind != TempKindForeignScratchpad {
+		t.Errorf("kind = %q, want %q — the kind is what keeps it out of a reclaim",
+			foreign.Kind, TempKindForeignScratchpad)
+	}
+	if foreign.SessionID != "" {
+		t.Errorf("SessionID = %q, want empty: a foreign scratchpad belongs to no session",
+			foreign.SessionID)
+	}
+	if foreign.Bytes != 500 {
+		t.Errorf("Bytes = %d, want 500", foreign.Bytes)
+	}
+}
+
+// Our own scratchpad keeps its kind even when the foreign ones are reported
+// beside it — the two must never collapse into one category, because only one
+// of them goes when a session is reclaimed.
+func TestDiscoverTempArtifactsKeepsOwnedScratchpadsDistinct(t *testing.T) {
+	isolate(t)
+
+	root := janitor.ScratchpadRoot()
+	mkdirWith(t, filepath.Join(root, "-home-someone-git-unrelated"), 500)
+
+	wt := filepath.Join(paths.WorktreeDir(), "proj", "session-abc")
+	mkdirWith(t, janitor.ScratchpadDir(wt), 200)
+
+	byKind := map[string]TempArtifact{}
+	for _, a := range discoverTempArtifacts([]sessionRef{{ID: "abc", WorktreePath: wt}}) {
+		byKind[a.Kind] = a
+	}
+	if ours := byKind[TempKindScratchpad]; ours.SessionID != "abc" || ours.Bytes != 200 {
+		t.Errorf("owned scratchpad = %+v, want session abc at 200 bytes", ours)
+	}
+	if _, ok := byKind[TempKindForeignScratchpad]; !ok {
+		t.Error("the foreign scratchpad lost its own kind")
 	}
 }
 

@@ -489,6 +489,15 @@ export interface ProjectStorage {
   sessions: SessionStorage[];
 }
 
+export interface BackupSummary {
+  periodicCount?: number;
+  periodicBytes?: number;
+  snapshotCount?: number;
+  snapshotBytes?: number;
+  oldestPeriodic?: string;
+  trimmable?: number;
+}
+
 export interface StorageUsage {
   computedAt: string;
   disk: DiskStats;
@@ -499,8 +508,20 @@ export interface StorageUsage {
   tempBytes?: number;
   tempCategories?: CategoryUsage[];
   tempArtifacts?: TempArtifact[];
+  foreignScratchpads?: number;
+  backups?: BackupSummary;
   reclaimableBytes?: number;
   reclaimableCount?: number;
+}
+
+export interface TrimBackupsRequest {
+  keep: number;
+}
+
+export interface TrimBackupsResponse {
+  removed: string[];
+  freedBytes: number;
+  kept: number;
 }
 
 export interface ReclaimRequest {

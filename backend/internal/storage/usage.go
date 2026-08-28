@@ -126,7 +126,8 @@ func ComputeUsage(ctx context.Context, q *store.Queries, opt UsageOptions) (*Sto
 	// Artifacts outside the data dir, and how many bytes each session owns there.
 	tempArtifacts := discoverTempArtifacts(refs)
 	tempBySession := make(map[string]int64, len(tempArtifacts))
-	var tempBytes, chromeBytes, scratchBytes int64
+	var tempBytes, chromeBytes, scratchBytes, foreignBytes int64
+	var foreignCount int
 	for _, a := range tempArtifacts {
 		tempBytes += a.Bytes
 		if a.SessionID != "" {
@@ -137,6 +138,11 @@ func ComputeUsage(ctx context.Context, q *store.Queries, opt UsageOptions) (*Sto
 			chromeBytes += a.Bytes
 		case TempKindScratchpad:
 			scratchBytes += a.Bytes
+		case TempKindForeignScratchpad:
+			// Never in tempBySession: a foreign scratchpad belongs to no
+			// session, so it can never be part of a reclaim's freed figure.
+			foreignBytes += a.Bytes
+			foreignCount++
 		}
 	}
 
@@ -276,20 +282,23 @@ func ComputeUsage(ctx context.Context, q *store.Queries, opt UsageOptions) (*Sto
 	tempCategories := []CategoryUsage{
 		{Key: "chrome-profiles", Label: "Browser profiles", Bytes: chromeBytes},
 		{Key: "scratchpads", Label: "Agent scratchpads", Bytes: scratchBytes},
+		{Key: "foreign-scratchpads", Label: "Other Claude scratchpads", Bytes: foreignBytes},
 	}
 
 	return &StorageUsage{
-		ComputedAt:       time.Now().UTC().Format(time.RFC3339),
-		Disk:             disk,
-		DataDirBytes:     dataDirBytes,
-		Categories:       categories,
-		Projects:         projectList,
-		Orphans:          orphans,
-		TempBytes:        tempBytes,
-		TempCategories:   tempCategories,
-		TempArtifacts:    tempArtifacts,
-		ReclaimableBytes: reclaimableBytes,
-		ReclaimableCount: reclaimableCount,
+		ComputedAt:         time.Now().UTC().Format(time.RFC3339),
+		Disk:               disk,
+		DataDirBytes:       dataDirBytes,
+		Categories:         categories,
+		Projects:           projectList,
+		Orphans:            orphans,
+		TempBytes:          tempBytes,
+		TempCategories:     tempCategories,
+		TempArtifacts:      tempArtifacts,
+		ForeignScratchpads: foreignCount,
+		Backups:            summarizeBackups(BackupDir()),
+		ReclaimableBytes:   reclaimableBytes,
+		ReclaimableCount:   reclaimableCount,
 	}, nil
 }
 

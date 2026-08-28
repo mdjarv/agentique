@@ -143,13 +143,69 @@ Each row also carries a one-line detail saying what it *is*, because a category
 name is a word for a directory and not an explanation of why the number is that
 size or what would change it.
 
-**A row gets a button only where a verb exists.** Today that is exactly one:
-Reclaim, on the finished-worktree row, where the bytes are. Backups are held by
-a retention setting and temp files go when their session does, so a control on
-either would name an action the server cannot perform. Orphans get no button on
-their row either — the orphans card below lists them individually and owns
-"Delete all", and an action taken on a listed thing belongs on the surface that
-lists it.
+**A row gets a button only where a verb exists**, and only while it would do
+something — a Trim on an already-minimal backup directory is a control that
+answers nothing when pressed. Three rows carry one:
+
+- **Reclaim**, on the finished-worktree row, where the bytes are.
+- **Trim**, on backups (see below).
+- **Review**, on the foreign scratchpads, which opens the list rather than
+  acting: those are removed one directory at a time.
+
+Browser profiles and scratchpads get none: they go when their session is
+reclaimed, and the Reclaim button beside them already says so. Orphans get none
+either — the orphans card below lists them individually and owns "Delete all",
+and an action taken on a listed thing belongs on the surface that lists it.
+
+Colour separates the reversible verb from the rest. Reclaim wears the same
+green as the rows it clears; Trim and Review are muted until hover and turn
+destructive there, because neither can be undone and neither should ever read
+as the recommended action on a page whose safe verb is the green one.
+
+### Trimming backups
+
+The backup directory has **two namespaces and only one of them is churn**.
+Periodic backups (`agentique-<stamp>.db`) are written on a timer and pruned on
+agentkit's tiered schedule. Pre-migration snapshots (`agentique-pre-<stamp>.db`)
+are taken deliberately before something risky, and agentkit's periodic pruning
+never touches them. Neither does Trim: a snapshot somebody took because they
+were about to migrate a database is not disk to be reclaimed. `keep` therefore
+counts periodic backups only, or a directory full of snapshots would let a trim
+delete every periodic backup while believing it had kept some.
+
+`keep` is clamped **up** to `minBackupsKept` server-side. The request comes from
+a client that could ask for zero, and one surviving backup is one corrupt file
+away from none. `planBackupTrim` is pure, so what gets removed is testable
+without touching a disk, and `classifyBackup` refuses to name anything outside
+the two patterns — a trim never removes a file it cannot classify.
+
+Nothing here fights retention. Retention decides what is kept *over time*; Trim
+is the operator asking for that history back as disk now, and it can only ever
+keep fewer files than retention would.
+
+### Scratchpads agentique does not own
+
+The Claude scratchpad root is shared with every checkout on the machine, and
+`discoverTempArtifacts` used to skip anything without the agentique worktree
+prefix as none of its business. That silence hid 4 GB across 217 directories on
+the machine this was written for — more than the page called reclaimable, while
+the volume bar read 94% full.
+
+They are now **reported** as `TempKindForeignScratchpad`: their own kind, their
+own category, attributed to no session. The kind is what keeps them out of
+every sweep — reporting is not owning, and a foreign scratchpad is never part of
+a reclaim.
+
+Removing one is the only verb on this page that touches a directory agentique
+did not create, so it is offered **per directory and never as a sweep**, from a
+dialog that names each path and its size.
+`safeForeignScratchpadPath` is correspondingly narrow: the target must be a
+*direct child* of the scratchpad root (`filepath.Rel` for containment, then a
+separator check, so no nested path is reachable at all), and it must **not**
+carry the worktree prefix — one that does belongs to a session, goes when that
+session is reclaimed, and would break a running CLI if removed underneath it.
+That refusal names its reason, because it is the one a user will hit by
+accident.
 
 **The session rows.** Each carries a checkbox;
 a sticky bar acts on the selection with both verbs. A verb that does not apply to

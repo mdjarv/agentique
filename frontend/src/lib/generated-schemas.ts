@@ -491,6 +491,15 @@ export const ProjectStorageSchema = z.object({
   sessions: z.array(SessionStorageSchema),
 });
 
+export const BackupSummarySchema = z.object({
+  periodicCount: z.number().optional(),
+  periodicBytes: z.number().optional(),
+  snapshotCount: z.number().optional(),
+  snapshotBytes: z.number().optional(),
+  oldestPeriodic: z.string().optional(),
+  trimmable: z.number().optional(),
+});
+
 export const StorageUsageSchema = z.object({
   computedAt: z.string(),
   disk: DiskStatsSchema,
@@ -501,8 +510,20 @@ export const StorageUsageSchema = z.object({
   tempBytes: z.number().optional(),
   tempCategories: z.array(CategoryUsageSchema).optional(),
   tempArtifacts: z.array(TempArtifactSchema).optional(),
+  foreignScratchpads: z.number().optional(),
+  backups: BackupSummarySchema.optional(),
   reclaimableBytes: z.number().optional(),
   reclaimableCount: z.number().optional(),
+});
+
+export const TrimBackupsRequestSchema = z.object({
+  keep: z.number(),
+});
+
+export const TrimBackupsResponseSchema = z.object({
+  removed: z.array(z.string()),
+  freedBytes: z.number(),
+  kept: z.number(),
 });
 
 export const ReclaimRequestSchema = z.object({

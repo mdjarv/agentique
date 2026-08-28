@@ -31,8 +31,18 @@ import { canReclaim } from "~/lib/storage/selection";
 /** What a reader can do about a row. Closed: a new row must pick a verdict. */
 export type BreakdownClass = "live" | "sweep" | "policy";
 
-/** The one verb this page offers against a row, when it has one. */
-export type BreakdownAction = "reclaim";
+/**
+ * The verbs this page offers against a row. Each is offered only where the
+ * server can actually perform it, and only when it would do something:
+ *
+ * - `reclaim` frees finished sessions' disk and keeps their branches.
+ * - `trim-backups` drops the oldest periodic backups, never the pre-migration
+ *   snapshots, and never below the server's own floor.
+ * - `clear-foreign` removes Claude scratchpads for checkouts agentique does not
+ *   manage. The only verb here that touches something agentique did not create,
+ *   which is why it is offered per directory rather than as a sweep.
+ */
+export type BreakdownAction = "reclaim" | "trim-backups" | "clear-foreign";
 
 export interface BreakdownRow {
   key: string;
@@ -66,6 +76,26 @@ function byKey(cats: { key: string; bytes: number }[]): Record<string, number> {
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The backups detail names both namespaces, because the Trim button only
+ * touches one of them and the row is where that is established. A reader who
+ * learns it in the confirmation dialog learns it too late to have chosen.
+ */
+function backupDetail(b: StorageUsage["backups"]): string {
+  if (!b) return "kept by retention, never swept from here";
+  const periodic = plural(b.periodicCount ?? 0, "periodic", "periodic");
+  if (!b.snapshotCount) return `${periodic} — kept by retention`;
+  // "never trimmed" is the load-bearing half and has to survive the width, so
+  // "pre-migration" is dropped: the dialog spells it out where there is room.
+  return `${periodic} · ${b.snapshotCount} ${b.snapshotCount === 1 ? "snapshot" : "snapshots"}, never trimmed`;
+}
+
+/** Says whose they are, since that is the whole reason they need a decision. */
+function foreignDetail(count: number): string {
+  if (count === 0) return "none on this machine";
+  return `${plural(count, "checkout", "checkouts")} agentique does not manage`;
+}
 
 /**
  * Build the rows.
@@ -143,11 +173,23 @@ export function buildBreakdown(usage: StorageUsage): Breakdown {
       cls: "sweep",
     },
     {
+      key: "foreign-scratchpads",
+      label: "Other Claude scratchpads",
+      // Named for what it is rather than softened: these are not agentique's,
+      // which is exactly why they are worth pointing at. The page under-stated
+      // the disk by 4 GB while it said nothing about them.
+      detail: foreignDetail(usage.foreignScratchpads ?? 0),
+      bytes: temp["foreign-scratchpads"] ?? 0,
+      cls: "policy",
+      action: (temp["foreign-scratchpads"] ?? 0) > 0 ? "clear-foreign" : undefined,
+    },
+    {
       key: "backups",
       label: "Database backups",
-      detail: "kept by retention, never swept from here",
+      detail: backupDetail(usage.backups),
       bytes: cat.backups ?? 0,
       cls: "policy",
+      action: (usage.backups?.trimmable ?? 0) > 0 ? "trim-backups" : undefined,
     },
     {
       key: "session-files",

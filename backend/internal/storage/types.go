@@ -107,10 +107,47 @@ type StorageUsage struct {
 	TempBytes      int64           `json:"tempBytes,omitempty"`
 	TempCategories []CategoryUsage `json:"tempCategories,omitempty"`
 	TempArtifacts  []TempArtifact  `json:"tempArtifacts,omitempty"`
+	// ForeignScratchpads counts the TempKindForeignScratchpad directories —
+	// Claude scratchpads under the same root belonging to checkouts agentique
+	// does not manage. Reported so the page can stop under-stating the disk;
+	// never attributed to a session and never part of a reclaim.
+	ForeignScratchpads int `json:"foreignScratchpads,omitempty"`
+	// Backups describes the backup directory's two namespaces. Nil when there
+	// are none, or when backups are disabled.
+	Backups *BackupSummary `json:"backups,omitempty"`
 	// ReclaimableBytes is what reclaiming every reclaimable session would free.
 	ReclaimableBytes int64 `json:"reclaimableBytes,omitempty"`
 	// ReclaimableCount is how many sessions that is.
 	ReclaimableCount int `json:"reclaimableCount,omitempty"`
+}
+
+// BackupSummary splits the backup directory the way a trim has to think about
+// it: periodic backups are churn a trim may remove, pre-migration snapshots are
+// deliberate safety copies it never touches.
+type BackupSummary struct {
+	PeriodicCount int   `json:"periodicCount,omitempty"`
+	PeriodicBytes int64 `json:"periodicBytes,omitempty"`
+	SnapshotCount int   `json:"snapshotCount,omitempty"`
+	SnapshotBytes int64 `json:"snapshotBytes,omitempty"`
+	// OldestPeriodic is the "YYYYMMDD-HHMMSS" stamp of the oldest periodic
+	// backup — how far back point-in-time recovery currently reaches.
+	OldestPeriodic string `json:"oldestPeriodic,omitempty"`
+	// Trimmable is how many periodic backups the default trim would remove, so
+	// the page can offer the verb only when it would do something.
+	Trimmable int `json:"trimmable,omitempty"`
+}
+
+// TrimBackupsRequest is the body of POST /api/storage/backups/trim. Keep is
+// clamped up server-side; a client cannot ask for an empty backup directory.
+type TrimBackupsRequest struct {
+	Keep int `json:"keep"`
+}
+
+// TrimBackupsResponse reports what was actually removed.
+type TrimBackupsResponse struct {
+	Removed    []string `json:"removed"`
+	FreedBytes int64    `json:"freedBytes"`
+	Kept       int      `json:"kept"`
 }
 
 // ReclaimRequest is the body of POST /api/storage/reclaim. The server re-plans

@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
+import { ForeignScratchpadsDialog } from "~/components/storage/ForeignScratchpadsDialog";
 import { SelectionBar } from "~/components/storage/SelectionBar";
 import { StorageBreakdown } from "~/components/storage/StorageBreakdown";
 import {
@@ -29,8 +30,13 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { deleteOrphanedWorktree, reclaimSessions } from "~/lib/api";
-import type { ProjectStorage, SessionStorage } from "~/lib/generated-types";
+import {
+  deleteForeignScratchpad,
+  deleteOrphanedWorktree,
+  reclaimSessions,
+  trimBackups,
+} from "~/lib/api";
+import type { BackupSummary, ProjectStorage, SessionStorage } from "~/lib/generated-types";
 import { deleteSession, deleteSessionsBulk } from "~/lib/session/actions";
 import {
   deriveRestToken,
@@ -39,7 +45,7 @@ import {
   PARKED_TITLE,
   REST_GLYPH,
 } from "~/lib/session/rest-state";
-import { buildBreakdown } from "~/lib/storage/breakdown";
+import { type BreakdownAction, buildBreakdown } from "~/lib/storage/breakdown";
 import { canDelete, canReclaim, freedBytes, reconcile, summarize } from "~/lib/storage/selection";
 import { cn, formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useStorageStore } from "~/stores/storage-store";
@@ -64,11 +70,50 @@ type DeleteTarget =
   | { kind: "orphan-all"; count: number; bytes: number }
   | { kind: "session"; id: string; label: string; bytes: number }
   | { kind: "reclaim"; sessions: SessionStorage[] }
+  // Trimming backups is irreversible and acts on the one artifact that exists
+  // to undo a disaster, so the dialog names what survives, not just what goes.
+  | { kind: "trim-backups"; summary: BackupSummary; bytes: number }
+  // One foreign scratchpad, named by its full path. Never a sweep: agentique
+  // did not create these, so each one is its own decision.
+  | { kind: "clear-foreign"; path: string; bytes: number }
   // Bulk delete. The set is named in the dialog rather than counted, so a count
   // is never the only thing standing between a click and an irreversible action.
   | { kind: "delete-bulk"; sessions: SessionStorage[] };
 
 const sumBytes = (sessions: SessionStorage[]) => sessions.reduce((a, s) => a + freedBytes(s), 0);
+
+/**
+ * How many periodic backups the Trim button asks to keep. Must match the
+ * server's `DefaultBackupsKept`, which is also the authority: it clamps the
+ * request up to its own floor, so a drift here can only ever be conservative.
+ */
+const BACKUPS_KEPT = 3;
+
+/** `storage.TempKindForeignScratchpad` — the kind the page lists separately. */
+const FOREIGN_SCRATCHPAD_KIND = "foreign-scratchpad";
+
+/**
+ * What a trim would free, estimated from the average periodic backup.
+ *
+ * The server does not send per-file sizes and does not need to: successive
+ * backups of one database are within a few percent of each other, and the
+ * dialog says "about". Reporting the exact figure would mean a second endpoint
+ * for a number that changes on the next backup tick anyway; what actually
+ * happened is reported from the response.
+ */
+/** "20260828-032820" as a date a person reads. Left as-is if it is not one. */
+function formatStamp(stamp: string): string {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(stamp);
+  if (!m) return stamp;
+  return `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+}
+
+function trimmedBytes(b: BackupSummary): number {
+  const count = b.periodicCount ?? 0;
+  const trimmable = b.trimmable ?? 0;
+  if (count === 0 || trimmable === 0) return 0;
+  return Math.round(((b.periodicBytes ?? 0) / count) * trimmable);
+}
 
 export function StoragePage() {
   const ws = useWebSocket();
@@ -81,6 +126,7 @@ export function StoragePage() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [busy, setBusy] = useState(false);
+  const [foreignOpen, setForeignOpen] = useState(false);
 
   useEffect(() => {
     fetchUsage(false);
@@ -107,6 +153,42 @@ export function StoragePage() {
   );
   const summary = useMemo(() => summarize(selectedSessions), [selectedSessions]);
   const breakdown = useMemo(() => (usage ? buildBreakdown(usage) : null), [usage]);
+  const foreignScratchpads = useMemo(
+    () => (usage?.tempArtifacts ?? []).filter((a) => a.kind === FOREIGN_SCRATCHPAD_KIND),
+    [usage],
+  );
+
+  // Each verb goes to its own surface: two open a confirmation naming what they
+  // would do, and the third opens the list, because clearing a directory
+  // agentique did not create is a decision per directory rather than a sweep.
+  const runAction = (action: BreakdownAction) => {
+    if (action === "reclaim") {
+      setDeleteTarget({ kind: "reclaim", sessions: allSessions.filter(canReclaim) });
+      return;
+    }
+    if (action === "trim-backups") {
+      if (!usage?.backups) return;
+      setDeleteTarget({
+        kind: "trim-backups",
+        summary: usage.backups,
+        bytes: trimmedBytes(usage.backups),
+      });
+      return;
+    }
+    setForeignOpen(true);
+  };
+
+  const actionTitle = (action: BreakdownAction): string => {
+    if (action === "reclaim") {
+      const bytes = breakdown ? formatBytes(breakdown.sweepBytes) : "";
+      return `Free ${bytes} — the sessions and their branches stay`;
+    }
+    if (action === "trim-backups") {
+      const n = usage?.backups?.trimmable ?? 0;
+      return `Remove the ${n} oldest periodic ${n === 1 ? "backup" : "backups"}, keeping the newest ${BACKUPS_KEPT}`;
+    }
+    return "List the scratchpads agentique does not manage";
+  };
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
@@ -167,6 +249,20 @@ export function StoragePage() {
         toast.success(`Removed ${removed} of ${orphans.length} orphaned worktrees`);
       } else if (deleteTarget.kind === "reclaim") {
         await runReclaim(deleteTarget.sessions);
+      } else if (deleteTarget.kind === "trim-backups") {
+        // Report what the server actually removed: it clamps `keep` up to its
+        // own floor, so the answer can legitimately be fewer than we asked for.
+        const res = await trimBackups(BACKUPS_KEPT);
+        if (res.removed.length === 0) {
+          toast.warning("Nothing trimmed — the backups are already at the minimum");
+        } else {
+          toast.success(
+            `Removed ${res.removed.length} backup${res.removed.length === 1 ? "" : "s"}, freeing ${formatBytes(res.freedBytes)}`,
+          );
+        }
+      } else if (deleteTarget.kind === "clear-foreign") {
+        await deleteForeignScratchpad(deleteTarget.path);
+        toast.success(`Removed ${formatBytes(deleteTarget.bytes)} of scratch files`);
       } else if (deleteTarget.kind === "delete-bulk") {
         const ids = deleteTarget.sessions.map((s) => s.sessionId);
         const { results } = await deleteSessionsBulk(ws, ids);
@@ -294,9 +390,8 @@ export function StoragePage() {
           <StorageBreakdown
             breakdown={breakdown}
             busy={busy}
-            onReclaim={() =>
-              setDeleteTarget({ kind: "reclaim", sessions: allSessions.filter(canReclaim) })
-            }
+            onAction={runAction}
+            actionTitle={actionTitle}
           />
         )}
 
@@ -392,6 +487,24 @@ export function StoragePage() {
         />
       </div>
 
+      {/* Its own surface, not a confirmation: these are removed one directory
+          at a time, so the list IS the decision. */}
+      <ForeignScratchpadsDialog
+        open={foreignOpen}
+        onOpenChange={setForeignOpen}
+        artifacts={foreignScratchpads}
+        onRemove={async (path) => {
+          const bytes = foreignScratchpads.find((a) => a.path === path)?.bytes ?? 0;
+          try {
+            await deleteForeignScratchpad(path);
+            toast.success(`Removed ${formatBytes(bytes)} of scratch files`);
+            await fetchUsage(true);
+          } catch (err) {
+            toast.error(getErrorMessage(err, "Failed to remove scratchpad"));
+          }
+        }}
+      />
+
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && !busy && setDeleteTarget(null)}
@@ -429,21 +542,15 @@ export function StoragePage() {
               }}
               disabled={busy}
               // AlertDialogAction is destructive by construction, which is right
-              // for three of the four targets. Reclaim is reversible and must
-              // not wear the colour that means "this cannot be undone".
+              // for every target but one. Reclaim is reversible and must not
+              // wear the colour that means "this cannot be undone".
               className={cn(
                 deleteTarget?.kind === "reclaim"
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : "bg-destructive text-destructive-foreground hover:bg-destructive/90",
               )}
             >
-              {busy ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : deleteTarget?.kind === "reclaim" ? (
-                "Reclaim"
-              ) : (
-                "Delete"
-              )}
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : confirmVerb(deleteTarget)}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -452,8 +559,31 @@ export function StoragePage() {
   );
 }
 
+/**
+ * The confirm button names the verb the operator pressed, never a generic
+ * "Delete". A dialog opened from Trim that answers with "Delete" reads as a
+ * different, larger action than the one on the row — the moment to be precise
+ * about scope is the one where it is being agreed to.
+ */
+function confirmVerb(t: DeleteTarget | null): string {
+  switch (t?.kind) {
+    case "reclaim":
+      return "Reclaim";
+    case "trim-backups":
+      return "Trim";
+    case "clear-foreign":
+      return "Remove";
+    default:
+      return "Delete";
+  }
+}
+
 function dialogTitle(t: DeleteTarget | null): string {
   switch (t?.kind) {
+    case "trim-backups":
+      return `Remove the ${t.summary.trimmable} oldest backups?`;
+    case "clear-foreign":
+      return "Remove this scratchpad?";
     case "orphan-all":
       return `Delete ${t.count} orphaned worktrees?`;
     case "reclaim":
@@ -471,6 +601,20 @@ function dialogTitle(t: DeleteTarget | null): string {
 
 function dialogBody(t: DeleteTarget | null): string {
   switch (t?.kind) {
+    // Names what survives, not only what goes: this is the one artifact on the
+    // page whose job is to undo a disaster, so the reassurance is the point.
+    case "trim-backups": {
+      const kept = `Keeps the ${BACKUPS_KEPT} most recent`;
+      const snapshots = t.summary.snapshotCount
+        ? ` and all ${t.summary.snapshotCount} pre-migration ${t.summary.snapshotCount === 1 ? "snapshot" : "snapshots"}`
+        : "";
+      const back = t.summary.oldestPeriodic
+        ? ` Point-in-time recovery back to ${formatStamp(t.summary.oldestPeriodic)} is given up.`
+        : "";
+      return `${kept}${snapshots}, removing ${t.summary.trimmable} older ${t.summary.trimmable === 1 ? "backup" : "backups"} and freeing about ${formatBytes(t.bytes)}.${back} This cannot be undone.`;
+    }
+    case "clear-foreign":
+      return `Permanently removes ${t.path}, freeing ~${formatBytes(t.bytes)}. Agentique did not create this directory and does not know what is in it. If a Claude session outside agentique is using it right now, that session breaks. This cannot be undone.`;
     case "session":
       return `This stops the session "${t.label}" and removes its worktree and branch. Frees ~${formatBytes(t.bytes)}. This cannot be undone.`;
     case "orphan-all":

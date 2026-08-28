@@ -499,6 +499,34 @@ it *would* delete must not migrate the live database to do it.
 so a stale client narrows the set and never widens it. Reclamation never runs on
 a timer; the startup sweep stays orphans-only.
 
+**The breakdown is grouped by what you can do about a row, not by where it
+lives** (`lib/storage/breakdown.ts`): `live`, `sweep`, `policy` decide the
+colour and the order. Worktrees split three ways — live, finished, orphaned —
+and the split reconciles exactly to the backend's category total rather than
+being estimated. `reclaimableBytes` on the wire is worktree **plus** temp, so
+the finished row sums `session.bytes` itself; reading the wire figure there
+double-counts the temp rows below it.
+
+A row carries a verb only where the server can perform it *and* it would do
+something. There are three, and two of them are irreversible, so only Reclaim
+wears the green:
+
+**Trimming backups** touches the periodic namespace only. Pre-migration
+snapshots (`agentique-pre-*`) are deliberate safety copies that agentkit's own
+retention exempts, and `keep` counts periodic files alone — otherwise a
+directory full of snapshots would satisfy `keep` while every periodic backup was
+deleted. `keep` is clamped **up** to `minBackupsKept` server-side, because the
+number comes from a client that could ask for zero.
+
+**Scratchpads agentique does not own** are reported (`TempKindForeignScratchpad`),
+never swept. The kind is the guard: they are attributed to no session, so no
+reclaim can reach them. Removal is per directory, from a list, because it is the
+only verb here that touches something agentique did not create — and
+`safeForeignScratchpadPath` accepts only a *direct child* of the scratchpad root
+that does **not** carry the worktree prefix. One that does belongs to a session,
+goes when that session is reclaimed, and would break a running CLI if removed
+underneath it.
+
 ### Channels and teams — `docs/channels.md`
 
 The `messages` table is the source of truth for channel timelines. Informational

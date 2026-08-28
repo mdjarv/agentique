@@ -187,6 +187,107 @@ func (h *Handler) HandleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 	httperror.JSON(w, http.StatusOK, map[string]string{"removed": target})
 }
 
+// HandleTrimBackups removes the oldest periodic database backups, keeping the
+// requested number of the newest. Pre-migration snapshots are never candidates
+// and `keep` is clamped up server-side, so no request can empty the directory.
+func (h *Handler) HandleTrimBackups(w http.ResponseWriter, r *http.Request) {
+	req := TrimBackupsRequest{Keep: DefaultBackupsKept}
+	// An empty body is a request for the default rather than an error: the page
+	// sends one number and the CLI may send none.
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxTrimRequest)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		httperror.RespondError(w, httperror.BadRequest("invalid request body"))
+		return
+	}
+
+	dir := BackupDir()
+	files, err := listBackups(dir)
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("read backups", err))
+		return
+	}
+	doomed := planBackupTrim(files, req.Keep)
+
+	out := TrimBackupsResponse{Removed: make([]string, 0, len(doomed)), Kept: len(files) - len(doomed)}
+	var failed error
+	for _, f := range doomed {
+		// Re-derive the path from the directory and the classified name rather
+		// than trusting anything shaped by the request: the only names here came
+		// from ReadDir on our own directory.
+		if err := os.Remove(filepath.Join(dir, f.Name)); err != nil {
+			failed = errors.Join(failed, err)
+			continue
+		}
+		out.Removed = append(out.Removed, f.Name)
+		out.FreedBytes += f.Bytes
+	}
+	if failed != nil && len(out.Removed) == 0 {
+		httperror.RespondError(w, httperror.Internal("remove backups", failed))
+		return
+	}
+	h.invalidate()
+	httperror.JSON(w, http.StatusOK, out)
+}
+
+// maxTrimRequest bounds the trim body. It carries one integer.
+const maxTrimRequest = 1 << 10
+
+// HandleDeleteForeignScratchpad removes one Claude scratchpad directory that
+// belongs to a checkout agentique does not manage.
+//
+// This is the only verb here that removes a directory agentique did not create,
+// so the guard is correspondingly narrow: the target must be a *direct child*
+// of the scratchpad root, and it must NOT carry the agentique worktree prefix.
+// A scratchpad that does belong to a session is refused by name — it goes when
+// that session is reclaimed, and removing it out from under a live session would
+// break a running CLI.
+func (h *Handler) HandleDeleteForeignScratchpad(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("path")
+	if raw == "" {
+		httperror.RespondError(w, httperror.BadRequest("path is required"))
+		return
+	}
+	target, err := safeForeignScratchpadPath(raw)
+	if err != nil {
+		httperror.RespondError(w, err)
+		return
+	}
+	if err := os.RemoveAll(target); err != nil {
+		httperror.RespondError(w, httperror.Internal("remove scratchpad", err))
+		return
+	}
+	h.invalidate()
+	httperror.JSON(w, http.StatusOK, map[string]string{"removed": target})
+}
+
+// safeForeignScratchpadPath validates a scratchpad path for what it is: one
+// directory immediately under the Claude scratchpad root, not owned by any
+// agentique worktree.
+//
+// The containment check is `filepath.Rel` against the cleaned root, and the
+// single-segment check is what stops a nested path from being reached at all —
+// so neither traversal nor a deeper join can name anything but a direct child.
+func safeForeignScratchpadPath(raw string) (string, error) {
+	root := filepath.Clean(janitor.ScratchpadRoot())
+	if root == "" || root == "." || root == string(os.PathSeparator) {
+		return "", httperror.Forbidden("no scratchpad root on this host")
+	}
+	target := filepath.Clean(raw)
+	if !filepath.IsAbs(target) {
+		return "", httperror.BadRequest("path must be absolute")
+	}
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", httperror.Forbidden("path is outside the scratchpad directory")
+	}
+	if strings.Contains(rel, string(os.PathSeparator)) {
+		return "", httperror.Forbidden("only a scratchpad directory itself can be removed")
+	}
+	if prefix := scratchpadPrefix(); prefix != "" && strings.HasPrefix(rel, prefix) {
+		return "", httperror.Forbidden("that scratchpad belongs to a session — reclaim the session instead")
+	}
+	return target, nil
+}
+
 // safeWorktreePath returns the cleaned absolute path only if it is strictly
 // inside the worktrees root and at least two path segments below it.
 func safeWorktreePath(raw string) (string, error) {
