@@ -94,6 +94,20 @@ interface UIState {
   dockMaximized: boolean;
   /** Sync dock: expansion is a preference, not a gesture — it is remembered. */
   syncDockExpanded: boolean;
+  /**
+   * Hands-free: draw a live call as the driving surface rather than the strip.
+   *
+   * Remembered rather than per call, because it describes the journey and not
+   * the call — someone driving places several, and asking them to re-arm it at
+   * each one is asking them to do it at the wheel. It is chosen, never inferred:
+   * the audio route can suggest a car and the app may not decide it is in one
+   * (`docs/voice.md`), and a layout that rearranged itself under a thumb
+   * mid-call would be worse than either shape.
+   *
+   * Forgetting it on costs a phone-sized surface at a desk, one tap from
+   * normal. Forgetting it off costs it at 70 mph.
+   */
+  handsFree: boolean;
   /** Model and effort the last created session used. See LastUsedSettings. */
   lastUsed: LastUsedSettings;
   theme: Theme;
@@ -111,6 +125,7 @@ interface UIState {
   setDockWidth: (width: number) => void;
   setDockMaximized: (maximized: boolean) => void;
   setSyncDockExpanded: (expanded: boolean) => void;
+  setHandsFree: (handsFree: boolean) => void;
   /** Call once a session has been created with these. Never on selection. */
   recordLastUsed: (settings: LastUsedSettings) => void;
   setTheme: (theme: Theme) => void;
@@ -136,6 +151,7 @@ export const useUIStore = create<UIState>()(
       dockWidth: 500,
       dockMaximized: false,
       syncDockExpanded: false,
+      handsFree: false,
       lastUsed: DEFAULT_LAST_USED,
       theme: "dark" as Theme,
 
@@ -209,6 +225,8 @@ export const useUIStore = create<UIState>()(
       setDockMaximized: (maximized) => set({ dockMaximized: maximized }),
 
       setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
+
+      setHandsFree: (handsFree) => set({ handsFree }),
 
       recordLastUsed: (settings) =>
         set((s) =>

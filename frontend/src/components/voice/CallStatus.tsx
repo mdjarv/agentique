@@ -49,7 +49,16 @@ export function FocusChip({ name, className }: { name: string | null; className?
  * one unbroken run of words with no upper bound, so a line that can grow is a
  * line that will push a card wider than the rail it sits in.
  */
-export function CallLineText({ line, className }: { line: CallLine; className?: string }) {
+export function CallLineText({
+  line,
+  className,
+  spinnerClassName = "size-3",
+}: {
+  line: CallLine;
+  className?: string;
+  /** The working spinner's size. A 12px mark is a rail mark; a car needs more. */
+  spinnerClassName?: string;
+}) {
   if (line.kind === "activity") {
     return (
       <span
@@ -58,7 +67,12 @@ export function CallLineText({ line, className }: { line: CallLine; className?: 
           className,
         )}
       >
-        <Loader2 className="size-3 shrink-0 animate-spin text-info motion-reduce:animate-none" />
+        <Loader2
+          className={cn(
+            "shrink-0 animate-spin text-info motion-reduce:animate-none",
+            spinnerClassName,
+          )}
+        />
         <span className="min-w-0 truncate">{line.text}</span>
       </span>
     );

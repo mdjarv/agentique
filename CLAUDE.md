@@ -1077,6 +1077,18 @@ optional, and only an explicit false stops the follow — so `runPrompt` reads t
 argument's **presence**, since a model that omits it must not silently hang up
 on someone still listening.
 
+**Hands-free is a different screen, not a bigger strip.** `DrivingCall` replaces
+the phone's strip while `ui-store.handsFree` is set, and answers three questions
+— is it hearing me (the orb at 132px, whose halo is the only proof of the mic a
+driver can check), where will this land (the focused session, second-largest type
+on screen), what is it doing — then offers **one** 92px control, drawn at the
+same size and place live or ended, because a call can end between the look and
+the press. Fills are solid, not the app's 10% tint, which is unfindable through
+glass; nothing scrolls, because a scroll needs a second look and the call speaks
+the whole line anyway. The switch is **chosen and remembered**, never inferred:
+`audio-route.ts` may read a car and the app still may not decide it is in one,
+and the preference describes the journey rather than the call.
+
 **The call is the app's, not a session's.** `?sessionId=` is only the *initial*
 focus; the call outlives navigation (it is owned by `voice-store`, never a
 component), and the sidebar dock / mobile caption strip are its surfaces. **Dispatch is

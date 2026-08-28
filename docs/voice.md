@@ -1048,6 +1048,42 @@ operator confirms with an explicit affirmative (never silence), and the send is
 announced with an undo window. Auto-approve is forced off for turns originated
 hands-free, whatever the session's setting.
 
+### The hands-free screen is a different screen
+
+`DrivingCall` replaces the phone's strip outright while `ui-store.handsFree` is
+set. It is not the strip made bigger — a 36px control beside an 11px caption is
+the wrong shape for a driver at every scale, so it answers the three questions a
+driver actually has and drops everything else:
+
+1. **Is it hearing me** — the orb at 132px, halo and all. It is the one fault a
+   driver cannot check any other way: the arc moves when the microphone does, so
+   a dead line is visible without reading a word.
+2. **Where will this land** — the focused session, in the second-largest type on
+   screen. It is what "send it" hits.
+3. **What is it doing** — the same `CallLineText` every surface renders, at a
+   size that survives a glance.
+
+Then one control, at 92px. While driving there is exactly one thing worth
+pressing, and every additional button is a target to miss. Live and ended draw
+theirs at the same size in the same place, because a call can end between the
+look and the press.
+
+Three rules diverge from the rest of the app, deliberately. Fills are **solid**
+rather than the usual 10% tint, which is unfindable through glass in daylight.
+Nothing **scrolls** — text clamps and is cut off, since a scroll needs a second
+look and the call says the whole thing out loud anyway. The status line is drawn
+in bright ink rather than the recessive grey a phone in the hand deserves.
+
+The switch is **chosen and remembered**, never inferred. `audio-route.ts` can
+read a route that looks like a car and the app still may not decide it is in one
+— the same rule the audio check follows, and a layout that rearranged itself
+under a thumb mid-call would be worse than either shape. It is remembered
+because it describes the journey rather than the call: someone driving places
+several, and re-arming at each is a gesture at the wheel. Forgetting it on costs
+a phone-sized surface at a desk, one tap from normal; forgetting it off costs it
+at 70 mph. It lives in the call sheet, which is where the call's own controls
+already are.
+
 ## The Gemini engine
 
 `geminiEngine` implements `Engine` against the Live API. Three things shape it.

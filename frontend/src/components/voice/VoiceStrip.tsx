@@ -20,17 +20,24 @@
  * front of the screen.
  *
  * It mirrors the rail dock's states exactly, because it is the same call.
+ *
+ * Hands-free is the one thing it does not render: `DrivingCall` takes the whole
+ * screen instead. The switch is in the sheet, because that is where the call's
+ * own controls live, and it is remembered (`ui-store.handsFree`) so it is armed
+ * once rather than at every call — the gesture is not one to make at the wheel.
  */
-import { ChevronsRight, PhoneOff, RotateCcw, X } from "lucide-react";
+import { Car, ChevronsRight, PhoneOff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "~/components/ui/sheet";
 import { CallLog } from "~/components/voice/CallLog";
 import { CallLineText, FocusChip } from "~/components/voice/CallStatus";
+import { DrivingCall } from "~/components/voice/DrivingCall";
 import { HaloOrb } from "~/components/voice/HaloOrb";
 import { useCallView } from "~/components/voice/use-call-view";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { cn } from "~/lib/utils";
 import { callTitle } from "~/lib/voice/copy";
+import { useUIStore } from "~/stores/ui-store";
 import { useVoiceStore } from "~/stores/voice-store";
 
 /**
@@ -43,6 +50,8 @@ export function VoiceStrip() {
   const isMobile = useIsMobile();
   const view = useCallView();
   const focusSeq = useVoiceStore((s) => s.focusSeq);
+  const handsFree = useUIStore((s) => s.handsFree);
+  const setHandsFree = useUIStore((s) => s.setHandsFree);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -64,6 +73,14 @@ export function VoiceStrip() {
   }, [active]);
 
   if (!isMobile || !active) return null;
+
+  // Hands-free replaces this surface rather than decorating it — see
+  // DrivingCall for why it is a different screen and not a bigger strip. The
+  // sheet and the tuck-away go with it: both are ways of getting the call out
+  // of the way of something else, and in a car there is nothing else.
+  if (handsFree) {
+    return <DrivingCall view={view} onExit={() => setHandsFree(false)} />;
+  }
 
   if (collapsed) {
     return (
@@ -217,13 +234,28 @@ export function VoiceStrip() {
                 </SheetButton>
               </div>
             ) : (
-              <SheetButton
-                onClick={view.stop}
-                className="border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20"
-              >
-                <PhoneOff className="size-4" />
-                End call
-              </SheetButton>
+              // Two rows, and hands-free is the upper one: it is a change of
+              // surface, never a way of ending the call, and a driver reaching
+              // for the bottom control must find the same one every time.
+              <div className="flex flex-col gap-2">
+                <SheetButton
+                  onClick={() => {
+                    setHandsFree(true);
+                    setOpen(false);
+                  }}
+                  className="bg-muted/70 text-foreground hover:bg-muted"
+                >
+                  <Car className="size-4" />
+                  Hands-free
+                </SheetButton>
+                <SheetButton
+                  onClick={view.stop}
+                  className="border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20"
+                >
+                  <PhoneOff className="size-4" />
+                  End call
+                </SheetButton>
+              </div>
             )}
           </div>
         </SheetContent>
