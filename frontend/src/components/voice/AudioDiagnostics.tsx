@@ -20,6 +20,14 @@
  *
  * The operator's ear is the measurement. Everything on screen only says where
  * the sound was sent, which is the half they cannot hear.
+ *
+ * **The parts render content and never their own headings.** The fault this
+ * diagnoses is a phone in a car, and on that phone the app is installed as a
+ * PWA with no address bar — so its real home is Settings → Voice, reachable by
+ * tapping, and `/dev/voice` is the desktop copy. Two hosts, two kinds of
+ * chrome, one set of words: [AUDIO_CHECK_COPY] is read by both so the page you
+ * can reach and the page you can type cannot describe the same check
+ * differently.
  */
 import { useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
@@ -38,15 +46,19 @@ import { callAudioReport, useVoiceStore } from "~/stores/voice-store";
 
 const PROBE_ORDER: ProbePath[] = ["call", "buffered", "element"];
 
-export function AudioDiagnostics() {
-  return (
-    <div className="flex flex-col gap-6">
-      <OutputProbes />
-      <CallRoutes />
-      <OutputDeviceList />
-    </div>
-  );
-}
+/** What each part is called and what it is for, wherever it is hosted. */
+export const AUDIO_CHECK_COPY = {
+  probes: {
+    title: "Can you hear this?",
+    description:
+      "Two seconds of tone, three ways to send it. They differ by one thing each, so the one you hear is the one to ship. Play them where the fault is — in the car, on the connection that was silent.",
+  },
+  routes: {
+    title: "Where this call's audio went",
+    description:
+      "Three readings of one output. A difference between the first two is the route moving when the microphone opened — the fault this subsystem has always suspected and never been able to show.",
+  },
+} as const;
 
 /**
  * Press, listen, read.
@@ -56,7 +68,7 @@ export function AudioDiagnostics() {
  * asked. They are also refused while a call is up, because the call owns the
  * route and a probe that moves it mid-call has changed the thing it measures.
  */
-function OutputProbes() {
+export function OutputProbes() {
   const status = useVoiceStore((s) => s.status);
   const callUp = status === "connecting" || status === "live";
   const [running, setRunning] = useState<ProbePath | null>(null);
@@ -75,18 +87,9 @@ function OutputProbes() {
   };
 
   return (
-    <section className="flex flex-col gap-3">
-      <header className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold">Can you hear this?</h2>
-        <p className="text-xs text-muted-foreground">
-          Two seconds of tone, three ways to send it. They differ by one thing each, so the one you
-          hear is the one to ship. Play them where the fault is — in the car, on the connection that
-          was silent.
-        </p>
-      </header>
-
+    <div className="flex flex-col gap-2">
       {callUp && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           End the call first — it owns the audio route while it is up.
         </p>
       )}
@@ -97,14 +100,14 @@ function OutputProbes() {
           const result = results[path];
           const busy = running === path;
           return (
-            <li key={path} className="rounded-lg border bg-card/40 p-3">
+            <li key={path} className="rounded-lg border border-border/60 bg-card p-3">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   disabled={callUp || running !== null}
                   onClick={() => run(path)}
                   className={cn(
-                    "h-8 shrink-0 rounded-md px-3 text-xs font-medium transition-colors",
+                    "h-9 shrink-0 rounded-md px-3.5 text-xs font-medium transition-colors",
                     "bg-agent text-background hover:bg-agent/90",
                     "disabled:cursor-not-allowed disabled:opacity-40",
                     !callUp && running === null && "cursor-pointer",
@@ -113,12 +116,12 @@ function OutputProbes() {
                   {busy ? "Playing…" : "Play"}
                 </button>
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-xs font-medium">{copy.title}</span>
-                  <span className="text-[11px] text-muted-foreground">{copy.detail}</span>
+                  <span className="text-[12.5px] font-medium">{copy.title}</span>
+                  <span className="text-[11.5px] text-muted-foreground">{copy.detail}</span>
                 </span>
               </div>
               {result && (
-                <div className="mt-2 border-t pt-2">
+                <div className="mt-2 border-t border-border/60 pt-2">
                   {!result.started && (
                     <p className="mb-1 text-[11px] text-destructive">
                       It never played{result.detail ? `: ${result.detail}` : ""}
@@ -131,7 +134,9 @@ function OutputProbes() {
           );
         })}
       </ul>
-    </section>
+
+      <OutputDeviceNote />
+    </div>
   );
 }
 
@@ -139,10 +144,14 @@ function OutputProbes() {
  * The live call's own route, at the three moments worth comparing.
  *
  * Polled rather than pushed, and only while there is a call to poll: this is
- * the one page that shows it, so putting it in the store would re-render every
- * call surface once a second for nobody's benefit.
+ * shown on two pages nobody watches during a drive, so putting it in the store
+ * would re-render every call surface once a second for nobody's benefit.
+ *
+ * It renders its own "no call" line rather than disappearing. A section that
+ * vanishes reads as a page that is missing something; a line saying the call is
+ * not running says what to do next.
  */
-function CallRoutes() {
+export function CallRoutes() {
   const status = useVoiceStore((s) => s.status);
   const [report, setReport] = useState<CallAudioReport | null>(null);
 
@@ -157,26 +166,21 @@ function CallRoutes() {
     return () => clearInterval(timer);
   }, [status]);
 
-  if (!report) return null;
+  if (!report) {
+    return (
+      <p className="text-[12px] text-muted-foreground">
+        No call is running. Start one and come back — the call survives leaving this page.
+      </p>
+    );
+  }
 
   return (
-    <section className="flex flex-col gap-3">
-      <header className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold">Where this call's audio went</h2>
-        <p className="text-xs text-muted-foreground">
-          Three readings of one output. A difference between the first two is the route moving when
-          the microphone opened — the fault this subsystem has always suspected and never been able
-          to show.
-        </p>
-      </header>
+    <div className="flex flex-col gap-2">
+      <RouteMoment label="When you pressed call" route={report.placed} />
+      <RouteMoment label="Once the microphone opened" route={report.live} />
+      <RouteMoment label="Now" route={report.now} />
 
-      <div className="flex flex-col gap-2">
-        <RouteMoment label="When you pressed call" route={report.placed} />
-        <RouteMoment label="Once the microphone opened" route={report.live} />
-        <RouteMoment label="Now" route={report.now} />
-      </div>
-
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-1 text-[11.5px] text-muted-foreground">
         <dt>Health</dt>
         <dd className="font-mono">{report.health}</dd>
         <dt>Audio received</dt>
@@ -190,16 +194,16 @@ function CallRoutes() {
             : "not open"}
         </dd>
       </dl>
-    </section>
+    </div>
   );
 }
 
 function RouteMoment({ label, route }: { label: string; route: AudioRoute }) {
   return (
-    <div className="rounded-lg border bg-card/40 p-3">
-      <p className="mb-1 text-xs font-medium">{label}</p>
+    <div className="rounded-lg border border-border/60 bg-card p-3">
+      <p className="mb-1 text-[12.5px] font-medium">{label}</p>
       {route.state === "none" ? (
-        <p className="text-[11px] text-muted-foreground">No output was open.</p>
+        <p className="text-[11.5px] text-muted-foreground">No output was open.</p>
       ) : (
         <RouteFacts route={route} />
       )}
@@ -239,12 +243,14 @@ function RouteFacts({ route }: { route: AudioRoute }) {
 /**
  * What the browser will admit exists to play through.
  *
- * An empty list is the finding rather than a failure. Android Chrome does not
- * enumerate outputs and does not implement `setSinkId`, so "none reported" is
- * this app saying, precisely, that it has no way to move the audio itself — and
- * that whatever fixes a silent car is a different route, not a chosen device.
+ * A footnote under the probes rather than a section of its own, because it is
+ * one sentence in the case that matters and it is *about* the probes: an empty
+ * list is the finding, not a failure. Android Chrome enumerates no outputs and
+ * does not implement `setSinkId`, so "none reported" is this app saying
+ * precisely that it has no way to move the audio itself — and that whatever
+ * fixes a silent car is a different route, not a chosen device.
  */
-function OutputDeviceList() {
+function OutputDeviceNote() {
   const [outputs, setOutputs] = useState<OutputDevices | null>(null);
 
   useEffect(() => {
@@ -259,28 +265,27 @@ function OutputDeviceList() {
 
   if (!outputs) return null;
 
+  if (!outputs.supported) {
+    return (
+      <p className="px-1 text-[11.5px] text-muted-foreground-faint">
+        This browser does not enumerate audio devices at all.
+      </p>
+    );
+  }
+
+  if (outputs.devices.length === 0) {
+    return (
+      <p className="px-1 text-[11.5px] text-muted-foreground-faint">
+        This browser offers no output devices to choose from — normal on Android. The route is the
+        platform's to pick, not ours.
+      </p>
+    );
+  }
+
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-semibold">Outputs this browser offers</h2>
-      {!outputs.supported ? (
-        <p className="text-xs text-muted-foreground">
-          This browser does not enumerate devices at all.
-        </p>
-      ) : outputs.devices.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          None reported — normal on Android, where the browser exposes no output selection. The
-          route is the platform's to choose, not ours.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-0.5 font-mono text-[11px] text-muted-foreground">
-          {outputs.devices.map((device) => (
-            <li key={device.id} className="break-all">
-              {device.label || "unnamed"} <span className="opacity-60">({device.id})</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <p className="px-1 text-[11.5px] text-muted-foreground-faint">
+      Outputs offered: {outputs.devices.map((d) => d.label || "unnamed").join(", ")}
+    </p>
   );
 }
 
@@ -288,4 +293,32 @@ function OutputDeviceList() {
 function formatSeconds(seconds: number): string {
   if (seconds < 0) return "not reported";
   return `${Math.round(seconds * 1000)} ms`;
+}
+
+/**
+ * The desktop composition, for `/dev/voice`.
+ *
+ * Settings composes the same two parts with its own section chrome; the words
+ * come from [AUDIO_CHECK_COPY] either way.
+ */
+export function AudioDiagnostics() {
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <header className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold">{AUDIO_CHECK_COPY.probes.title}</h2>
+          <p className="text-xs text-muted-foreground">{AUDIO_CHECK_COPY.probes.description}</p>
+        </header>
+        <OutputProbes />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <header className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold">{AUDIO_CHECK_COPY.routes.title}</h2>
+          <p className="text-xs text-muted-foreground">{AUDIO_CHECK_COPY.routes.description}</p>
+        </header>
+        <CallRoutes />
+      </section>
+    </div>
+  );
 }

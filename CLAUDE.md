@@ -953,8 +953,19 @@ opposite of what happened. The call keeps two readings, one from the placing
 gesture and one from just after the microphone opens, since the suspected fault
 is a route that *moves* and one reading cannot show a move. **A probe may guess,
 the call may not**: the candidate fixes are three tone probes in
-`lib/voice/audio-check.ts` on `/dev/voice`, one variable apart so the one you
-hear names the fix, and `playback.ts` is unchanged so the control stays a control.
+`lib/voice/audio-check.ts`, one variable apart so the one you hear names the
+fix, and `playback.ts` is unchanged so the control stays a control.
+
+**A diagnostic for a phone lives where a phone can reach it.** The audio check's
+home is Settings → Voice, not `/dev/voice`: on the phone this app is an
+installed PWA with no address bar, so a page reachable only by typing a path is
+a page that does not exist there. It is not a setting, and it sits among them on
+the rule that an action taken *on* a listed thing belongs on the surface that
+lists it — the voice preview beside it is the same shape. It renders on that
+page's loading and error branches too, because it needs no server to answer and
+the moment it is most needed is the one where the server cannot. Both hosts
+render the same parts and read their words from `AUDIO_CHECK_COPY`, so the page
+you can reach and the page you can type cannot describe the check differently.
 
 **The audio worklet must be an emitted file, never an inlined one.**
 `audioWorklet.addModule()` is judged under `script-src`, which is `'self'` plus

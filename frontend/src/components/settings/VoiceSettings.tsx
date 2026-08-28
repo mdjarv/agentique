@@ -1,6 +1,7 @@
 import { Check, Loader2, Play, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
+import { AUDIO_CHECK_COPY, CallRoutes, OutputProbes } from "~/components/voice/AudioDiagnostics";
 import { cn } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
 
@@ -82,14 +83,20 @@ export function VoiceSettings() {
 
   if (loadError && !settings) {
     return (
-      <p className="text-[13px] text-destructive">Could not load voice settings: {loadError}</p>
+      <div className="flex flex-col gap-8">
+        <p className="text-[13px] text-destructive">Could not load voice settings: {loadError}</p>
+        <AudioCheck />
+      </div>
     );
   }
   if (!settings) {
     return (
-      <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
-      </p>
+      <div className="flex flex-col gap-8">
+        <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+        </p>
+        <AudioCheck />
+      </div>
     );
   }
 
@@ -247,6 +254,8 @@ export function VoiceSettings() {
         />
       </SettingsSection>
 
+      <AudioCheck />
+
       <div className="flex h-5 items-center gap-2 text-[12px]">
         {saving && (
           <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -271,6 +280,42 @@ export function VoiceSettings() {
  * Every commit is a round trip, so committing on change would write once per
  * letter typed.
  */
+/**
+ * The audio check, on every branch of this page.
+ *
+ * Not a setting, and here anyway. Everything else on this page is a
+ * registration; this is a check *of* the thing this page registers, on the
+ * precedent of the voice preview beside it. Its real argument is reach: the
+ * fault it diagnoses is a phone in a car, and on that phone this app is an
+ * installed PWA with no address bar — so a page you can only get to by typing
+ * `/dev/voice` is a page that does not exist.
+ *
+ * It renders on the loading and error branches too. It is browser-local and
+ * needs no server to answer, and the state where it matters most is exactly
+ * the one where the server cannot: a phone in a car on a connection that is
+ * failing. Hiding it behind a settings fetch would take the diagnostic away at
+ * the moment the fault is happening.
+ */
+function AudioCheck() {
+  return (
+    <>
+      <SettingsSection
+        title={AUDIO_CHECK_COPY.probes.title}
+        description={AUDIO_CHECK_COPY.probes.description}
+      >
+        <OutputProbes />
+      </SettingsSection>
+
+      <SettingsSection
+        title={AUDIO_CHECK_COPY.routes.title}
+        description={AUDIO_CHECK_COPY.routes.description}
+      >
+        <CallRoutes />
+      </SettingsSection>
+    </>
+  );
+}
+
 function TextField({
   value,
   placeholder,

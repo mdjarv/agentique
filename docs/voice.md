@@ -341,10 +341,10 @@ microphone opens. The interesting fact is the *difference* — the standing
 suspicion in this subsystem is a route that moves when the mic opens, and one
 reading cannot show a move.
 
-**Three probes, one variable apart** (`lib/voice/audio-check.ts`), on
-`/dev/voice`. A live call is a poor instrument for this: it needs a server, a
-permission, a backend and someone's attention, and yields one bit. A probe is two
-seconds of tone, judged by ear.
+**Three probes, one variable apart** (`lib/voice/audio-check.ts`). A live call is
+a poor instrument for this: it needs a server, a permission, a backend and
+someone's attention, and yields one bit. A probe is two seconds of tone, judged
+by ear.
 
 | Probe | What it changes | What hearing it means |
 |---|---|---|
@@ -356,6 +356,22 @@ seconds of tone, judged by ear.
 `audio-check.ts` and nothing in `playback.ts` changed to add them, so the control
 stays a control. `playNotes` grew an optional destination for exactly one caller
 — the element probe, which cannot reach `ctx.destination` by definition.
+
+**Where the check lives, and why it is not a dev page.** Its home is
+**Settings → Voice**. The fault is a phone in a car, and on that phone this app
+is an installed PWA with no address bar — a page you can only reach by typing
+`/dev/voice` is a page that does not exist there. It is not a setting, and it
+belongs on that page anyway: an action taken *on* a listed thing goes on the
+surface that lists it, which is the same argument that puts the voice preview
+button there. It renders on that page's loading and error branches as well,
+because it is browser-local and the state where it matters most — a phone on a
+connection that is failing — is exactly the one where the settings fetch cannot
+answer.
+
+`/dev/voice` still shows it beside the loopback, since that page is the
+audio-path bench. Both hosts render the same two parts (`OutputProbes`,
+`CallRoutes`) and take their words from `AUDIO_CHECK_COPY`, so the page you can
+reach and the page you can type cannot describe the same check differently.
 
 ### The worklet must be an emitted file
 
