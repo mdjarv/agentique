@@ -39,6 +39,7 @@ Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶
    │                                                  list_projects,
    │                                                  create_session, run_prompt
    │                                   create_session │ Directory ──▶ Service.CreateSession
+   │                                  (+ its prompt)  │      and then, in the same call:
    │                                      run_prompt  │ Dispatcher (focus only)
    │                                                  ▼
    │                                      Service.EnqueueMessage ──▶ the session
@@ -761,13 +762,34 @@ is never listed: creation is local because the service is.
 The instruction gathers the project and drafts the prompt without creating
 anything, states the settings inside the read-back rather than asking about
 them as a step ("New session in webtickets, on Fable — …"), and only after the
-explicit yes calls `create_session` and then `run_prompt` straight away. The
-create's result text says so, so the two calls stay one gesture. Three reasons:
-every extra round trip is another transcription that can go wrong; creating on
-the way to a yes that never comes orphans an empty session and its worktree;
-and a session that has never run has no wrong-target risk, so early focus buys
-nothing. Explicitly asking for an empty session ("make me one in webtickets,
-I'll use it later") is itself the yes — it is a cheap, visible act.
+explicit yes calls `create_session` **once**, with the agreed prompt as its
+`prompt` argument. Three reasons to defer: every extra round trip is another
+transcription that can go wrong; creating on the way to a yes that never comes
+orphans an empty session and its worktree; and a session that has never run has
+no wrong-target risk, so early focus buys nothing. Explicitly asking for an
+empty session ("make me one in webtickets, I'll use it later") is itself the
+yes, and is the one case that omits the prompt.
+
+**Creating and sending are one tool call**, and that is the fix for the fault
+that shipped: as two calls (`create_session`, then `run_prompt` "straight
+away"), the agreed prompt lived nowhere but the model's own turn between them.
+Anything that ended that turn — the caller speaking over it, a live-session
+reconnect, or a model reading the second sentence of a tool result as
+permission to stop — left an empty session, a worktree, and an operator who had
+just been told the work was starting. Now `toolCreateSession` creates, focuses,
+and calls the same `dispatchPrompt` `run_prompt` calls, through the same
+refusals; the answer carries the same `Delivery.Confirmation`. A send that is
+refused reports **both halves** ("created … but the prompt did NOT go"), because
+half of that is how somebody comes back to an empty session believing it ran.
+`run_prompt` remains the recovery path for a creation that arrived without one.
+
+**Tool calls run one at a time, in the order the model asked for them.** A live
+message may carry several function calls, and they reach the call as separate
+events; spawning a goroutine each made the model's ordering meaningless, which
+broke the one sequence that depended on it. They are queued (`toolCalls`,
+`pumpTools`) instead. The queue is deep and never drops: an unanswered tool call
+leaves the model paused forever, which sounds exactly like the call having died,
+so an overflow is answered with a refusal rather than discarded.
 
 The new session is born `fullAuto` deliberately: there is no spoken approval, so
 any other mode would be refused at its own first dispatch. That does not move

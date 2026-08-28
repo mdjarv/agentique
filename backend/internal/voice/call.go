@@ -18,6 +18,14 @@ const (
 	// this is the point at which dead air is worse than a refusal.
 	toolCallTimeout = 30 * time.Second
 
+	// toolQueueDepth is how many tool calls may wait to be run.
+	//
+	// One batch is a handful, and the model is paused until every one of them
+	// is answered, so this is deep enough to be unreachable in practice. It is
+	// not a place to drop frames: an unanswered tool call leaves the model
+	// paused forever, which sounds exactly like the call having died.
+	toolQueueDepth = 32
+
 	writeTimeout = 10 * time.Second
 	pongTimeout  = 60 * time.Second
 	pingInterval = 25 * time.Second
@@ -151,6 +159,14 @@ type call struct {
 	runCtxMu sync.Mutex
 	runCtx   context.Context
 
+	// toolCalls serialises tool execution. The model may ask for several tools
+	// in ONE message — the live API sends a list — and those arrive as separate
+	// events. Running them concurrently makes the order the model wrote them in
+	// meaningless, which breaks the one sequence that depends on it: creating a
+	// session and sending a prompt to it. Running them through one queue is
+	// also free, because the model is paused until every one is answered.
+	toolCalls chan ToolCallEvent
+
 	idleTimeout time.Duration
 
 	// followMu guards the follow set: every session whose news reaches this
@@ -275,6 +291,7 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 		offered:         make(map[string]SessionRow),
 		offeredProjects: make(map[string]ProjectRow),
 		summaries:       make(map[string]string),
+		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
 		log:             log,
 		idleTimeout:     idleTimeout,
 		lastFrame:       now,
@@ -504,6 +521,37 @@ func (c *call) NotifyRuntime(sessionID string, n Notice) error {
 	return nil
 }
 
+// queueToolCall hands one tool call to the pump that runs them in order.
+//
+// It never blocks the caller — that goroutine is also carrying audio — and it
+// never silently drops one either. A full queue is answered with a refusal the
+// model can act on, because the one thing that must not happen to a tool call
+// is nothing: the model stays paused until it is answered, and a call whose
+// model is paused forever is a call that has died without saying so.
+func (c *call) queueToolCall(ev ToolCallEvent) {
+	select {
+	case c.toolCalls <- ev:
+	default:
+		c.log.Warn("voice tool queue full", "tool", ev.Name)
+		c.answerToolCall(ev, map[string]any{
+			"error": "That did not go through — I was busy. Say what happened in a few words " +
+				"and try it again.",
+		})
+	}
+}
+
+// pumpTools runs queued tool calls one at a time, in the order they arrived.
+func (c *call) pumpTools(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-c.toolCalls:
+			c.handleToolCall(ev)
+		}
+	}
+}
+
 // handleToolCall runs one tool call and answers it.
 //
 // Every path here ends in a response, including the failures. An unanswered
@@ -514,13 +562,16 @@ func (c *call) handleToolCall(ev ToolCallEvent) {
 	// the model only reaches for one because somebody asked it something.
 	c.noteInteraction()
 
+	c.answerToolCall(ev, c.runTool(ev))
+}
+
+// answerToolCall writes one tool result back to the engine.
+func (c *call) answerToolCall(ev ToolCallEvent, result map[string]any) {
 	responder, ok := c.engine.(ToolResponder)
 	if !ok {
 		c.log.Warn("voice tool call with no responder", "tool", ev.Name)
 		return
 	}
-
-	result := c.runTool(ev)
 	if err := responder.RespondTool(ev.ID, ev.Name, result); err != nil {
 		c.log.Warn("voice tool response failed", "tool", ev.Name, "error", err)
 	}
@@ -568,11 +619,39 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 	target := c.currentFocus()
 	if c.dispatcher == nil {
+		c.log.Warn("voice prompt refused", "reason", "no dispatcher")
 		return map[string]any{"error": "This call is not attached to a session, so there is nothing to hand work to."}
 	}
 	if target == "" {
+		c.log.Warn("voice prompt refused", "reason", "no focus")
 		return map[string]any{"error": "Nothing is focused yet — ask which session first."}
 	}
+	prompt, _ := ev.Args["prompt"].(string)
+	return c.dispatchPrompt(ctx, target, prompt, stayOnLineArg(ev.Args))
+}
+
+// stayOnLineArg reads whether the operator is staying on the call.
+//
+// Absent means yes. They are on the call already, so leaving is the answer that
+// gets said out loud — asking every dispatch turned one question (is this the
+// right prompt, for the right session?) into two, and the second had an obvious
+// answer. Only an explicit false stops the following, which is why this reads
+// the argument's presence rather than its zero value: a model that omits the
+// field must not silently mean "hang up".
+func stayOnLineArg(args map[string]any) bool {
+	if said, present := args["stay_on_line"].(bool); present {
+		return said
+	}
+	return true
+}
+
+// dispatchPrompt sends prompt to target and answers with what to say about it.
+//
+// The one route from a call into the session pipeline: run_prompt reaches it
+// through the focus, and create_session reaches it with the session it just
+// made. Both go through the same refusals, because a brand-new session is
+// checked on exactly the grounds an old one is.
+func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOnLine bool) map[string]any {
 	// A session on another machine can be looked at from here and nothing more:
 	// dispatch goes through *this* server's session service, and that CLI, that
 	// worktree and that transcript are somewhere else.
@@ -581,25 +660,16 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 		if known, ok := c.lookupRow(ctx, target); ok {
 			row = known
 		}
+		c.log.Warn("voice prompt refused", "reason", "not local", "session", target)
 		return map[string]any{"error": fmt.Sprintf("%q runs on %s, so work cannot be started there "+
 			"from this call. Tell the user that, and offer to hand this to a session on this "+
 			"machine instead.", displayFor(row), machineWords(row))}
 	}
 
-	prompt, _ := ev.Args["prompt"].(string)
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
+		c.log.Warn("voice prompt refused", "reason", "empty prompt", "session", target)
 		return map[string]any{"error": "The prompt was empty. Say what the agent should do."}
-	}
-	// Absent means yes. They are on the call already, so leaving is the answer
-	// that gets said out loud — asking every dispatch turned one question (is
-	// this the right prompt, for the right session?) into two, and the second
-	// had an obvious answer. Only an explicit false stops the following, which
-	// is why this reads the argument's presence rather than its zero value: a
-	// model that omits the field must not silently mean "hang up".
-	stayOnLine := true
-	if said, present := ev.Args["stay_on_line"].(bool); present {
-		stayOnLine = said
 	}
 
 	// Live voice has no spoken approval, so a session that would stop and ask
@@ -610,6 +680,7 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 		return map[string]any{"error": "Could not reach that session."}
 	}
 	if !ok {
+		c.log.Warn("voice prompt refused", "reason", "not auto-runnable", "session", target)
 		return map[string]any{"error": "That session is not in auto mode, so it would stop and ask for " +
 			"approval that cannot be given over a call. Tell the user to switch it to full auto on screen. " + why}
 	}
@@ -812,9 +883,12 @@ func (c *call) run(ctx context.Context) {
 	c.greet()
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); defer cancel(); c.pumpEngine(ctx) }()
 	go func() { defer wg.Done(); defer cancel(); c.pumpKeepalive(ctx) }()
+	// Not cancel-on-return: the tool pump ending is not a reason to end the
+	// call, it is what happens when the call ends.
+	go func() { defer wg.Done(); c.pumpTools(ctx) }()
 
 	// The read loop owns this goroutine: it is the one that must observe the
 	// socket closing, and cancelling on its return is what stops the others.
@@ -923,7 +997,11 @@ func (c *call) forward(ev Event) error {
 		// Handled off this goroutine: dispatch can take a moment (a session may
 		// have to be woken), and this pump also carries audio. The model is
 		// paused until the response goes back, so it will not talk over itself.
-		go c.handleToolCall(e)
+		//
+		// Queued rather than spawned, because a message carrying several tool
+		// calls arrives as several events and the model wrote them in an order
+		// that means something — create this session, then send it this prompt.
+		c.queueToolCall(e)
 		return nil
 
 	case ErrorEvent:

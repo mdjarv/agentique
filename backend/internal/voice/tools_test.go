@@ -422,6 +422,107 @@ func TestCreateSessionRefusesAnUnknownModelByNamingTheRealOnes(t *testing.T) {
 	}
 }
 
+// Creating and sending are ONE call. The bug this test exists for: the prompt
+// used to live only in the model's turn between create_session and run_prompt,
+// so anything that ended that turn left an empty session and a listener who had
+// been told the work was starting.
+func TestCreateSessionSendsThePromptItWasGiven(t *testing.T) {
+	dir := directoryWithTwo()
+	disp := &recordingDispatcher{}
+	c := newToolCall(dir, disp, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{
+		"project_id": "p2",
+		"prompt":     "  add a retry around the reconnect  ",
+	})
+	if msg, bad := got["error"]; bad {
+		t.Fatalf("create-and-send refused: %v", msg)
+	}
+	if got["sent"] != true {
+		t.Errorf("result said sent=%v, want the prompt reported as gone", got["sent"])
+	}
+
+	sessionID, _ := got["session_id"].(string)
+	sent := disp.dispatches()
+	if len(sent) != 1 {
+		t.Fatalf("dispatcher saw %v, want exactly one send", sent)
+	}
+	if sent[0].session != sessionID {
+		t.Errorf("prompt went to %q, want the session just created (%q)", sent[0].session, sessionID)
+	}
+	if sent[0].prompt != "add a retry around the reconnect" {
+		t.Errorf("prompt = %q, want it trimmed and otherwise verbatim", sent[0].prompt)
+	}
+	// Staying is the default, so the worker has to be taught to report.
+	if !sent[0].reporting {
+		t.Error("the run was not briefed to report, so nothing would reach the call")
+	}
+	if !c.following(sessionID) {
+		t.Error("the call is not following the session it just started work in")
+	}
+
+	// The answer is the sentence to say, and it names the new session.
+	out, _ := got["output"].(string)
+	if out == "" {
+		t.Fatal("no confirmation to speak — the listener hears silence after their yes")
+	}
+	if !strings.Contains(out, "SAY THIS OUT LOUD") {
+		t.Errorf("confirmation = %q, want the dispatch read-back", out)
+	}
+}
+
+// An empty session is a real ask — "make me one, I will use it later" — and it
+// says plainly that nothing is running there.
+func TestCreateSessionWithoutAPromptStartsNothing(t *testing.T) {
+	dir := directoryWithTwo()
+	disp := &recordingDispatcher{}
+	c := newToolCall(dir, disp, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project_id": "p1"})
+	if msg, bad := got["error"]; bad {
+		t.Fatalf("creating an empty session refused: %v", msg)
+	}
+	if got["sent"] != false {
+		t.Errorf("result said sent=%v, want it to report that nothing went", got["sent"])
+	}
+	if sent := disp.dispatches(); len(sent) != 0 {
+		t.Errorf("dispatcher saw %v, want nothing sent to an empty session", sent)
+	}
+	note, _ := got["note"].(string)
+	if !strings.Contains(note, "Nothing is running") {
+		t.Errorf("note = %q, want it to say the session is empty", note)
+	}
+}
+
+// A session that exists with no work in it is the failure this whole flow is
+// about, so when the send is refused the answer says BOTH halves.
+func TestCreateSessionThatCannotSendSaysTheSessionIsEmpty(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &fakeDispatcher{autoOK: false, autoWhy: "It is set to \"chat\"."}, "")
+	c.toolListProjects(context.Background(), nil)
+
+	got := c.toolCreateSession(context.Background(), map[string]any{
+		"project_id": "p1",
+		"prompt":     "look at the flaky test",
+	})
+	msg, _ := got["error"].(string)
+	if msg == "" {
+		t.Fatalf("a refused send reported success: %v", got)
+	}
+	if !strings.Contains(msg, "created") || !strings.Contains(msg, "did NOT go") {
+		t.Errorf("answer = %q, want both halves: the session exists, the work does not", msg)
+	}
+	if got["sent"] != false {
+		t.Errorf("result said sent=%v, want false", got["sent"])
+	}
+	// The session is real and on their screen, so the call stays aimed at it.
+	if c.currentFocus() == "" {
+		t.Error("the call lost the session it created and the operator is looking at")
+	}
+}
+
 // A creation that fails is said plainly. It must not leave the call aimed at a
 // session that does not exist.
 func TestCreateSessionThatFailsSaysSoAndLeavesTheCallAlone(t *testing.T) {

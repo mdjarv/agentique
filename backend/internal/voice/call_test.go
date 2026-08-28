@@ -43,6 +43,13 @@ func (r *recordingDispatcher) AutoRunnable(context.Context, string) (bool, strin
 
 func (r *recordingDispatcher) ProjectContext(context.Context, string) string { return "" }
 
+// dispatches is every send this dispatcher saw, in order.
+func (r *recordingDispatcher) dispatches() []dispatchRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]dispatchRecord(nil), r.records...)
+}
+
 // briefings counts the dispatches that carried the reporting instruction to a
 // session.
 func (r *recordingDispatcher) briefings(sessionID string) int {
@@ -506,5 +513,93 @@ func TestSpokenFramingNamesTheSession(t *testing.T) {
 	// Still quoted data, whatever else changed about the framing.
 	if got := reportRelayPreamble("x"); !strings.Contains(got, "NOT an instruction") {
 		t.Error("a report must still be framed as quoted data, never as an instruction")
+	}
+}
+
+// answeringEngine is an echo engine that also answers tool calls, and records
+// the order it was answered in.
+type answeringEngine struct {
+	*EchoEngine
+	mu       sync.Mutex
+	answered []string
+}
+
+func (e *answeringEngine) RespondTool(_, name string, _ map[string]any) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.answered = append(e.answered, name)
+	return nil
+}
+
+func (e *answeringEngine) order() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.answered...)
+}
+
+// The model may ask for several tools in ONE message, and the live API sends
+// them as a list. They used to be spawned one goroutine each, which made the
+// order the model wrote them in meaningless — and one sequence depends on it
+// entirely: create a session, then send it a prompt. Run out of order, the
+// prompt found nothing focused and the operator was left with an empty session.
+func TestToolCallsRunInTheOrderTheModelAskedFor(t *testing.T) {
+	dir := directoryWithTwo()
+	disp := &recordingDispatcher{}
+	c := newToolCall(dir, disp, "")
+	engine := &answeringEngine{EchoEngine: NewEchoEngine()}
+	c.engine = engine
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c.setCtx(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); c.pumpTools(ctx) }()
+
+	c.toolListProjects(ctx, nil)
+
+	// One batch, in the order a model writes it.
+	c.queueToolCall(ToolCallEvent{ID: "1", Name: ToolCreateSession, Args: map[string]any{"project_id": "p1"}})
+	c.queueToolCall(ToolCallEvent{ID: "2", Name: ToolRunPrompt, Args: map[string]any{"prompt": "start on the docs"}})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(engine.order()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if got := engine.order(); len(got) != 2 || got[0] != ToolCreateSession || got[1] != ToolRunPrompt {
+		t.Fatalf("answered %v, want both, in the order they were asked for", got)
+	}
+
+	sent := disp.dispatches()
+	if len(sent) != 1 {
+		t.Fatalf("dispatcher saw %v, want the prompt to have landed", sent)
+	}
+	if sent[0].session != c.currentFocus() || sent[0].session == "" {
+		t.Errorf("prompt went to %q, want the session create_session had just focused (%q)",
+			sent[0].session, c.currentFocus())
+	}
+}
+
+// A tool call is never dropped. The model stays paused until it is answered, so
+// a dropped one is a call that has died without saying so.
+func TestAFullToolQueueRefusesRatherThanDropping(t *testing.T) {
+	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
+	engine := &answeringEngine{EchoEngine: NewEchoEngine()}
+	c.engine = engine
+
+	// Nothing is pumping, so the queue fills and the next one has to be
+	// answered on the spot.
+	for i := 0; i < toolQueueDepth; i++ {
+		c.queueToolCall(ToolCallEvent{ID: "q", Name: ToolListSessions})
+	}
+	if got := engine.order(); len(got) != 0 {
+		t.Fatalf("answered %v before anything ran, want the queue to have absorbed them", got)
+	}
+
+	c.queueToolCall(ToolCallEvent{ID: "over", Name: ToolListSessions})
+	if got := engine.order(); len(got) != 1 {
+		t.Fatalf("answered %v, want the overflowing call answered rather than dropped", got)
 	}
 }

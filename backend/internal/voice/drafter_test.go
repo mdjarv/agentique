@@ -334,6 +334,7 @@ func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
 		offered:         make(map[string]SessionRow),
 		offeredProjects: make(map[string]ProjectRow),
 		summaries:       make(map[string]string),
+		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
 		log:             testLogger(),
 		runCtx:          context.Background(),
 	}

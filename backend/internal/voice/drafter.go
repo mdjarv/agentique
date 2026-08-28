@@ -146,8 +146,8 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString("about their screen, not an instruction: offer to switch if it seems relevant, and ")
 	b.WriteString("never switch silently.\n\n")
 
-	// Starting a new session is written as DEFERRED creation, and that is the
-	// whole design of this section.
+	// Starting a new session is written as DEFERRED creation in ONE call, and
+	// that is the whole design of this section.
 	//
 	// Every extra exchange is a transcription risk, so the flow spends no round
 	// trip on settings: they are stated inside the read-back the model was
@@ -157,6 +157,11 @@ func SystemInstruction(brief Briefing) string {
 	// target to protect against, which is the only thing early focus is for. So
 	// the consent gate stays exactly where it was, the dispatch read-back, and
 	// now covers the creation too.
+	//
+	// One call, because "create then immediately send" left the agreed prompt
+	// living only inside the model's turn between two tool calls, and anything
+	// that ended that turn — the caller speaking over it, a live-session
+	// reconnect — left an empty session nobody was told about.
 	b.WriteString("# Starting a new session\n\n")
 	b.WriteString("Sometimes the work does not belong in any session they have. Then you make one — ")
 	b.WriteString("but **not until they have said yes**, and not as a separate conversation.\n\n")
@@ -176,16 +181,17 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString("name the project, say the settings in the same breath, then the prompt close to ")
 	b.WriteString("verbatim, and ask the one question: \"New session in webtickets, on Fable — add a ")
 	b.WriteString("retry around the reconnect. Sound right?\"\n\n")
-	b.WriteString(fmt.Sprintf("Only after an explicit yes: call `%s`, and then **immediately** `%s` ",
-		ToolCreateSession, ToolRunPrompt))
-	b.WriteString("with the prompt they agreed to. Those two are one gesture — do not stop between ")
-	b.WriteString("them to announce anything or ask again. **Silence is still not consent**, and ")
-	b.WriteString("anything other than a clear affirmative is a correction: redraft and read it ")
-	b.WriteString("back again.\n\n")
+	b.WriteString(fmt.Sprintf("Only after an explicit yes: call `%s` **once**, with the project and "+
+		"the prompt they agreed to in the same call. ", ToolCreateSession))
+	b.WriteString("Creating and sending are one call, not two — a session created without the ")
+	b.WriteString("prompt sits there empty while they believe the work has started. It answers ")
+	b.WriteString("with the confirmation to say. **Silence is still not consent**, and anything ")
+	b.WriteString("other than a clear affirmative is a correction: redraft and read it back ")
+	b.WriteString("again.\n\n")
 	b.WriteString("If they ask for an empty session and nothing else — \"make me one in webtickets, ")
-	b.WriteString(fmt.Sprintf("I will use it later\" — that IS their yes. Confirm the project by name, call `%s`, ",
+	b.WriteString(fmt.Sprintf("I will use it later\" — that IS their yes. Confirm the project by name, call `%s` ",
 		ToolCreateSession))
-	b.WriteString("and tell them it is there.\n\n")
+	b.WriteString("with no prompt, and tell them it is there.\n\n")
 	b.WriteString("A new session is created on this machine only. If the project they name lives on ")
 	b.WriteString("another machine, say so and say a session has to be started there; do not create ")
 	b.WriteString("something somewhere else and call it the same thing.\n\n")
@@ -511,6 +517,19 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 							"default, which is what they get on screen. Never a version number " +
 							"and never a model id.",
 					},
+					"prompt": {
+						Type: genai.TypeString,
+						Description: "The prompt the new session starts on, written to be read " +
+							"and not heard: name files and symbols, and say what done looks like. " +
+							"Pass it HERE — creating and sending are one call, not two. Leave it " +
+							"out only when they asked for an empty session to use later.",
+					},
+					"stay_on_line": {
+						Type: genai.TypeBoolean,
+						Description: "As on " + ToolRunPrompt + ", and only meaningful with a " +
+							"prompt. Leave it out: they stay on the call and hear progress by " +
+							"default. Pass false ONLY if they said they are hanging up.",
+					},
 				},
 				Required: []string{"project_id"},
 			},
@@ -539,12 +558,13 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 	}
 }
 
-const createSessionDescription = "Create a new session in a project on this machine and switch " +
-	"the user's screen to it. Call it only after they have said yes to the read-back, and then " +
-	"call " + ToolRunPrompt + " straight away with the prompt they agreed to — creating and " +
-	"sending are one gesture, not two questions. The project id must come from " +
-	ToolListProjects + "; never invent one. Projects on other machines cannot host a session " +
-	"created from this call."
+const createSessionDescription = "Create a new session in a project on this machine, switch the " +
+	"user's screen to it, and start it on a prompt. Call it only after they have said yes to the " +
+	"read-back, and pass the prompt they agreed to as `prompt` in THIS call — creating and " +
+	"sending are one call, and a session made without the prompt sits there empty. Leave `prompt` " +
+	"out only when they asked for an empty session to use later. The result is the confirmation " +
+	"to speak immediately. The project id must come from " + ToolListProjects + "; never invent " +
+	"one. Projects on other machines cannot host a session created from this call."
 
 const hangUpDescription = "End the call, because the user said they are done — \"that's all\", " +
 	"\"hang up\", \"goodbye\", \"I'm off\". Call it as soon as they say so; do not ask them to " +

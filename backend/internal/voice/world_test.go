@@ -216,7 +216,7 @@ func (f *fakeDirectory) Orientation(context.Context) string { return "Two sessio
 
 func (f *fakeDirectory) ListSessions(_ context.Context, filter string) []SessionRow {
 	var out []SessionRow
-	for _, row := range f.rows {
+	for _, row := range f.sessions() {
 		if matchesFilter(row, filter) {
 			out = append(out, row)
 		}
@@ -225,12 +225,20 @@ func (f *fakeDirectory) ListSessions(_ context.Context, filter string) []Session
 }
 
 func (f *fakeDirectory) SessionBrief(_ context.Context, id string) (SessionRow, bool) {
-	for _, row := range f.rows {
+	for _, row := range f.sessions() {
 		if row.ID == id {
 			return row, true
 		}
 	}
 	return SessionRow{}, false
+}
+
+// sessions is every row the directory knows, including the ones it created —
+// the real one reads a database, where a session exists the moment it is made.
+func (f *fakeDirectory) sessions() []SessionRow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]SessionRow(nil), f.rows...)
 }
 
 func (f *fakeDirectory) Summarize(_ context.Context, id string, deliver func(string)) {
@@ -262,25 +270,28 @@ func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string
 		family = matched
 	}
 
-	f.mu.Lock()
-	f.created = append(f.created, createdSession{projectID: projectID, model: model})
-	id := fmt.Sprintf("new-%d", len(f.created))
-	f.mu.Unlock()
-
 	var project ProjectRow
 	for _, row := range f.projects {
 		if row.ID == projectID {
 			project = row
 		}
 	}
-	return SessionRow{
-		ID:          id,
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created = append(f.created, createdSession{projectID: projectID, model: model})
+	row := SessionRow{
+		ID:          fmt.Sprintf("new-%d", len(f.created)),
 		ProjectName: project.Name,
 		ProjectSlug: project.Slug,
 		MachineName: "workstation",
 		State:       "idle",
 		Model:       family,
-	}, nil
+	}
+	// A created session is a session: everything that looks one up has to find
+	// it, or the dispatch that follows reports it as somebody else's machine.
+	f.rows = append(f.rows, row)
+	return row, nil
 }
 
 func (f *fakeDirectory) calls() int {

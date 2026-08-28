@@ -349,12 +349,25 @@ func (c *call) toolListProjects(ctx context.Context, args map[string]any) map[st
 	return out
 }
 
-// toolCreateSession opens a new session and puts it on the operator's screen.
+// toolCreateSession opens a new session, puts it on the operator's screen, and
+// sends it the prompt they agreed to.
 //
-// Creating is cheap and visible: a new session does nothing until something is
-// sent to it, and the screen follows this the way it follows a focus. So the
-// guarded act stays where it was — the prompt, with its read-back — and this
-// one only has to be aimed at a project the operator actually named.
+// **Creating and sending are one tool call, and that is the whole point.** They
+// are one gesture in the conversation — a single read-back covers both, and the
+// yes that authorises the prompt is what authorises the session it goes in — so
+// splitting them across two calls left the agreed prompt living nowhere but the
+// model's own turn. Anything that ended that turn between the two (the caller
+// speaking over it, a live-session reconnect, or simply a model that took the
+// second sentence of a tool result as permission to stop) left an empty session
+// and a worktree behind, with the operator told the work had started. Here the
+// prompt arrives with the creation, so there is no gap for that to fall into.
+//
+// The prompt stays optional, because "make me one, I will use it later" is a
+// real ask and is its own yes. Without one, nothing runs there.
+//
+// Creating is still aimed only at a project the operator actually named. The
+// consent gate has not moved: it is the read-back, which now covers both halves
+// because both halves happen here.
 func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[string]any {
 	if c.directory == nil {
 		return map[string]any{"error": "I cannot create sessions from this call — tell the user " +
@@ -406,13 +419,33 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 	out["focused"] = true
 	out["can_start_work"] = true
 	out["project"] = project.displayName()
-	// The read-back that authorised this already named the new session and the
-	// prompt, so the two calls are one gesture: stopping here to announce a
-	// session and ask again is a round trip the operator has already paid for.
-	out["note"] = fmt.Sprintf("Created and focused: a new session in %s%s, on their screen now. "+
-		"If a prompt was already agreed, send it now with %s. Otherwise say in one sentence that it "+
-		"is created and move straight on to working out the prompt.",
-		project.displayName(), modelWords(row.Model), ToolRunPrompt)
+
+	prompt := strings.TrimSpace(stringArg(args, "prompt"))
+	if prompt == "" {
+		// An empty session is a legitimate ask, and it is also what a model that
+		// forgot the prompt has just made. Both are recoverable in one more
+		// call, and neither is a reason to stop and ask again.
+		out["sent"] = false
+		out["note"] = fmt.Sprintf("Created and focused: a new session in %s%s, on their screen now. "+
+			"Nothing is running in it, because no prompt came with this. If they had already agreed "+
+			"one, send it now with %s and do not ask again. Otherwise say in one sentence that it is "+
+			"there.", project.displayName(), modelWords(row.Model), ToolRunPrompt)
+		return out
+	}
+
+	sent := c.dispatchPrompt(ctx, row.ID, prompt, stayOnLineArg(args))
+	if refusal, refused := sent["error"].(string); refused {
+		// The session is real and on their screen; the work is not. Saying only
+		// half of that is how somebody comes back to an empty session believing
+		// it has been running.
+		out["sent"] = false
+		out["error"] = fmt.Sprintf("The session was created in %s and is on their screen, but the "+
+			"prompt did NOT go. Tell them both, in that order. %s", project.displayName(), refusal)
+		return out
+	}
+
+	out["sent"] = true
+	out["output"] = sent["output"]
 	return out
 }
 

@@ -376,9 +376,11 @@ func TestPreviewLive(t *testing.T) {
 // designed: a call opened on nothing, work that belongs in no existing session,
 // and one yes that both creates the session and sends the prompt.
 //
-// The risky part is not the wording, it is the shape: after the affirmative the
-// model has to make *two* tool calls in a row, and a model that stops after the
-// first leaves a session created and no work in it. That is what this asserts.
+// The risky part is not the wording, it is the shape. It used to take *two*
+// tool calls in a row, and a model that stopped after the first left a session
+// created with no work in it — which is what actually happened in production.
+// So the prompt now rides the creation, and this asserts the model puts it
+// there: one call, carrying both halves.
 func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("live Gemini test: skipped by -short")
@@ -446,6 +448,14 @@ func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
 			}
 			created = true
 			t.Logf("turn %d: %s in %v", turn, ToolCreateSession, toolCall.Args)
+
+			// The whole point: the prompt rides the creation, so there is no
+			// gap between the yes and the work for a lost turn to fall into.
+			prompt, _ := toolCall.Args["prompt"].(string)
+			dispatched = strings.TrimSpace(prompt) != ""
+			if dispatched {
+				t.Logf("turn %d: prompt (%d chars): %s", turn, len(prompt), prompt)
+			}
 			respond(t, engine, toolCall, map[string]any{
 				"session_id":     "sess-new",
 				"name":           "Rate limit the login endpoint",
@@ -453,11 +463,13 @@ func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
 				"created":        true,
 				"focused":        true,
 				"can_start_work": true,
-				"note": "Created and focused: a new session in webtickets, on their screen now. " +
-					"If a prompt was already agreed, send it now with " + ToolRunPrompt + ".",
+				"sent":           dispatched,
+				"output":         "Say that it has gone to the new session and has started.",
 			})
 
 		case ToolRunPrompt:
+			// The recovery path, not the designed one: a model that created
+			// without a prompt can still put the work in. It is not a pass.
 			if !created {
 				t.Fatal("dispatched before creating anything — there was no session to send to")
 			}
@@ -465,7 +477,8 @@ func TestGeminiCreatesTheSessionItDispatchesToLive(t *testing.T) {
 			if strings.TrimSpace(prompt) == "" {
 				t.Fatalf("run_prompt carried no prompt: %v", toolCall.Args)
 			}
-			t.Logf("turn %d: %s (%d chars): %s", turn, ToolRunPrompt, len(prompt), prompt)
+			t.Errorf("turn %d: the prompt came in a second call, not with the creation: %s",
+				turn, prompt)
 			dispatched = true
 			respond(t, engine, toolCall, map[string]any{"output": "Started."})
 

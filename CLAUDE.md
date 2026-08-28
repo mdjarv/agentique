@@ -1092,6 +1092,25 @@ has agreed to the work that goes in it. A spoken model name resolves through the
 picker's own catalog (`Catalog.ResolveFamily`); unresolvable names the families
 that exist and creates nothing, never a guessed model id.
 
+**Creating and sending are one tool call.** `create_session` takes the `prompt`
+and dispatches it itself, through the same `dispatchPrompt` `run_prompt` uses,
+answering with the same `Delivery.Confirmation`. As two calls the agreed prompt
+lived nowhere but the model's own turn between them, so anything that ended that
+turn — the caller speaking over it, a live-session reconnect, a model taking a
+tool result's second sentence as permission to stop — left an empty session and
+an operator told the work had started. Only "make me one, I'll use it later"
+omits the prompt, and that answer says in words that nothing is running there. A
+refused send reports **both** halves; half of it is how somebody comes back to an
+empty session believing it ran. `run_prompt` stays the recovery path.
+
+**Tool calls run one at a time, in the order the model asked for them.** One
+live message may carry several function calls, arriving as separate events; a
+goroutine each made that order meaningless. They queue through `pumpTools`. The
+queue never drops one — an unanswered tool call leaves the model paused forever,
+which sounds exactly like the call having died — so an overflow is answered with
+a refusal. Every refusal in the dispatch path is logged, because "an empty
+session and no log line" is the same picture for five different causes.
+
 **The world snapshot is a view, never authority.** The browser sends the merged
 multi-machine session list as `world` frames because that merge exists only
 client-side; the call stores it for listing and name resolution. Dispatch
