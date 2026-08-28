@@ -7,8 +7,19 @@
  *
  * The panel and the indicator must always agree about which windows exist, so
  * both read `usableLimits`. Neither draws a window whose percent is unknown.
+ *
+ * The disk section is a LINK to /storage, on the same argument that makes the
+ * footer's compact gauge one: a level is a reading of a page, so the meter is
+ * the way to it. Every disk meter this app draws therefore leads to the same
+ * place — a section that looks exactly like the gauge beside it but answers
+ * nothing when tapped is the worse half of "a destination gets one home",
+ * especially on touch where the compact gauge is a 24px target.
+ *
+ * An allowance stays inert, because there is nowhere for it to go: the meter
+ * and its reset are the whole of what there is to know.
  */
-import { RefreshCw } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { agentColor, ProviderMark } from "~/components/usage/ProviderMark";
 import type { UsageAgent } from "~/lib/generated-types";
@@ -19,6 +30,7 @@ import {
   isGauge,
   limitTier,
   renderableAgents,
+  STORAGE_AGENT_ID,
   usableLimits,
 } from "~/lib/usage-api";
 import { cn } from "~/lib/utils";
@@ -34,7 +46,7 @@ const TIER_TEXT: Record<string, string> = {
   critical: "text-destructive",
 };
 
-export function UsagePanel() {
+export function UsagePanel({ onNavigate }: { onNavigate?: () => void }) {
   const doc = useUsageStore((s) => s.doc);
   const loading = useUsageStore((s) => s.loading);
   const fetch = useUsageStore((s) => s.fetch);
@@ -51,7 +63,13 @@ export function UsagePanel() {
   return (
     <div className="flex flex-col">
       {agents.map((agent, i) => (
-        <AgentSection key={agent.id} agent={agent} now={now} first={i === 0} />
+        <AgentSection
+          key={agent.id}
+          agent={agent}
+          now={now}
+          first={i === 0}
+          onNavigate={onNavigate}
+        />
       ))}
       <div className="mx-2 my-1 h-px bg-border/60" />
       <button
@@ -72,13 +90,34 @@ export function UsagePanel() {
   );
 }
 
-function AgentSection({ agent, now, first }: { agent: UsageAgent; now: number; first: boolean }) {
+function AgentSection({
+  agent,
+  now,
+  first,
+  onNavigate,
+}: {
+  agent: UsageAgent;
+  now: number;
+  first: boolean;
+  onNavigate?: () => void;
+}) {
   const limits = usableLimits(agent);
   const gauge = isGauge(agent);
   const identity = agentColor(agent.id);
+  const leadsToStorage = agent.id === STORAGE_AGENT_ID;
 
-  return (
-    <div className={cn("flex flex-col gap-0.5", !first && "mt-1 border-t border-border/40 pt-1.5")}>
+  // One body, two wrappers: the disk section is a link and every allowance is a
+  // plain block, so nothing inert wears a link's affordances. The body is built
+  // once and handed to whichever wraps it — a wrapper *component* declared here
+  // would be a new type every render and remount the meters under it.
+  const shellClass = cn(
+    "flex flex-col gap-0.5",
+    !first && "mt-1 border-t border-border/40 pt-1.5",
+    leadsToStorage && "rounded-md transition-colors hover:bg-muted/50",
+  );
+
+  const body = (
+    <>
       <div className="flex items-baseline gap-2 px-3 pb-0.5 pt-1">
         <ProviderMark id={agent.id} className="size-3 shrink-0 self-center" />
         <span className="truncate text-[11.5px] font-medium text-foreground-bright">
@@ -88,6 +127,12 @@ function AgentSection({ agent, now, first }: { agent: UsageAgent; now: number; f
           <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground-faint">
             {agent.tierLabel}
           </span>
+        )}
+        {/* Says the section leads somewhere. Without it the only difference
+            between the disk meter and the allowances above it is that one
+            responds to a tap, which is not a difference you can see. */}
+        {leadsToStorage && !agent.tierLabel && (
+          <ChevronRight className="ml-auto size-3 shrink-0 self-center text-muted-foreground-faint" />
         )}
       </div>
 
@@ -153,6 +198,13 @@ function AgentSection({ agent, now, first }: { agent: UsageAgent; now: number; f
           today {compactTokens(agent.todayTokens ?? 0)} · {agent.todayPrompts ?? 0} prompts
         </div>
       )}
-    </div>
+    </>
+  );
+
+  if (!leadsToStorage) return <div className={shellClass}>{body}</div>;
+  return (
+    <Link to="/storage" onClick={onNavigate} className={shellClass} title="Open Storage">
+      {body}
+    </Link>
   );
 }

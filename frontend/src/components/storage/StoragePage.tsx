@@ -242,9 +242,14 @@ export function StoragePage() {
 
         {disk && (
           <div className="rounded-lg border bg-card/40 px-4 py-3">
-            <div className="flex items-center justify-between text-xs uppercase tracking-wider text-muted-foreground">
-              <span>Volume — {disk.path}</span>
-              <span className="tabular-nums normal-case">
+            {/* The path is the long half and the free/total figure is the half
+                worth reading, so the path truncates rather than wrapping under
+                a column of digits. */}
+            <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+              <span className="min-w-0 truncate" title={disk.path}>
+                Volume — {disk.path}
+              </span>
+              <span className="shrink-0 tabular-nums normal-case">
                 {formatBytes(disk.freeBytes)} free of {formatBytes(disk.totalBytes)}
               </span>
             </div>
@@ -578,19 +583,30 @@ function ProjectCard({
             className="size-2.5 rounded-full shrink-0"
             style={{ backgroundColor: project.color || "var(--color-muted-foreground)" }}
           />
-          <span className="font-medium text-sm truncate">{project.name || project.slug}</span>
-          <span className="text-xs text-muted-foreground shrink-0">
-            {project.sessions.length} session{project.sessions.length === 1 ? "" : "s"}
-            {reclaimable.length > 0 && (
-              <span className="text-muted-foreground/70"> · {reclaimable.length} reclaimable</span>
-            )}
+          {/* The name is what the row is about, so the counts are what gives
+              ground: side by side where there is room, stacked beneath where
+              there is not. Sharing one line at 412px left the name showing a
+              single initial. */}
+          <span className="flex min-w-0 flex-1 flex-col md:flex-row md:items-center md:gap-2">
+            <span className="truncate font-medium text-sm">{project.name || project.slug}</span>
+            <span className="truncate text-xs text-muted-foreground md:shrink-0">
+              {project.sessions.length} session{project.sessions.length === 1 ? "" : "s"}
+              {reclaimable.length > 0 && (
+                <span className="text-muted-foreground/70">
+                  {" "}
+                  · {reclaimable.length} reclaimable
+                </span>
+              )}
+            </span>
           </span>
         </button>
         {reclaimable.length > 0 && (
           <button
             type="button"
             onClick={onSelectReclaimable}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all opacity-0 group-hover:opacity-100 shrink-0"
+            // Revealed by hover on a pointer, always present on touch: there is
+            // no hover to reveal it with, and an invisible control is no control.
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-all opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
             title={`Select ${reclaimable.length} reclaimable session${reclaimable.length === 1 ? "" : "s"}`}
           >
             <Check className="size-3" />
@@ -653,52 +669,66 @@ function SessionRow({
           className="shrink-0 size-4 accent-primary cursor-pointer"
         />
       )}
-      <span className="truncate min-w-0 flex-1">
-        {session.name || (session.orphaned ? session.worktreePath : session.sessionId)}
-      </span>
-      {/* `merged` is now a fact about how the merge happened, not the gate — the
-          gate is `safety`, which git answered. Kept because it still explains a
-          row at a glance. */}
-      {session.merged && (
-        <Badge
-          variant="outline"
-          className="text-[10px] shrink-0 gap-1 border-sky-500/30 text-sky-600 dark:text-sky-400"
-        >
-          <GitMerge className="size-2.5" />
-          merged
-        </Badge>
-      )}
-      {!session.orphaned &&
-        (session.archived ? (
-          <Badge
-            variant="outline"
-            className="text-[10px] shrink-0 gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
-          >
-            <Archive className="size-2.5" />
-            archived
-          </Badge>
-        ) : (
-          session.state && (
+      {/* The name owns the first line and everything qualifying it wraps
+          beneath, because at 412px the one-line arrangement spent the row on
+          badges and left the name as "ML S…". Size stays at the right edge
+          either way: it is the column the page is read down. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
+        <span className="truncate min-w-0 md:flex-1">
+          {session.name || (session.orphaned ? session.worktreePath : session.sessionId)}
+        </span>
+        {/* Wraps on a narrow screen so the blocked-delete reason gets a line of
+            its own rather than being truncated to "has co…". One line and
+            nowrap once there is room for it. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:flex-nowrap md:shrink-0">
+          {/* `merged` is now a fact about how the merge happened, not the gate —
+              the gate is `safety`, which git answered. Kept because it still
+              explains a row at a glance. */}
+          {session.merged && (
             <Badge
               variant="outline"
-              className="text-[10px] shrink-0 border-primary/40 text-primary"
+              className="text-[10px] shrink-0 gap-1 border-sky-500/30 text-sky-600 dark:text-sky-400"
             >
-              {session.state}
+              <GitMerge className="size-2.5" />
+              merged
             </Badge>
-          )
-        ))}
-      {/* Why Delete is unavailable, on the row that causes it. The bar only ever
-          reports how many blocked it; this is where the reason lives. */}
-      {!session.orphaned && !canDelete(session) && session.safetyReason && (
-        <span className="text-xs text-muted-foreground/80 shrink-0 hidden sm:inline">
-          {session.safetyReason}
-        </span>
-      )}
-      {!session.orphaned && session.updatedAt && (
-        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-          {relativeTime(session.updatedAt)} ago
-        </span>
-      )}
+          )}
+          {!session.orphaned &&
+            (session.archived ? (
+              <Badge
+                variant="outline"
+                className="text-[10px] shrink-0 gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+              >
+                <Archive className="size-2.5" />
+                archived
+              </Badge>
+            ) : (
+              session.state && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] shrink-0 border-primary/40 text-primary"
+                >
+                  {session.state}
+                </Badge>
+              )
+            ))}
+          {/* Why Delete is unavailable, on the row that causes it. The bar only
+              ever reports how many blocked it; this is where the reason lives.
+              Still desktop-only: it is a sentence, and most rows carry one, so
+              on a phone it wraps every row to a third line to say something
+              secondary to the name, state and size the row is read for. */}
+          {!session.orphaned && !canDelete(session) && session.safetyReason && (
+            <span className="hidden min-w-0 truncate text-xs text-muted-foreground/80 md:inline">
+              {session.safetyReason}
+            </span>
+          )}
+          {!session.orphaned && session.updatedAt && (
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+              {relativeTime(session.updatedAt)} ago
+            </span>
+          )}
+        </div>
+      </div>
       <span
         className="w-16 text-right tabular-nums text-muted-foreground shrink-0"
         title={
@@ -709,12 +739,15 @@ function SessionRow({
       >
         {formatBytes(freedBytes(session))}
       </span>
+      {/* Both verbs are hover-revealed on a pointer and always present on touch,
+          where there is no hover to reveal them with. */}
       {onReclaim && (
         <button
           type="button"
           onClick={onReclaim}
-          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-muted hover:text-foreground transition-all"
           title="Free the disk, keep the session"
+          aria-label={`Reclaim disk for ${session.name || session.sessionId}`}
         >
           <RotateCcw className="size-3.5" />
         </button>
@@ -722,8 +755,9 @@ function SessionRow({
       <button
         type="button"
         onClick={onDelete}
-        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
         title="Delete"
+        aria-label={`Delete ${session.name || session.sessionId}`}
       >
         <Trash2 className="size-3.5" />
       </button>

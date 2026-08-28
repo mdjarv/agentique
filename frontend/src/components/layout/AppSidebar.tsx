@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { VoiceDock } from "~/components/voice/VoiceDock";
+import { dismissSidebar } from "~/lib/sidebar-nav";
 import { cn } from "~/lib/utils";
 import { useBrainStore } from "~/stores/brain-store";
 
@@ -102,6 +103,9 @@ function SidebarHeader() {
             What is left all reports something: channels with traffic, a brain
             that flares, loops that run.
           */}
+          {/* `useSidebarDismissOnNavigate` closes the mobile sheet on arrival;
+              these dismiss on the click as well, because a menu item can name
+              the page you are already on, and that navigation never happens. */}
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem className="text-xs gap-2" onSelect={() => setNewProjectOpen(true)}>
               <FolderPlus className="size-3.5" />
@@ -109,21 +113,21 @@ function SidebarHeader() {
               <span className="ml-auto text-muted-foreground-faint">add a repo</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild className="text-xs gap-2">
+            <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/teams">
                 <Hash className="size-3.5" />
                 Teams
                 <span className="ml-auto text-muted-foreground-faint">channels & personas</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
+            <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/brain">
                 <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
                 Brain
                 <span className="ml-auto text-muted-foreground-faint">persistent memory</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2">
+            <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/schedules">
                 <Clock className="size-3.5" />
                 Schedules

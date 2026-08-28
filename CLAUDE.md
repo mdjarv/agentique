@@ -238,12 +238,29 @@ Discussions is a control on the Teams page's profile section.
 "Behind the disk meter" is literal: `splitMetered` draws the compact indicator
 with two controls, because its halves lead different places. The allowances open
 the usage popover; the disk gauge is a `Link` to `/storage`, so that popover
-carries **no** Storage row. A level is a reading *of* a page, which makes the
-meter the better home — it is also the reason you would go — where an allowance
-has nowhere to go beyond its own reset.
+carries **no** Storage *nav* row. A level is a reading *of* a page, which makes
+the meter the better home — it is also the reason you would go — where an
+allowance has nowhere to go beyond its own reset.
+
+Which means **every** disk meter is that link, the popover's own disk section
+included (`UsagePanel`, keyed on `STORAGE_AGENT_ID`). It draws a section per
+renderable agent, so it draws one for the gauge too, and an identical-looking
+reading that answers nothing when tapped differs from the gauge only in the
+respect you cannot see. It is also the target that works on touch, where the
+compact gauge is 24px wide. Allowance sections stay inert.
 
 A moved route keeps its old path as a `redirect`: `/projects` and `/templates`
 are in bookmarks and in deep links this app minted.
+
+**Navigating dismisses the mobile sidebar, and that rule lives at the router.**
+On mobile the sidebar is a Sheet over the whole viewport, so it *is* the
+navigation surface and arriving somewhere finishes its job; leaving it up hides
+the page it just opened, which reads as a dead link. `useSidebarDismissOnNavigate`
+(`lib/sidebar-nav.ts`) watches the location rather than each control, because
+the ⋯ menu and the footer popover render into portals — a delegated handler on
+the sheet never sees them, and a link added to either would silently miss a
+per-control dismiss. What it cannot see is a link naming the page you are
+already on; those few controls call `dismissSidebar` directly.
 
 ### The footer line indicates with marks, not sentences
 

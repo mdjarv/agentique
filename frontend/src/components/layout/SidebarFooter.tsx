@@ -12,8 +12,10 @@
  * It is drawn by two controls, because its two halves lead different places
  * (`splitMetered`). The allowances open the popover. The disk gauge is a LINK
  * to /storage — the page it is a level of — so the popover carries no Storage
- * row: a destination gets one home, and the meter is the better one because it
- * is also the reason you would go.
+ * NAV row: a destination gets one home, and the meter is the better one because
+ * it is also the reason you would go. The panel's own disk section is that same
+ * meter and therefore the same link, which is what keeps it from being a second
+ * disk reading that answers nothing.
  *
  * The popover is deliberately thin: the meters it fronts, and the way through
  * to everything else. Machines, theme, the Claude account and sign-out moved
@@ -37,6 +39,7 @@ import { UpdatePopoverRows } from "~/components/update/UpdatePopoverRows";
 import { UsageCluster } from "~/components/usage/UsageCluster";
 import { UsagePanel } from "~/components/usage/UsagePanel";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
+import { dismissSidebar } from "~/lib/sidebar-nav";
 import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import { splitMetered } from "~/lib/usage-api";
 import { cn } from "~/lib/utils";
@@ -54,6 +57,14 @@ export function SidebarFooter() {
   const waiting = useUpdateWaiting();
   const { allowances, storage } = useMemo(() => splitMetered(doc), [doc]);
   const close = () => setOpen(false);
+  // Leaving for a page closes both surfaces this footer sits behind. The
+  // router-level rule (`useSidebarDismissOnNavigate`) covers arriving somewhere
+  // new; this covers a link naming the page you are already on, which is
+  // routine here — the disk meter is offered from /storage itself.
+  const leave = () => {
+    close();
+    dismissSidebar();
+  };
 
   // The allowance trigger is also what the update mark rides, so it stays
   // mounted for a machine that reports no windows at all but is behind. With
@@ -112,6 +123,7 @@ export function SidebarFooter() {
               to="/storage"
               aria-label="Storage"
               title="Storage"
+              onClick={dismissSidebar}
               className="flex h-6 shrink-0 items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
             >
               <UsageCluster agents={[storage]} />
@@ -131,7 +143,8 @@ export function SidebarFooter() {
           {/* Above the meters, and only when populated: the verbs come first
               because they are the only thing here that can be acted on. */}
           <UpdatePopoverRows />
-          <UsagePanel />
+          {/* The disk section inside is a link to /storage — see UsagePanel. */}
+          <UsagePanel onNavigate={leave} />
           <div className="mx-2 my-1 h-px bg-border/60" />
           <button
             type="button"
@@ -147,9 +160,10 @@ export function SidebarFooter() {
               {version}
             </span>
           </button>
-          {/* No Storage row: the disk gauge on the footer line is the way
-              there, and it is the reason you would go. */}
-          <NavRow to="/settings" icon={SettingsIcon} label="Settings" onNavigate={close} />
+          {/* No Storage nav row: the disk meters are the way there — the gauge
+              on this line, and the section inside the panel above — and they
+              are the reason you would go. */}
+          <NavRow to="/settings" icon={SettingsIcon} label="Settings" onNavigate={leave} />
         </PopoverContent>
       </Popover>
       {/* The fleet view. The popover carries this machine's verb; a row per

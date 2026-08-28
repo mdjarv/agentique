@@ -19,6 +19,7 @@ import { useProjects } from "~/hooks/useProjects";
 import { useTheme } from "~/hooks/useTheme";
 import { useUpdateChecks } from "~/hooks/useUpdateChecks";
 import { useVoiceFocusNavigation } from "~/hooks/useVoiceFocusNavigation";
+import { useSidebarDismissOnNavigate } from "~/lib/sidebar-nav";
 import { useAppStore } from "~/stores/app-store";
 import { useAuthStore } from "~/stores/auth-store";
 import { useChatStore } from "~/stores/chat-store";
@@ -63,6 +64,9 @@ function AuthenticatedLayout() {
   // The screen follows the voice: a `focus` frame navigates, wherever the
   // operator happens to be.
   useVoiceFocusNavigation();
+  // Arriving somewhere finishes the mobile sidebar's job, whichever of its
+  // surfaces — rows, ⋯ menu, footer popover — did the navigating.
+  useSidebarDismissOnNavigate();
 
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const browserEnabled = useFeatureStore((s) => s.features.browser);

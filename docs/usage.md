@@ -103,10 +103,19 @@ The gauge is also **the way to that page**. `splitMetered` divides the compact
 indicator in two, because its halves lead different places: an allowance has
 nowhere to go beyond its meter and its reset, which is the popover, while a
 level is a reading *of* something — the disk gauge is a `Link` to `/storage`,
-and the popover carries no Storage row repeating it. A destination gets one
-home, and the meter is the better one because it is also the reason you would
-go. `UsageCluster` therefore takes the agents to draw rather than the document;
-`meteredAgents` stays the caller's filter.
+and the popover carries no Storage *nav* row repeating it. A destination gets
+one home, and the meter is the better one because it is also the reason you
+would go. `UsageCluster` therefore takes the agents to draw rather than the
+document; `meteredAgents` stays the caller's filter.
+
+**Every disk meter is that link, including the popover's own disk section.**
+`UsagePanel` draws a section per renderable agent, so it draws one for the gauge
+too, and that section was a second disk reading that answered nothing when
+tapped — indistinguishable from the gauge except in the one respect you cannot
+see. It is a `Link` on the same argument, with a chevron so the difference from
+the allowances above it is visible, and it is the reachable target on touch,
+where the compact gauge is 24px of tap area. Allowance sections stay inert;
+`STORAGE_AGENT_ID` is the one place that decides which is which.
 
 ## Today's spend
 
