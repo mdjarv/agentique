@@ -280,7 +280,10 @@ export function CallRoutes() {
         <dt>Microphone</dt>
         <dd className="font-mono break-all">
           {report.capture.active
-            ? `${report.capture.device || "unnamed"} · ${report.capture.contextSampleRate} Hz · echo cancellation ${report.capture.echoCancellation ? "on" : "off"}`
+            ? // Both rates, because the interesting one is the gap: the context
+              // rate names the Bluetooth profile the phone chose, and the
+              // upload rate is what the socket actually carries.
+              `${report.capture.device || "unnamed"} · ${report.capture.contextSampleRate} Hz → ${report.capture.uploadSampleRate} Hz · echo cancellation ${report.capture.echoCancellation ? "on" : "off"}`
             : "not open"}
         </dd>
       </dl>

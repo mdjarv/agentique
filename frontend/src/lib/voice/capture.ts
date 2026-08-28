@@ -18,10 +18,21 @@ export interface CaptureRoute {
   active: boolean;
   /** The track's label. `""` on a platform that will not name it. */
   device: string;
-  /** The rate the capture context settled on. Should be [INPUT_SAMPLE_RATE]. */
+  /**
+   * The rate the capture context settled on — the hardware's, never one we
+   * asked for.
+   *
+   * It is the single most diagnostic number on a car fault, because it names
+   * the Bluetooth profile: 8 or 16 kHz is hands-free (HFP/SCO), 44.1 or 48 is
+   * a media route. Nothing downstream may assume it equals
+   * [INPUT_SAMPLE_RATE]; assuming that is what broke capture on every media
+   * route.
+   */
   contextSampleRate: number;
   /** What the track itself reports. `0` when it does not. */
   trackSampleRate: number;
+  /** The rate the frames leave at, after the worklet's conversion. */
+  uploadSampleRate: number;
   /** Whether the browser granted the echo cancellation that was asked for. */
   echoCancellation: boolean;
 }
@@ -31,6 +42,7 @@ const NO_CAPTURE: CaptureRoute = {
   device: "",
   contextSampleRate: 0,
   trackSampleRate: 0,
+  uploadSampleRate: 0,
   echoCancellation: false,
 };
 
@@ -42,10 +54,23 @@ export interface MicCaptureOptions {
 }
 
 /**
- * Microphone capture at the socket's sample rate.
+ * Microphone capture, converted to the socket's sample rate in the worklet.
  *
- * The AudioContext is created at 16 kHz so the browser resamples once, in the
- * audio thread, rather than leaving us to do it per frame in JS.
+ * The context deliberately does NOT ask for [INPUT_SAMPLE_RATE], which is the
+ * same rule playback settled on and for a closely related reason. A requested
+ * rate is a request: a hands-free Bluetooth route is already at 8 or 16 kHz and
+ * granted it, so capture worked there and only there. On a media route — A2DP,
+ * projection, a laptop's own speakers — the device runs at 44.1 or 48 kHz, the
+ * request is quietly not honoured, and nothing here checked, so every frame
+ * went up mislabelled at three times its real speed. A microphone that fails on
+ * exactly the routes that sound best is what that looks like from the car.
+ *
+ * Asking also had a cost even when it worked: a 16 kHz capture context shares
+ * the audio device with playback, and pinning it to a telephony rate is a way
+ * to drag the whole route onto the telephony profile.
+ *
+ * So the context takes the hardware's rate and the worklet converts, which is
+ * the one place the real rate is knowable.
  */
 export class MicCapture {
   private ctx: AudioContext | null = null;
@@ -72,14 +97,18 @@ export class MicCapture {
       track.addEventListener("ended", opts.onEnded);
     }
 
-    this.ctx = new AudioContext({ sampleRate: INPUT_SAMPLE_RATE });
+    this.ctx = new AudioContext();
     // A context created during a gesture can still start suspended on mobile.
     if (this.ctx.state === "suspended") await this.ctx.resume();
 
     await this.ctx.audioWorklet.addModule(workletUrl);
 
     this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, "mic-processor");
+    // The target rides the node rather than being compiled into the worklet, so
+    // the socket's rate is stated once, here, next to the code that sends it.
+    this.node = new AudioWorkletNode(this.ctx, "mic-processor", {
+      processorOptions: { targetSampleRate: INPUT_SAMPLE_RATE },
+    });
     this.node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
       // The level is a scan of a frame we already hold — no second audio node,
       // no analyser, no extra graph. Measured before the frame is handed on,
@@ -115,6 +144,7 @@ export class MicCapture {
       device: track.label,
       contextSampleRate: this.ctx.sampleRate,
       trackSampleRate: settings.sampleRate ?? 0,
+      uploadSampleRate: INPUT_SAMPLE_RATE,
       // Some browsers answer with a mode ("all", "remote-only") rather than a
       // flag. Any of them means it was granted, which is the whole question.
       echoCancellation: Boolean(settings.echoCancellation),

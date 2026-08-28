@@ -160,13 +160,47 @@ app applies. The worklet batches 512 samples (~32 ms at 16 kHz) before posting.
 A render quantum is 128 frames, so posting per quantum would mean 125 messages
 and 125 socket frames a second carrying 8 ms each — all overhead.
 
-Capture and playback use **separate AudioContexts**. One shared context would
-resample every played frame down to the 16 kHz capture rate and throw the
-difference away.
+Capture and playback use **separate AudioContexts**, and *neither* asks for a
+sample rate. Both take the hardware's and convert at the edge: playback builds
+each buffer at the rate the server announced, capture converts to 16 kHz inside
+the worklet.
 
 `echoCancellation: true` is load-bearing, not a nicety: it is the only thing
 stopping the agent hearing itself through the speakers and interrupting itself.
 There is no server-side echo cancellation anywhere in this design.
+
+### Neither context may ask for a rate
+
+Capture used to construct its context at 16 kHz, on the reasoning that the
+browser would then resample once, in the audio thread, rather than leaving it to
+be done per frame in JS. A requested rate is a request.
+
+A hands-free Bluetooth route already runs at 8 or 16 kHz, so it granted the
+request and capture worked. Every media route — A2DP, car projection, a laptop's
+own speakers — runs at 44.1 or 48 kHz, does not honour it, and nothing checked:
+the worklet then posted 48 kHz samples that the socket labelled 16 kHz. Three
+times too fast is not speech any model transcribes, and the only symptom is a
+microphone that appears dead on exactly the routes that sound best. It is a
+particularly bad shape of bug to debug in a car, because the fix — dropping to a
+hands-free profile — is also what the passenger would try first, and it works.
+
+Asking had a second cost even where it was granted. The capture context shares
+one audio device with playback, and pinning it to a telephony rate is a way to
+hold the whole route on the telephony profile.
+
+So the rate conversion lives in `mic-worklet.js`, which is the one place the
+real rate is knowable (`sampleRate` in the worklet scope is what the context
+actually got). Downward it is a **box average over each output sample's
+window**, not point-sampling: the samples being skipped are already in hand, and
+summing them is the only anti-alias guard that fits in a render quantum.
+Upward — a narrowband hands-free route at 8 kHz — it is linear interpolation.
+Both carry their state across render quanta; a window or read position reset at
+a quantum boundary puts a 125 Hz artefact into the stream.
+
+`CaptureRoute` therefore reports **two** rates, and the diagnostic prints both.
+`contextSampleRate` is the hardware's, which is what names the Bluetooth
+profile; `uploadSampleRate` is what the socket carries. The gap between them is
+the reading, and nothing downstream may assume they are equal.
 
 ### The playback context is created in the gesture
 

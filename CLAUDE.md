@@ -913,6 +913,22 @@ the session summary is off the path entirely: `ProjectContext` reads
 `sessionSummarizer.Cached` and warms in the background. A provider-CLI
 subprocess is never between a click and a microphone.
 
+**Neither audio context asks for a sample rate.** A requested rate is a request:
+a hands-free Bluetooth route is already at 8 or 16 kHz and grants it, every media
+route (A2DP, projection, a laptop's speakers) is at 44.1 or 48 and does not. So
+capture built at 16 kHz worked on the telephony profile and only there — on a
+media route the worklet posted 48 kHz samples the socket labelled 16 kHz, three
+times too fast, and the microphone looked dead on exactly the routes that sound
+best. Both contexts take the hardware's rate and convert at the edge:
+`playback.ts` builds each buffer at the announced source rate, `mic-worklet.js`
+converts to `INPUT_SAMPLE_RATE` — box-averaging each output sample's window
+downward (the samples being skipped are already in hand, and it is the only
+anti-alias guard that fits in a render quantum), interpolating upward, both
+carrying state across render quanta or a reset writes a 125 Hz artefact into the
+stream. `CaptureRoute` reports **both** rates because the gap is the reading:
+`contextSampleRate` names the Bluetooth profile, `uploadSampleRate` is what the
+socket carries.
+
 **The playback AudioContext is created in the user gesture.** Built and resumed
 inside the click that placed the call, never when `ready` arrives: a context
 created outside a gesture stays suspended, so control frames render and nothing
