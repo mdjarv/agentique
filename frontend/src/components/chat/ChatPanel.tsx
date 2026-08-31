@@ -173,7 +173,6 @@ export function ChatPanel({
     meta,
     pendingApproval,
     pendingQuestion,
-    planMode,
     autoApproveMode,
     todos,
     contextUsage,
@@ -500,7 +499,9 @@ export function ChatPanel({
   // where the session says what it is waiting for.
   const isResumable = resumableStates.has(sessionState) && !machineAway;
   const caps = meta?.capabilities;
-  const planModeSupported = caps?.planMode !== false;
+  // `caps.planMode` and `handlePlanModeChange` stay: a template can still start
+  // a session in plan mode, and the CLI can enter it on its own — what went is
+  // the per-message toggle, not the capability.
   const attachmentsSupported = caps?.attachments !== false;
   const midTurnSendSupported = caps?.midTurnSendMessage !== false;
   const resumeSupported = caps?.resume !== false;
@@ -780,9 +781,6 @@ export function ChatPanel({
                           ? "Provider can't accept mid-turn messages — wait for the turn to finish"
                           : resumePlaceholders[sessionState]
                 }
-                worktree={isWorktree}
-                planMode={planModeSupported ? planMode : undefined}
-                onPlanModeChange={planModeSupported ? handlePlanModeChange : undefined}
                 autoApproveMode={autoApproveMode}
                 onAutoApproveModeChange={handleAutoApproveModeChange}
                 provider={(meta.provider as ProviderId) || undefined}

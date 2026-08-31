@@ -1,7 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { GitBranch, Loader2, Monitor, Plus, Users2 } from "lucide-react";
+import { Loader2, Plus, Users2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { LocationPicker } from "~/components/chat/LocationPicker";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { SwarmComposer } from "~/components/chat/SwarmComposer";
 import { UserMessage } from "~/components/chat/UserMessage";
@@ -17,17 +18,14 @@ import { useWebSocket } from "~/hooks/useWebSocket";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { preferredMember } from "~/lib/machines/launch-targets";
 import { useNavigationGuard } from "~/lib/navigation";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
-import type { Project } from "~/lib/types";
 import { cn, copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
-import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { DEFAULT_SESSION_DEFAULTS, useUIStore } from "~/stores/ui-store";
 
@@ -331,20 +329,18 @@ export function NewChatPanel({
               <div className="text-lg font-semibold" style={{ color: color?.fg }}>
                 {project?.name}
               </div>
-              {gitStatus?.branch && (
-                <div className="flex items-center justify-center gap-1.5 text-sm font-mono text-muted-foreground">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  {gitStatus.branch}
-                </div>
-              )}
-              {members.length > 1 && (
-                <RunOnPicker
-                  members={members}
-                  value={targetProjectId}
-                  onChange={setTargetProjectId}
-                  disabled={sending}
-                />
-              )}
+              {/* Machine and worktree are two segments of one address, so they
+                  are one control — and it is the same element, in the same
+                  shape, that the header will carry once this session exists. */}
+              <LocationPicker
+                members={members}
+                targetProjectId={targetProjectId}
+                onTargetChange={setTargetProjectId}
+                worktree={worktree}
+                onWorktreeChange={setWorktree}
+                projectBranch={gitStatus?.branch}
+                disabled={sending}
+              />
               <p className="text-xs text-muted-foreground-faint pt-1">
                 Describe what you want to work on below
               </p>
@@ -366,8 +362,6 @@ export function NewChatPanel({
           }
           initialText={composerInitialText}
           onTextPersist={handleTextPersist}
-          worktree={worktree}
-          onWorktreeChange={setWorktree}
           autoApproveMode={autoApproveMode}
           onAutoApproveModeChange={setAutoApproveMode}
           onProviderChange={setProvider}
@@ -397,68 +391,6 @@ export function NewChatPanel({
           onCancel={handleVariableCancel}
         />
       )}
-    </div>
-  );
-}
-
-/** Segmented "Run on" control for logical projects spanning several
- *  machines — one option per physical member, primary first. */
-function RunOnPicker({
-  members,
-  value,
-  onChange,
-  disabled,
-}: {
-  members: Project[];
-  value: string;
-  onChange: (projectId: string) => void;
-  disabled?: boolean;
-}) {
-  const machines = useMachineStore((s) => s.machines);
-  const statuses = useMachineStore((s) => s.statuses);
-  const primaryLabel = useFeatureStore((s) => s.machineLabel);
-
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground-faint">
-        Run on
-      </span>
-      <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
-        {members.map((m) => {
-          const entry = m.machineId ? machines[m.machineId] : undefined;
-          const label = m.machineId ? (entry?.label ?? "remote") : primaryLabel || "This machine";
-          // A machine that is merely asleep still belongs in the list — it is
-          // where the repo lives, and knowing that is worth more than a
-          // shorter row. It just can't be picked until it wakes.
-          const offline = !!m.machineId && statuses[m.machineId] !== "connected";
-          const Icon = m.machineId
-            ? (getMachineIcon(entry?.icon ?? "") ?? DEFAULT_MACHINE_ICON)
-            : Monitor;
-          const selected = m.id === value;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              disabled={disabled || offline}
-              onClick={() => onChange(m.id)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors border",
-                selected
-                  ? "border-primary/50 bg-primary/15 text-primary font-medium shadow-sm"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-                offline
-                  ? "cursor-not-allowed opacity-45 hover:text-muted-foreground"
-                  : "cursor-pointer",
-              )}
-              title={offline ? `${label} is offline — ${m.path}` : m.path}
-            >
-              <Icon className="size-3" />
-              {label}
-              {offline && <span className="text-[10px] text-muted-foreground-faint">offline</span>}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -16,8 +16,10 @@ import type { ModelId, ProviderId } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AttachmentStrip } from "./composer/AttachmentStrip";
+import { BrainControl } from "./composer/BrainControl";
 import { ComposerTextarea, type ComposerTextareaHandle } from "./composer/ComposerTextarea";
 import { ComposerToolbar } from "./composer/ComposerToolbar";
+import { PermissionMark } from "./composer/PermissionMark";
 import { useComposerSend } from "./composer/useComposerSend";
 import { useComposerSpeech } from "./composer/useComposerSpeech";
 import { ImageLightbox } from "./ImageLightbox";
@@ -41,10 +43,6 @@ interface MessageComposerProps {
   initialText?: string;
   onTextPersist?: (text: string) => void;
   placeholder?: string;
-  worktree?: boolean;
-  onWorktreeChange?: (value: boolean) => void;
-  planMode?: boolean;
-  onPlanModeChange?: (value: boolean) => void;
   autoApproveMode?: AutoApproveMode;
   onAutoApproveModeChange?: (value: AutoApproveMode) => void;
   /**
@@ -100,10 +98,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onInterrupt,
       initialText,
       onTextPersist,
-      worktree,
-      onWorktreeChange,
-      planMode,
-      onPlanModeChange,
       autoApproveMode,
       onAutoApproveModeChange,
       provider,
@@ -214,10 +208,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         onAttachClick={onAttachClick}
         disabled={!!disabled || send.submitting}
         templatePicker={templatePicker}
-        worktree={worktree}
-        onWorktreeChange={onWorktreeChange}
-        planMode={planMode}
-        onPlanModeChange={onPlanModeChange}
         isRunning={isRunning}
         autoApproveMode={autoApproveMode}
         onAutoApproveModeChange={onAutoApproveModeChange}
@@ -292,10 +282,22 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       </div>
     );
 
-    // Focus layout (mobile session): the bar is just a `+` tools toggle and the
-    // send cluster; attach/template/dictate and the rarely-changed mode/model
-    // controls live in the collapsible tray the `+` reveals. Otherwise the
-    // classic inline toolbar (desktop + new-session form).
+    // Focus layout (mobile session): the bar is a `+` tools toggle, a summary,
+    // and the send cluster; attach, templates and dictate live in the
+    // collapsible tray the `+` reveals.
+    //
+    // The summary stays *outside* the tray on purpose. Which model is answering
+    // and whether it will stop to ask are the two facts worth checking before
+    // sending, and a phone that hides both behind a tap cannot answer either.
+    // They are a reading here, not controls — the tray is where they change.
+    const summary =
+      model || autoApproveMode !== undefined ? (
+        <div className="flex items-center gap-1 min-w-0">
+          <BrainControl model={model} modelDisplayName={modelDisplayName} effort={effort} />
+          {autoApproveMode !== undefined && <PermissionMark mode={autoApproveMode} />}
+        </div>
+      ) : null;
+
     const bottomBar = useFocusLayout ? (
       <div className="flex flex-col gap-2 px-2 pb-2">
         {showTools && (
@@ -318,6 +320,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
           >
             <Plus className={cn("h-5 w-5 transition-transform", showTools && "rotate-45")} />
           </button>
+          {!showTools && summary}
           <div className="flex-1" />
           {rightActions}
         </div>

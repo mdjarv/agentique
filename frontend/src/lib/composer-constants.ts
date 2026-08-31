@@ -15,6 +15,16 @@ export function isImage(mime: string): boolean {
 }
 
 export const EFFORT_LEVELS: EffortLevel[] = ["max", "xhigh", "high", "medium", "low", ""];
+
+/**
+ * The same levels as a ramp, weakest first, with "Default" left out.
+ *
+ * A menu puts the strongest option at the top; a ramp climbs, and it cannot
+ * carry an unset value as a rung — "Default" is the absence of a choice, not a
+ * quantity between Low and Medium. So the meter reads an unset effort as an
+ * empty ramp rather than inventing a position for it.
+ */
+export const RAMP_LEVELS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 export const EFFORT_LABELS: Record<EffortLevel, string> = {
   "": "Default",
   low: "Low",
@@ -38,6 +48,18 @@ export const PERMISSION_LABELS: Record<AutoApproveMode, string> = {
   auto: "Auto",
   fullAuto: "Full Auto",
 };
+/**
+ * The verb phrasing, for menus. A menu row is an action you are about to take,
+ * so it reads better as one — "Manually approve" over "Manual". The nouns
+ * survive in `PERMISSION_LABELS` for the places that label a *state* rather
+ * than offer a choice (templates, team profiles).
+ */
+export const PERMISSION_VERBS: Record<AutoApproveMode, string> = {
+  manual: "Manually approve",
+  auto: "Automatically approve",
+  fullAuto: "Skip all approvals",
+};
+
 export const PERMISSION_DESCRIPTIONS: Record<AutoApproveMode, string> = {
   manual: "Approve every tool use individually",
   auto: "Auto-approve reads and writes, prompt for shell commands",
