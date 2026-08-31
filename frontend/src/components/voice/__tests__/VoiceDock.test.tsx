@@ -42,7 +42,9 @@ function mockMatchMedia(matches: boolean) {
 
 /** A live call, mid-sentence, focused on a session with a long name. */
 function liveCall() {
-  useFeatureStore.setState({ features: { browser: false, teams: false, voice: true } });
+  useFeatureStore.setState({
+    features: { browser: false, teams: false, voice: true, brain: false },
+  });
   useChatStore.setState({
     activeSessionId: "s1",
     sessions: {

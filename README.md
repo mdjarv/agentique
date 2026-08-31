@@ -501,6 +501,12 @@ exclude-dynamic-system-prompt-sections = false  # move cwd/env/git-status out of
                                # between sessions instead of diverging per worktree.
 
 [brain]
+# The master switch, and it is OFF by default: nothing below applies until you
+# turn it on. Off means the subsystem is never built — no /api/brain routes, no
+# memory MCP tools, no recall, no session-end learning, no scheduled
+# consolidation, and the Brain entry is absent from the sidebar menu. The
+# markdown store on disk is never touched either way, so this is reversible.
+enabled = false
 # Semantic recall. Without these, recall and clustering fall back to
 # keyword/Jaccard over the markdown files, which works but is weaker.
 chroma-url  = ""
@@ -512,7 +518,10 @@ embed-key   = ""
 semantic-threshold = 0.45
 vector-veto        = 0.15
 autocal            = false
-recall             = "on"   # "off" disables per-turn fact injection
+recall             = "on"   # "off" disables per-turn fact injection. Quoted:
+                            # it defaults ON, so it is a string rather than a
+                            # bool to tell "unset" from "off". `recall = false`
+                            # is a type error and refuses to boot.
 # Optional LLM helpers. Unset means off. Values: haiku, sonnet, opus.
 learn-model          = ""   # distil memories from a finished session on delete
 outcome-model        = ""   # session-end judge: did recalled facts help?

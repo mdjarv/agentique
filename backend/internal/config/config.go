@@ -294,6 +294,19 @@ type BackupConfig struct {
 // means "unset" — the corresponding feature stays off / uses its built-in default, exactly
 // as when no env var is set.
 type BrainConfig struct {
+	// Enabled is the master switch for the whole subsystem, and it is OFF by default.
+	// Off means the brain is never constructed: no /api/brain routes, no memory MCP
+	// tools, no recall, no session-end learning, no scheduled consolidation, and the
+	// Brain tab is hidden (the "brain" entry in the health features map). The markdown
+	// store on disk is never touched either way, so this is reversible by flipping the
+	// flag back.
+	//
+	// It is a plain bool precisely because it defaults off: unset and false mean the
+	// same thing, so there is no third state to encode. Contrast Recall below, which
+	// defaults ON and therefore cannot be one.
+	// Env: AGENTIQUE_BRAIN_ENABLED.
+	Enabled bool `toml:"enabled"`
+
 	// ConsolidateInterval enables scheduled (automatic) consolidation across all scopes
 	// when set to a positive duration (e.g. "6h"); empty disables it. Env:
 	// AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL.

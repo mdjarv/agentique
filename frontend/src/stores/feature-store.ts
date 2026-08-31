@@ -5,6 +5,13 @@ interface Features {
   teams: boolean;
   /** Live spoken dialog. Off unless [experimental] voice is set. */
   voice: boolean;
+  /**
+   * Persistent agent memory. Off unless [brain] enabled is set, which is the
+   * default — so the Brain destination is absent, not empty. When it is off the
+   * server mounts no /api/brain routes at all, so any surface reading the brain
+   * has to check this first rather than render and fail.
+   */
+  brain: boolean;
 }
 
 interface FeatureState {
@@ -23,7 +30,7 @@ interface FeatureState {
   saveHostPresentation: (label: string, icon: string) => Promise<void>;
 }
 
-const DEFAULT_FEATURES: Features = { browser: false, teams: false, voice: false };
+const DEFAULT_FEATURES: Features = { browser: false, teams: false, voice: false, brain: false };
 
 export const useFeatureStore = create<FeatureState>((set, get) => ({
   features: DEFAULT_FEATURES,

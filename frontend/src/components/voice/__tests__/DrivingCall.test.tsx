@@ -34,7 +34,9 @@ function mockMatchMedia(matches: boolean) {
 }
 
 function liveCall() {
-  useFeatureStore.setState({ features: { browser: false, teams: false, voice: true } });
+  useFeatureStore.setState({
+    features: { browser: false, teams: false, voice: true, brain: false },
+  });
   useChatStore.setState({
     activeSessionId: "s1",
     sessions: { s1: { meta: { id: "s1", name: SESSION_NAME } } },

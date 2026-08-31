@@ -1280,6 +1280,17 @@ The liftable core lives in `internal/memory` (stdlib plus yaml/uuid only);
 agentique policy lives in `internal/brain`. Markdown is the source of truth, and
 everything else (graph, areas, vectors) is a rebuildable index.
 
+**The subsystem is off unless asked for, and off means unbuilt.** `[brain]
+enabled` gates the whole block in `server.go` — no routes, no memory MCP tools,
+no recall, no loops — so anything new hanging off `brainSvc` goes *inside* that
+block and needs no switch of its own. A surface that reads the brain checks
+`features.brain` from `/api/health` first, because an unmounted `/api/` path
+does not 404: it falls through to the SPA and answers `text/html` with a 200, so
+a nav row added without that check leads somewhere that looks alive and is not.
+It is a plain bool only because it defaults false; `recall` defaults **on**, so
+it is a quoted string and `recall = false` is a decode error that refuses to
+boot.
+
 Recall is fluid and per-turn with a session seen-set for delta injection. Do not
 reintroduce first-turn-only recall. Semantic similarity is pluggable and
 everything degrades cleanly to keyword/Jaccard without an embedder; the recall

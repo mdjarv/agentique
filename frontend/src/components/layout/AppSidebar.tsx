@@ -17,6 +17,7 @@ import { VoiceDock } from "~/components/voice/VoiceDock";
 import { dismissSidebar } from "~/lib/sidebar-nav";
 import { cn } from "~/lib/utils";
 import { useBrainStore } from "~/stores/brain-store";
+import { useFeatureStore } from "~/stores/feature-store";
 
 // useBrainFlare returns true for a short window after the brain changes (a memory
 // added/edited/removed, or a consolidation applied — anywhere, any tab), so the
@@ -57,6 +58,9 @@ export function AppSidebar({ className }: AppSidebarProps) {
 
 function SidebarHeader() {
   const flaring = useBrainFlare();
+  // The brain is off by default, and off means the server mounts no /api/brain
+  // routes — so the row is absent rather than leading somewhere that errors.
+  const brainEnabled = useFeatureStore((s) => s.features.brain);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
   return (
@@ -120,13 +124,15 @@ function SidebarHeader() {
                 <span className="ml-auto text-muted-foreground-faint">channels & personas</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
-              <Link to="/brain">
-                <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
-                Brain
-                <span className="ml-auto text-muted-foreground-faint">persistent memory</span>
-              </Link>
-            </DropdownMenuItem>
+            {brainEnabled && (
+              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
+                <Link to="/brain">
+                  <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
+                  Brain
+                  <span className="ml-auto text-muted-foreground-faint">persistent memory</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/schedules">
                 <Clock className="size-3.5" />

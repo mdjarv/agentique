@@ -263,7 +263,20 @@ frequently-restarted server can no longer defer that refresh forever.
 
 The loop runs on its own, not just from the CLI and UI.
 
-**Auto-recall** is on by default; `recall = "off"` disables it. Covered above.
+**The subsystem is opt-in.** `[brain] enabled` is the master switch and defaults
+to false, so everything in this document is inert until it is set. Off means the
+brain is never constructed: no `/api/brain` routes, no memory MCP tools, no
+recall, no session-end learning, no scheduled consolidation, and `features.brain`
+in `/api/health` is false so the SPA drops the Brain destination rather than
+offering a link that lands on the catch-all. Nothing on disk is touched, so
+turning it back on resumes with the store intact. A config carrying other
+`[brain]` keys while the switch is off logs a line at boot naming the switch —
+settings that silently do nothing are worse than settings that are absent.
+
+**Auto-recall** is on by default *once the subsystem is on*; `recall = "off"`
+disables it. Covered above. Note it is a quoted string rather than a bool
+because it defaults on, and a Go bool cannot separate "unset" from "false";
+`enabled` has no such problem precisely because it defaults off.
 
 **Auto-encode is opt-in and stages captures only.** With `learn-model` set, a
 finished session's transcript is distilled into raw captures (`source: capture`,

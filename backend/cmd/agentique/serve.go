@@ -176,6 +176,27 @@ func resolveRecall(fileVal string) bool {
 	return true
 }
 
+// warnBrainConfigured says so when a config carries brain settings that the master
+// switch is holding inert. [brain] enabled defaults to false, so an install that had a
+// working brain before the switch existed goes quiet on upgrade — and a silently
+// disabled subsystem whose settings are still sitting in the file is the kind of thing
+// somebody re-derives at midnight. Names the fix rather than the fault.
+func warnBrainConfigured(enabled bool, bc config.BrainConfig) {
+	if enabled {
+		return
+	}
+	configured := bc.ConsolidateInterval != "" || bc.ConsolidateModel != "" ||
+		bc.LearnModel != "" || bc.OutcomeModel != "" || bc.ChromaURL != "" ||
+		bc.EmbedURL != "" || bc.EmbedModel != "" || bc.Recall != "" ||
+		bc.ArchiveAfter != "" || bc.Autocal
+	if !configured {
+		return
+	}
+	slog.Warn("brain: [brain] settings are present but the subsystem is off; " +
+		"set [brain] enabled = true (or AGENTIQUE_BRAIN_ENABLED=1) to turn it back on. " +
+		"The markdown store on disk is untouched.")
+}
+
 func brainToggleOff(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "off", "false", "0", "no":
@@ -537,7 +558,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		MCPInternalURL:    mcpInternalURL,
 		// Persistent agent memory ("brain"). Lives alongside the DB. Semantic
 		// recall is opt-in via env (otherwise keyword recall over markdown files).
-		BrainDir: filepath.Join(filepath.Dir(dbFile), "brain"),
+		// The master switch is off by default, so every other Brain* value below is
+		// inert until [brain] enabled (or AGENTIQUE_BRAIN_ENABLED) says otherwise.
+		BrainEnabled: envBoolOr("AGENTIQUE_BRAIN_ENABLED", fileCfg.Brain.Enabled),
+		BrainDir:     filepath.Join(filepath.Dir(dbFile), "brain"),
 		// Semantic recall: env var wins, else the [brain] config-file value, else off/default.
 		BrainChromaURL:         firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"), fileCfg.Brain.ChromaURL),
 		BrainEmbedURL:          firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"), fileCfg.Brain.EmbedURL),
@@ -590,6 +614,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	fileCfg.Server.RPOrigin = rpOrigin
 	cfg.RPOrigins = fileCfg.AllRPOrigins()
+	warnBrainConfigured(cfg.BrainEnabled, fileCfg.Brain)
 	srv, err := server.New(queries, cfg)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)

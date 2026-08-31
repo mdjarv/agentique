@@ -149,8 +149,11 @@ type Config struct {
 	// be reachable from the local machine; not exposed publicly.
 	MCPInternalURL string
 
-	// Brain (persistent agent memory). BrainDir enables the feature; the optional
-	// Chroma/embed fields enable semantic recall (otherwise keyword recall is used).
+	// Brain (persistent agent memory). BrainEnabled is the master switch and is off by
+	// default; BrainDir names the store. Both must hold or nothing below is constructed.
+	// The optional Chroma/embed fields enable semantic recall (otherwise keyword recall
+	// is used).
+	BrainEnabled    bool
 	BrainDir        string
 	BrainChromaURL  string
 	BrainEmbedURL   string
@@ -458,6 +461,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
 				"voice":   cfg.ExperimentalVoice,
+				"brain":   cfg.BrainEnabled && cfg.BrainDir != "",
 			},
 		})
 	})
@@ -786,6 +790,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
 				"voice":   cfg.ExperimentalVoice,
+				"brain":   cfg.BrainEnabled && cfg.BrainDir != "",
 			},
 		})
 	})
@@ -958,12 +963,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		}
 	}
 
-	// Persistent agent memory ("the brain"). Optional: enabled when BrainDir is
-	// set. Failure to initialize must not take down the server — memory is an
-	// enhancement, so we log and continue without it.
+	// Persistent agent memory ("the brain"). Opt-in: [brain] enabled is the master
+	// switch and is off by default, so nothing below is constructed unless an operator
+	// asked for it — no routes, no MCP memory tools, no recall, no background loops.
+	// BrainDir must also be set, since it names the store.
+	//
+	// Failure to initialize must not take down the server — memory is an enhancement,
+	// so we log and continue without it.
 	var memProvider mcphttp.MemoryStore
 	var brainAuto *brain.Automation
-	if cfg.BrainDir != "" {
+	if cfg.BrainEnabled && cfg.BrainDir != "" {
 		// Couple the read-time recall fade to archiving being ENABLED: it activates only when
 		// archive-after parses to a positive duration, so a stray archive-confidence-floor can
 		// never silently evict live facts from recall while the churn isn't archiving (the
