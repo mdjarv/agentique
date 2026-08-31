@@ -100,10 +100,19 @@ func TestListCommandFiles_skills(t *testing.T) {
 	// Skill dir without SKILL.md — should be skipped.
 	os.MkdirAll(filepath.Join(home, ".claude", "skills", "empty"), 0755)
 
-	// Skill with disable-model-invocation: true — should be skipped.
-	disabledSkill := filepath.Join(home, ".claude", "skills", "internal-only")
-	os.MkdirAll(disabledSkill, 0755)
-	writeFile(t, disabledSkill, "SKILL.md", "---\ndescription: Not a slash cmd\ndisable-model-invocation: true\n---\n")
+	// `user-invocable: false` is background knowledge only Claude loads — /name is not
+	// an action anyone would take, so it is not a slash command.
+	modelOnly := filepath.Join(home, ".claude", "skills", "legacy-system-context")
+	os.MkdirAll(modelOnly, 0755)
+	writeFile(t, modelOnly, "SKILL.md", "---\ndescription: Not a slash cmd\nuser-invocable: false\n---\n")
+
+	// `disable-model-invocation: true` restricts the OTHER side: only the human may
+	// invoke it. Those are the deliberate side-effecting workflows the field exists to
+	// protect, so they belong in this list above all. Filtering on this field once hid
+	// /handoff, /implement, /triage and a dozen more.
+	humanOnly := filepath.Join(home, ".claude", "skills", "release")
+	os.MkdirAll(humanOnly, 0755)
+	writeFile(t, humanOnly, "SKILL.md", "---\ndescription: Cut a release\ndisable-model-invocation: true\n---\n")
 
 	cmds, err := ListCommandFiles(dir)
 	if err != nil {
@@ -115,8 +124,14 @@ func TestListCommandFiles_skills(t *testing.T) {
 		byName[c.Name] = c
 	}
 
-	if len(byName) != 4 {
-		t.Fatalf("got %d entries, want 4: %v", len(byName), byName)
+	if len(byName) != 5 {
+		t.Fatalf("got %d entries, want 5: %v", len(byName), byName)
+	}
+	if c, ok := byName["release"]; !ok || c.Description != "Cut a release" {
+		t.Errorf("human-only skill missing from the slash list: %+v", c)
+	}
+	if _, ok := byName["legacy-system-context"]; ok {
+		t.Error("user-invocable: false skill should not be a slash command")
 	}
 	if c := byName["review"]; c.Source != "project" || c.Description != "Review code" {
 		t.Errorf("review = %+v", c)

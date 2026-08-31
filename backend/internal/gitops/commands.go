@@ -8,8 +8,12 @@ import (
 
 // frontmatter holds parsed YAML frontmatter fields from a markdown file.
 type frontmatter struct {
-	description            string
-	disableModelInvocation bool
+	description string
+	// userInvocable mirrors the `user-invocable` field, which decides whether a skill
+	// is a slash command at all. It defaults to TRUE, so the zero value is wrong and
+	// parseFrontmatter seeds it before reading. Do not confuse it with
+	// `disable-model-invocation`, which restricts the other side — see listSkills.
+	userInvocable bool
 }
 
 // parseFrontmatter reads YAML frontmatter from a markdown file.
@@ -34,13 +38,13 @@ func parseFrontmatter(path string) frontmatter {
 	}
 	block := content[4 : 4+end]
 
-	var fm frontmatter
+	fm := frontmatter{userInvocable: true}
 	for _, line := range strings.Split(block, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "description:") {
 			fm.description = unquote(strings.TrimSpace(line[len("description:"):]))
-		} else if strings.HasPrefix(line, "disable-model-invocation:") {
-			fm.disableModelInvocation = strings.TrimSpace(line[len("disable-model-invocation:"):]) == "true"
+		} else if strings.HasPrefix(line, "user-invocable:") {
+			fm.userInvocable = unquote(strings.TrimSpace(line[len("user-invocable:"):])) != "false"
 		}
 	}
 	return fm
@@ -126,8 +130,15 @@ func listSkills(dir, source string, seen map[string]struct{}) []CommandFile {
 		if _, err := os.Stat(skillPath); err != nil {
 			continue
 		}
+		// `user-invocable: false` is the one field that means "not a slash command":
+		// background knowledge only Claude loads, where /name is not an action anyone
+		// would take. `disable-model-invocation: true` is the OTHER restriction — it
+		// says only the *human* may invoke it, which makes those skills the ones most
+		// certainly belonging in this list. Filtering on it hid /handoff, /implement,
+		// /triage and a dozen more, i.e. exactly the deliberate side-effecting
+		// workflows the field exists to protect.
 		fm := parseFrontmatter(skillPath)
-		if fm.disableModelInvocation {
+		if !fm.userInvocable {
 			continue
 		}
 		seen[name] = struct{}{}
