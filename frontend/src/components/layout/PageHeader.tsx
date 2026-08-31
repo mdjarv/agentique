@@ -8,16 +8,26 @@ interface PageHeaderProps {
   children?: ReactNode;
   /** Optional accent color for a top border (e.g. project color). */
   accentColor?: string;
+  /**
+   * A ground wash for the whole band — the machine's hue, fading out to the
+   * right, when the session runs somewhere else. Recognition rather than
+   * identification: it costs no width and survives every truncation, and a
+   * plain header keeps meaning "here". See `lib/machine-colors.ts`.
+   */
+  wash?: React.CSSProperties;
 }
 
-export function PageHeader({ children, accentColor }: PageHeaderProps) {
+export function PageHeader({ children, accentColor, wash }: PageHeaderProps) {
   const isMobile = useIsMobile();
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   return (
     <header
       className="border-b bg-sidebar px-4 flex items-center gap-2 text-sm shrink-0 min-h-12 py-1"
-      style={accentColor ? { borderBottomColor: `${accentColor}40` } : undefined}
+      style={{
+        ...(accentColor ? { borderBottomColor: `${accentColor}40` } : undefined),
+        ...wash,
+      }}
     >
       {isMobile && (
         <button

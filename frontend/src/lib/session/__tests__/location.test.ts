@@ -111,8 +111,6 @@ describe("machineTitle", () => {
   });
 
   it("names a status that is not connected", () => {
-    expect(machineTitle("zbook", { status: "reconnecting" })).toBe(
-      "Runs on zbook — reconnecting",
-    );
+    expect(machineTitle("zbook", { status: "reconnecting" })).toBe("Runs on zbook — reconnecting");
   });
 });

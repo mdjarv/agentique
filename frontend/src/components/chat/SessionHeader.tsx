@@ -1,5 +1,6 @@
-import { Archive, ArchiveRestore, ArrowUp, Clock, Gauge, Server } from "lucide-react";
+import { ArrowUp, Clock } from "lucide-react";
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
@@ -7,31 +8,34 @@ import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
 import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
 import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
+import { SessionLocation } from "~/components/chat/SessionLocation";
 import { hasLiveWork, SessionWorkLine } from "~/components/chat/SessionWorkLine";
 import { ConnectionIndicator } from "~/components/layout/ConnectionIndicator";
-import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
 import { PageHeader } from "~/components/layout/PageHeader";
 import {
   resolveSessionState,
   resolveStatusLabel,
   SessionBadge,
 } from "~/components/layout/session/SessionBadge";
-import { SessionStatusPill } from "~/components/layout/session/SessionStatusPill";
-import { MachineChip, useProjectMachine } from "~/components/machines/MachineChip";
+import {
+  useMachineFault,
+  useMachineStatus,
+  useProjectMachine,
+} from "~/components/machines/MachineChip";
 import { untilText } from "~/components/schedules/schedule-format";
-import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useChannelManagement } from "~/hooks/session/useChannelManagement";
 import { useSessionActions } from "~/hooks/session/useSessionActions";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useNow } from "~/hooks/useNow";
+import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { EFFORT_COLORS, EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
+import { machineHue, machineWash } from "~/lib/machine-colors";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
-import { WORKSPACE_GLYPH, WORKSPACE_LABEL, workspaceTitle } from "~/lib/session/workspace";
-import { cn, sessionShortId } from "~/lib/utils";
+import { sessionShortId } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
+import { useMachineStore } from "~/stores/machine-store";
 import { useScheduleStore } from "~/stores/schedule-store";
 
 interface SessionHeaderProps {
@@ -62,12 +66,6 @@ interface SessionHeaderProps {
    * answer to conflicts and not something the header can do itself.
    */
   onSendMessage?: (prompt: string) => void;
-  /**
-   * Take the user to the pending approval or question. Omitted when they are
-   * already looking at it, which is what keeps the pill from offering a jump
-   * that goes nowhere.
-   */
-  onGoToPendingInput?: () => void;
 }
 
 type ActiveDialog = "none" | "delete" | "create-channel" | "join-channel" | "rename";
@@ -82,7 +80,6 @@ export function SessionHeader({
   projectGitStatus,
   mainBranch,
   onSendMessage,
-  onGoToPendingInput,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
@@ -98,8 +95,27 @@ export function SessionHeader({
   const channel = useChannelManagement(ws, meta);
 
   const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
+  const projectPath = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.path);
   const shortId = sessionShortId(meta.id);
   const sessionRef = projectSlug ? `${projectSlug}/${shortId}` : shortId;
+
+  // The machine the session's project lives on — null for the primary. The
+  // wash reads the same hue, so both come from one place.
+  const machine = useProjectMachine(meta.projectId);
+  const machineStatus = useMachineStatus(machine?.machineId);
+  const machineFault = useMachineFault(machine?.machineId);
+  const { resolvedTheme } = useTheme();
+  const allMachineIds = useMachineStore(useShallow((s) => Object.keys(s.machines)));
+  const hue = machineHue(
+    machine?.machineId,
+    allMachineIds,
+    resolvedTheme === "dark" ? "dark" : "light",
+  );
+  // Recognition, not identification: the wash says "somewhere else, and which
+  // somewhere" to a reader who has learned it, while the pill's first zone says
+  // it in words to one who has not. It drains when the machine is away, in the
+  // same moment the composer disables itself.
+  const wash = machineWash(hue, { away: !!machine && machineStatus !== "connected" });
 
   // The overflow menu is identical on both layouts — declared once, placed in
   // whichever actions zone is rendered.
@@ -132,7 +148,7 @@ export function SessionHeader({
 
   return (
     <>
-      <PageHeader accentColor={accentColor}>
+      <PageHeader accentColor={accentColor} wash={wash}>
         {isMobile ? (
           // Mobile: the full name owns the header (up to two lines) with a dim
           // status/branch/ahead subline. Tapping opens the detail sheet. The
@@ -150,17 +166,11 @@ export function SessionHeader({
                   meta={meta}
                   hasPendingApproval={hasPendingInput}
                   agentsInFlight={agentsInFlight}
+                  projectBranch={projectGitStatus?.branch}
                 />
               }
             />
             <div className="ml-auto flex items-center gap-1 shrink-0">
-              {projectSlug && !isWorktree && (
-                <ProjectGitPill
-                  projectId={meta.projectId}
-                  projectSlug={projectSlug}
-                  gitStatus={projectGitStatus}
-                />
-              )}
               {/* One navigation model, two presentations: the same control, and
                   on this layout it opens the dock as a sheet. Without it the
                   sheet is unreachable — only a `?dock=` deep link could open
@@ -172,19 +182,6 @@ export function SessionHeader({
           </>
         ) : (
           <>
-            <SessionStatusPill
-              state={meta.state}
-              connected={meta.connected}
-              hasPendingApproval={hasPendingInput}
-              compact={false}
-              // The pill is outside the tab switch, so it reports a blocked
-              // session from every tab — but the approve/deny buttons only
-              // exist on the chat branch. Being told you are blocked and left
-              // to find your own way back is half an answer.
-              onActivate={hasPendingInput ? onGoToPendingInput : undefined}
-              activateHint="open the chat to respond"
-            />
-
             {/* Identity zone: name + detail popover / inline rename */}
             <SessionIdentity
               meta={meta}
@@ -193,25 +190,23 @@ export function SessionHeader({
               onIconChange={actions.handleIconChange}
             />
 
-            {/* What it is doing, beside what it is. The pill reports the run
-                state; this reports the work, so the chat says as much as the
-                sidebar row does about the session you are actually inside. */}
-            <SessionWorkLine
-              sessionId={meta.id}
-              state={meta.state}
-              agentsInFlight={agentsInFlight}
-              className="hidden min-w-0 max-w-[44ch] text-[11px] text-muted-foreground lg:flex"
+            {/* Where this session's code lives — machine and worktree, one
+                element, because they are two segments of one address and the
+                expensive case is the one where both light at once. */}
+            <SessionLocation
+              machine={machine}
+              status={machineStatus}
+              fault={machineFault}
+              worktreeBranch={meta.worktreeBranch}
+              branchMissing={meta.branchMissing}
+              worktreePath={meta.worktreePath}
+              projectBranch={projectGitStatus?.branch}
+              projectPath={projectPath}
             />
 
             {/* Actions zone */}
             <div className="ml-auto flex items-center gap-1.5">
               <ParkedScheduleChip sessionId={meta.id} state={meta.state} />
-              <MachineChip projectId={meta.projectId} />
-              <ReadOnlyIndicators
-                effort={meta.effort as EffortLevel | undefined}
-                isWorktree={isWorktree}
-                worktreeBranch={meta.worktreeBranch}
-              />
 
               {dockToggle}
 
@@ -228,39 +223,12 @@ export function SessionHeader({
                 className="h-7 px-2 text-xs [&>button]:h-7 [&>button]:text-xs"
               />
 
-              {/* Push belongs to the checkout you are standing in. A worktree
-                  session has two different "ahead" counts — its branch vs
-                  main, and main vs origin — so it talks only about its own
-                  branch (merge, above) and leaves the project checkout to the
-                  sidebar's sync dock. */}
-              {projectSlug && !isWorktree && (
-                <ProjectGitPill
-                  projectId={meta.projectId}
-                  projectSlug={projectSlug}
-                  gitStatus={projectGitStatus}
-                  labelled
-                />
-              )}
-
-              {/* Files the session away; it does not end a run, which is why
-                  the server refuses it mid-turn and this hides there. */}
-              {(meta.state === "idle" || meta.state === "stopped" || meta.state === "failed") && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-success gap-1"
-                  title={meta.archivedAt ? "Unarchive session" : "Archive session"}
-                  onClick={meta.archivedAt ? actions.handleUnarchive : actions.handleArchive}
-                >
-                  {meta.archivedAt ? (
-                    <ArchiveRestore className="h-3.5 w-3.5" />
-                  ) : (
-                    <Archive className="h-3.5 w-3.5" />
-                  )}
-                  <span>{meta.archivedAt ? "Unarchive" : "Archive"}</span>
-                </Button>
-              )}
-
+              {/* The project checkout's own drift is the sidebar sync dock's
+                  subject, not this header's: it is a different working
+                  directory with a different remote relationship, and the dock
+                  reports how stale the count is, which these pills never did.
+                  Archive lives in the ⋯ menu beside this, and in the identity
+                  popover — it files a session away, it is not a git verb. */}
               {actionMenu}
             </div>
           </>
@@ -352,16 +320,19 @@ function MobileSubline({
   meta,
   hasPendingApproval,
   agentsInFlight,
+  projectBranch,
 }: {
   meta: SessionMetadata;
   hasPendingApproval: boolean;
   agentsInFlight: number;
+  projectBranch?: string;
 }) {
   const badgeState = resolveSessionState({ state: meta.state, hasPendingApproval });
   const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
-  const branch = meta.worktreeBranch;
   const ahead = meta.commitsAhead ?? 0;
   const machine = useProjectMachine(meta.projectId);
+  const machineStatus = useMachineStatus(machine?.machineId);
+  const machineFault = useMachineFault(machine?.machineId);
   // Parked loop session: "Stopped" would read as dead — show the next fire
   // and which schedule owns it instead.
   const nextSchedule = useNextSchedule(meta.id);
@@ -383,15 +354,25 @@ function MobileSubline({
         />
       ) : (
         <span className="truncate">
-          {parked
-            ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}`
-            : `${label}${branch ? ` · ${branch}` : ""}`}
+          {parked ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}` : label}
         </span>
       )}
-      {machine && (
-        <span className="flex items-center gap-0.5 shrink-0" title={`Runs on ${machine.label}`}>
-          <Server className="size-2.5" />
-          <span className="truncate max-w-[10ch]">{machine.label}</span>
+      {/* The same element the desktop header carries, at the smaller size —
+          one location, one reading, whichever layout you are on. */}
+      <SessionLocation
+        machine={machine}
+        status={machineStatus}
+        fault={machineFault}
+        worktreeBranch={meta.worktreeBranch}
+        branchMissing={meta.branchMissing}
+        worktreePath={meta.worktreePath}
+        projectBranch={projectBranch}
+        compact
+      />
+      {ahead > 0 && (
+        <span className="flex items-center gap-0.5 shrink-0 text-success">
+          <ArrowUp className="size-2.5" />
+          {ahead}
         </span>
       )}
       {ahead > 0 && (
@@ -401,61 +382,5 @@ function MobileSubline({
         </span>
       )}
     </span>
-  );
-}
-
-const WorktreeGlyph = WORKSPACE_GLYPH.worktree;
-const LocalGlyph = WORKSPACE_GLYPH.local;
-
-function ReadOnlyIndicators({
-  effort,
-  isWorktree,
-  worktreeBranch,
-}: {
-  effort: EffortLevel | undefined;
-  isWorktree: boolean;
-  worktreeBranch?: string;
-}) {
-  const effortLabel = effort ? EFFORT_LABELS[effort] : undefined;
-  const effortColor = effort ? EFFORT_COLORS[effort] : undefined;
-  const hasEffort = !!effort && !!effortLabel;
-  return (
-    <>
-      {hasEffort && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 shrink-0",
-            effortColor,
-          )}
-          title={`Reasoning effort: ${effortLabel}`}
-        >
-          <Gauge className="h-2.5 w-2.5" />
-          <span className="max-sm:hidden">{effortLabel}</span>
-        </span>
-      )}
-      {/* Glyphs come from WORKSPACE_GLYPH, the same table the sidebar row
-          reads, so a session cannot wear a branch in the rail and a folder
-          here. Only the treatment differs: the header warns in amber once, at
-          the top of the thing you are about to type into. */}
-      {isWorktree ? (
-        <span
-          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40 text-muted-foreground shrink-0 min-w-0"
-          title={workspaceTitle("worktree", worktreeBranch)}
-        >
-          <WorktreeGlyph className="h-2.5 w-2.5 shrink-0" />
-          <span className="truncate max-w-[8ch] sm:max-w-[12ch]">
-            {worktreeBranch ?? WORKSPACE_LABEL.worktree}
-          </span>
-        </span>
-      ) : (
-        <span
-          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-warning/40 bg-warning/10 text-warning shrink-0"
-          title={workspaceTitle("local")}
-        >
-          <LocalGlyph className="h-2.5 w-2.5 shrink-0" />
-          <span className="max-sm:hidden">{WORKSPACE_LABEL.local}</span>
-        </span>
-      )}
-    </>
   );
 }
