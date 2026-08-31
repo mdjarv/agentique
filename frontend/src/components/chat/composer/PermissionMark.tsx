@@ -21,7 +21,7 @@
  * waiting on you" in `ThreadRow`, `DockToggle` and `DockTabBar`, and one mark
  * has to mean one thing across surfaces.
  */
-import { FastForward, Hand, Play } from "lucide-react";
+import { Check, FastForward, Hand, Play } from "lucide-react";
 import { memo } from "react";
 import {
   DropdownMenu,
@@ -97,11 +97,19 @@ export const PermissionMark = memo(function PermissionMark({
             <DropdownMenuItem
               key={m}
               onClick={() => onChange(m)}
-              className={cn("text-xs gap-2 items-start", m === mode && "bg-accent")}
+              className="text-xs gap-2 items-start"
             >
+              {/* A check, not a tinted row: the menu is read against a
+                  translucent popover where a background tint is the same
+                  weight as hover, and hover is not selection. */}
+              <Check
+                className={cn("h-3 w-3 mt-0.5 shrink-0", m === mode ? "opacity-100" : "opacity-0")}
+              />
               <ItemGlyph className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", PERMISSION_COLORS[m])} />
               <div className="flex flex-col gap-0.5">
-                <span className={cn(m === mode && "font-medium")}>{PERMISSION_VERBS[m]}</span>
+                <span className={cn(m === mode && "font-medium text-foreground")}>
+                  {PERMISSION_VERBS[m]}
+                </span>
                 <span className="text-[10px] text-muted-foreground">
                   {PERMISSION_DESCRIPTIONS[m]}
                 </span>

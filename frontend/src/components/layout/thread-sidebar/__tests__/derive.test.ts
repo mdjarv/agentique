@@ -201,7 +201,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     projectSlug: "proj",
     projectLabel: "proj",
     projectInitials: "PR",
-    workspace: "worktree",
+    workspace: "linked",
     parked: false,
     projectColorBg: "#5e9eff",
     projectColorFg: "#5e9eff",

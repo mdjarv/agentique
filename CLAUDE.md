@@ -332,6 +332,49 @@ in `frontend/src/lib/utils.ts` (the rename dialog). Both **transliterate** a
 letter rather than treating it as punctuation — replacing everything outside
 `[a-z0-9]` with a separator turned "Träffbild" into `tr-ffbild`.
 
+### The header is the session; the composer is the next message
+
+One seam, stated once: the top bar is about **the session as an object** — where
+it lives, and what you do to it — and the bottom bar is about **what happens
+when you press send**. Nothing that changes by itself belongs on either.
+
+That is why run state left the header. The transcript streams it, Send reports
+it by becoming Queue, and the approval banner is pinned above the composer
+regardless of scroll — which was the status pill's whole argument for existing.
+`SessionStatusPill` survives for the dev gallery; the header does not use it.
+For the same reason the project checkout's push/pull went back to the sync dock
+(a different working directory, and the dock reports how stale its count is),
+and effort came *down* to sit beside the model.
+
+**Model and effort are one control** (`BrainControl`): which brain, and how hard
+it thinks. The trigger is the model name plus a five-bar meter, because a meter
+reads as a *quantity* — that is what stops the level looking like a second
+dropdown, and it is the only form where Max differs visibly from XHigh at 11px.
+Inside, models are a list and effort is a **ramp**, drawn locked or live from one
+flag: there is no `session.set-effort` anywhere, and the provider did not accept
+a mid-session change when last checked. That flag is the only difference between
+this and the new-session panel's copy, so both surfaces render one component.
+
+**The permission mode is a mark, not a label.** It is almost always Full Auto,
+which argues for demoting the word and never for dropping the fact —
+`ui-store.lastUsed` refuses to carry the mode between sessions on exactly that
+reasoning. The glyphs are transport controls, so the silhouette carries the
+meaning and nothing rides on a 4px interior detail (which is how the shield
+family failed at 12px): a **hand** stops, **play** runs, **fast-forward** does
+not stop. Not `TriangleAlert`, which is the obvious glyph and is already spoken
+for — it means "someone is waiting on you" in `ThreadRow`, `DockToggle` and
+`DockTabBar`, and one mark means one thing across surfaces.
+
+There is no Chat/Plan toggle. Plan *review* is untouched — `PlanReviewBanner`
+runs off an approval the CLI raises when the agent exits plan mode itself — and
+`caps.planMode` plus the template field stay, so a template can still start a
+session in plan mode.
+
+On mobile the model and the mode stay **outside** the tools tray, as a reading
+rather than controls: which brain is answering and whether it will stop to ask
+are the two facts worth checking before sending, and a phone that hides both
+behind a tap answers neither.
+
 ### The New-session panel remembers model and effort
 
 `ui-store.lastUsed` carries model and effort from the last session **created**
@@ -427,22 +470,52 @@ an action on a row where nothing is running. One moon covers all three parked
 tokens where `REST_GLYPH` has three, and that is forced as well as principled —
 the corner mark is 9px, where `Unplug` and `CloudOff` turn to mush.
 
-### Where a session's edits land
+### Where a session's code lives
 
-A row says whether a session works in its own worktree or straight in the
-project's checkout, because nothing else on it carries that and it changes what
-a stray edit costs. `lib/session/workspace.ts` owns the pairing —
-`workspaceKind` reads `worktreeBranch` (not the path, which is set for both),
-and `WORKSPACE_GLYPH` gives each kind one glyph. The sidebar row and the
-session header both read that table, so a session cannot show a branch in the
-rail and a folder in the pane it opens.
+Which machine, and which worktree on it, are two segments of one address, so
+they are **one element** — `SessionLocation`, two zones, reading
+`lib/session/location.ts`. As two chips with four other things between them
+nothing said the case that costs most: the *main* worktree on a *remote*
+machine, which is the only state that lights both zones.
 
-Only the treatment differs, and deliberately: the header warns in amber once,
-at the top of the thing you are about to type into; the rail renders the glyph
-in the repo line's own faint ink, because a colour repeated down forty rows
-stops being a warning. Local is `FolderOpen`, not `FolderGit2` — at 10px the
-branch node inside the folder collapses into noise, and the two glyphs then
-differ by a detail too small to see.
+The vocabulary is git's own, from `git-worktree(1)`: a repository has a **main**
+worktree and zero or more **linked** worktrees. Never "local" — that word now
+means the machine — and never an invented one ("live repo", "root"). Both zones
+name a **branch**, so the kind rides the glyph and the colour rather than a
+word: a linked worktree shows its own branch quietly, the main worktree shows
+the project's branch in amber. `projectGitStatus.branch` arrives on a push that
+can land after first render, so the main case falls back to the words "main
+worktree" rather than an empty zone. `worktreeKind` reads `worktreeBranch`, not
+the path, which is set for both. `FolderOpen`, not `FolderGit2` — at 10px the
+branch node inside the folder collapses into noise.
+
+**Zone 1 is always present, including for this machine.** Absence is not a
+signal you can trust: it reads the same as a bar that has not loaded, and an
+address that is sometimes two segments and sometimes one cannot be compared
+between two sessions at a glance. The local host is named in neutral ink with no
+hue and no dot — stated, not announced.
+
+The hue is **derived, not stored** (`lib/machine-colors.ts`): `getProjectColor`'s
+rule — explicit wins, else sort the ids and index the palette — pointed at
+machine ids, so no schema, no catalog replication and no picker. The primary
+gets none, because the header's wash means "somewhere else". The wash **drains
+to grey when the machine is away**, in the same moment the composer disables
+itself: two quiet signals agreeing is what makes a pane visibly go cold. It is
+recognition, never identification — a colour cannot be named, so zone 1 says it
+in words for anyone who has not learned it.
+
+**One subject, one popover.** Each zone opens only what it is about; the name's
+own popover keeps rename, icon, pin, ref and archive. The exception is the
+phone, where a 22px zone is under the 44px touch target: there the whole pill is
+one target opening one sheet with both sections.
+
+Before a session exists the same element is the **picker** (`LocationPicker`, in
+the new-session hero) — same shape, same zones, one caret each, so what you
+choose is what you will see in the header. It replaced a host picker in the hero
+and a Worktree/Local toggle in the composer, 400px apart. It is deliberately not
+a composer control: that would fork the new-session composer from the in-session
+one, and at `tray` density the phone's row cannot hold a two-zone pill, so it
+would fall into the tools tray — the one place a location must never be.
 
 The deck's "Needs you" band holds all three reasons a session waits on the
 operator — approval, question, unread completion — ordered so the two that hold

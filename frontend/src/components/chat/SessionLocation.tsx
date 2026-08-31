@@ -125,7 +125,12 @@ export const SessionLocation = memo(function SessionLocation({
       style={!fault && hue ? { backgroundColor: `${hue.bg}26`, color: hue.fg } : undefined}
     >
       <MachineGlyph className="size-2.5 shrink-0" />
-      <span className="truncate max-w-[10ch]">{machineLabel}</span>
+      {/* Hostnames are routinely 12-16 characters, and "djarv01-…" answers
+          nothing. The header has the room now that seven items left it; the
+          mobile subline does not, so it keeps the tighter cap. */}
+      <span className={cn("truncate", compact ? "max-w-[10ch]" : "max-w-[18ch]")}>
+        {machineLabel}
+      </span>
       {machine && (
         <span
           className={cn(

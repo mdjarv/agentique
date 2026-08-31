@@ -22,8 +22,8 @@ import { displaySlug } from "~/lib/machines/slug";
 import { sessionModelLabel } from "~/lib/model-catalog";
 import { getProjectColor } from "~/lib/project-colors";
 import { projectInitials, projectLabel } from "~/lib/project-label";
+import { worktreeKind } from "~/lib/session/location";
 import { deriveRestToken, isParked } from "~/lib/session/rest-state";
-import { workspaceKind } from "~/lib/session/workspace";
 import type { Project } from "~/lib/types";
 import { relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -166,7 +166,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         projectSlug: project.slug,
         projectLabel: repLabel,
         projectInitials: projectInitials(repLabel),
-        workspace: workspaceKind(meta.worktreeBranch),
+        workspace: worktreeKind(meta.worktreeBranch),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: rep.icon || undefined,

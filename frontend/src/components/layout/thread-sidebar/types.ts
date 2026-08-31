@@ -6,10 +6,11 @@
  * helpers in `derive.ts`, so these components never import from `~/stores/*`
  * or `~/lib/generated-types`.
  */
-import type { RestToken } from "~/lib/session/rest-state";
-import type { WorkspaceKind } from "~/lib/session/workspace";
 
-export type { RestToken, WorkspaceKind };
+import type { WorktreeKind } from "~/lib/session/location";
+import type { RestToken } from "~/lib/session/rest-state";
+
+export type { RestToken, WorktreeKind };
 
 /** Corner-badge state on the project icon. `null` = at rest, no badge. */
 export type ThreadBadge =
@@ -60,12 +61,12 @@ export interface ThreadRowVM {
   projectLabel: string;
   projectInitials: string;
   /**
-   * Where the session's edits land — its own worktree, or the project's
-   * checkout. Derived by `workspaceKind` from the same field the session
-   * header reads, so one session cannot read as a worktree in the rail and
-   * local in the pane it opens.
+   * Which worktree the session edits — its own linked one, or the project's
+   * main one. Derived by `worktreeKind` from the same field the session
+   * header's location pill reads, so one session cannot read as linked in the
+   * rail and main in the pane it opens.
    */
-  workspace: WorkspaceKind;
+  workspace: WorktreeKind;
   /** Bright project color (hex) — tinted to ~12% for the icon background. */
   projectColorBg: string;
   /** Theme-appropriate project accent (hex) — icon initials / glyph color. */

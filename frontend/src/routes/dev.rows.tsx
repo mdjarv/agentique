@@ -22,7 +22,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     projectSlug: "agentkit",
     projectLabel: "agentkit",
     projectInitials: "AK",
-    workspace: "worktree",
+    workspace: "linked",
     projectColorBg: "#73daca",
     projectColorFg: "#73daca",
     badge: null,

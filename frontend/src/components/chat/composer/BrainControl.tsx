@@ -105,7 +105,9 @@ export const BrainControl = memo(function BrainControl({
 
   if (!model) return null;
 
-  const label = modelDisplayName ?? model;
+  // The catalog's own label is the fallback, not the bare id: the new-session
+  // panel does not pass a display name, and `opus[1m]` is a slug, not a name.
+  const label = modelDisplayName || modelOptions.find((o) => o.value === model)?.label || model;
   const effortLabel = EFFORT_LABELS[(effort ?? "") as EffortLevel];
   const title = `${label} · ${effortLabel} effort${onEffortChange ? "" : " (set when the session was created)"}`;
 

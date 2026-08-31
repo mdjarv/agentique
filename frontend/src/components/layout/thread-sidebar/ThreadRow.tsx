@@ -20,11 +20,11 @@ import {
   X,
 } from "lucide-react";
 import { memo } from "react";
+import { WORKTREE_GLYPH, WORKTREE_LABEL, type WorktreeKind } from "~/lib/session/location";
 import { REST_GLYPH, type RestToken } from "~/lib/session/rest-state";
-import { WORKSPACE_GLYPH, workspaceTitle } from "~/lib/session/workspace";
 import { cn } from "~/lib/utils";
 import { Chip, MachineTag } from "./RowIdentity";
-import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind, WorkspaceKind } from "./types";
+import type { MachineTone, ThreadBadge, ThreadRowVM, WorkKind } from "./types";
 
 const TONE_CLASS: Record<MachineTone, string> = {
   work: "text-teal",
@@ -168,11 +168,12 @@ function rowAriaLabel(vm: ThreadRowVM): string {
  * into, while the rail shows every row at once. Painting a colour on each local
  * row would be a claim on attention that repeats down the whole list.
  */
-function WorkspaceMark({ kind }: { kind: WorkspaceKind }) {
-  const Glyph = WORKSPACE_GLYPH[kind];
+function WorkspaceMark({ kind }: { kind: WorktreeKind }) {
+  const Glyph = WORKTREE_GLYPH[kind];
+  const label = `Runs in the ${WORKTREE_LABEL[kind]}`;
   return (
-    <Glyph className="size-2.5 shrink-0" role="img" aria-label={workspaceTitle(kind)}>
-      <title>{workspaceTitle(kind)}</title>
+    <Glyph className="size-2.5 shrink-0" role="img" aria-label={label}>
+      <title>{label}</title>
     </Glyph>
   );
 }
