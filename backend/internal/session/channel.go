@@ -543,11 +543,24 @@ func (s *Service) tryLiveDelivery(live *Session, recipientID, formatted string) 
 	return true
 }
 
-// writeLegacyAgentMessageEvents writes old-style agent_message session_events
-// during the transition period. Only the "sent" copy on the sender's session is
-// written (needed for inline turn display). Received copies and user broadcast
-// copies are no longer needed — the messages table + channel.message WS events
-// are the source of truth for channel timelines.
+// writeLegacyAgentMessageEvents writes old-style agent_message session_events.
+//
+// The "sent" copy always goes on the sender's session, for inline turn display.
+// A "received" copy goes on a recipient only where the message crosses a
+// **delegation edge** — parent to child or child to parent.
+//
+// That scope is the whole design. A routed message reaches its recipient's CLI
+// through directSendMessage, which is deliberately silent: no user_message
+// event, nothing in the transcript. That is right for the CLI and wrong for the
+// person reading it, who was left watching a lead narrate replies to reports
+// they could not see. The received copy is the transcript's record of what
+// actually arrived.
+//
+// It is an edge and not "every recipient" because a repo-backed discussion's
+// personas are sessions too, and mirroring every peer turn into every peer's
+// timeline is N-squared events describing a roundtable the channel timeline
+// already renders. Sibling worker chatter is excluded on the same reasoning:
+// neither end is the lead, so neither transcript is where anyone looks for it.
 func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID string, msg store.Message, p ChannelMessageParams) {
 	if p.SenderType == "user" {
 		// User broadcasts: no session_events needed — messages table is source of truth.
@@ -587,6 +600,40 @@ func (s *Service) writeLegacyAgentMessageEvents(ctx context.Context, projectID s
 		Direction:       DirectionSent,
 	}
 	s.persistAgentMessageWithID(ctx, p.SenderID, projectID, sentEvent, msg.ID)
+
+	// Read the sender once: its parent settles the reports-up half for every
+	// recipient, so only the instructions-down half costs a query each.
+	// Unreadable means no edge — a row the store cannot answer for costs a
+	// missing transcript entry rather than a wrong one.
+	sender, err := s.queries.GetSession(ctx, p.SenderID)
+	if err != nil {
+		return
+	}
+	for _, recipientID := range p.Recipients {
+		// A session addressing itself is not a delivery worth recording twice.
+		if recipientID == p.SenderID {
+			continue
+		}
+		reportsUp := sender.ParentSessionID.Valid && sender.ParentSessionID.String == recipientID
+		recipient, err := s.queries.GetSession(ctx, recipientID)
+		if err != nil {
+			continue
+		}
+		instructsDown := recipient.ParentSessionID.Valid &&
+			recipient.ParentSessionID.String == p.SenderID
+		if !reportsUp && !instructsDown {
+			continue
+		}
+		recvEvent := sentEvent
+		recvEvent.Direction = DirectionReceived
+		// The target names who this copy is for, not who the sender addressed:
+		// a message fanned out to a whole crew carries no per-recipient target
+		// in its metadata, and a copy claiming to be addressed elsewhere reads
+		// as somebody else's mail.
+		recvEvent.TargetSessionID = recipientID
+		recvEvent.TargetName = recipient.Name
+		s.persistAgentMessageWithID(ctx, recipientID, projectID, recvEvent, msg.ID)
+	}
 }
 
 // persistAgentMessageWithID persists a legacy agent_message event linked to a canonical message.

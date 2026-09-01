@@ -39,6 +39,20 @@ func (s *ChannelSuite) createNamedSession(name string) (string, *testutil.MockCL
 	return result.SessionID, mock
 }
 
+// createWorkerSession creates a session spawned by leadID — the parentage that
+// makes a message between the two a delegation edge.
+func (s *ChannelSuite) createWorkerSession(name, leadID string) (string, *testutil.MockCLISession) {
+	result, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID:       s.Project.ID,
+		Name:            name,
+		Model:           "opus",
+		ParentSessionID: leadID,
+	})
+	s.Require().NoError(err)
+	mock := s.Connector.Last()
+	return result.SessionID, mock
+}
+
 // createChannelWithMembers creates a channel and joins the given sessions.
 func (s *ChannelSuite) createChannelWithMembers(channelName string, sessionIDs ...string) string {
 	ctx := context.Background()
@@ -68,7 +82,10 @@ func (s *ChannelSuite) findAgentMessages(sessionID string) []WireAgentMessageEve
 
 // --- RouteAgentMessage tests ---
 
-func (s *ChannelSuite) TestChannel_RouteMessage_PersistsSenderCopyOnly() {
+// Two sessions that merely share a channel are not a delegation edge, so the
+// recipient gets no received copy: the messages table and the channel timeline
+// are the source of truth for peer traffic.
+func (s *ChannelSuite) TestChannel_RouteMessage_NoReceivedCopyBetweenPeers() {
 	leadID, _ := s.createNamedSession("Lead")
 	workerID, _ := s.createNamedSession("Worker")
 	s.createChannelWithMembers("test-team", leadID, workerID)
@@ -88,9 +105,74 @@ func (s *ChannelSuite) TestChannel_RouteMessage_PersistsSenderCopyOnly() {
 	s.Equal("Worker", senderMsgs[0].TargetName)
 	s.Equal("hello worker", senderMsgs[0].Content)
 
-	// Target should have no agent_message events — messages table is source of truth.
 	targetMsgs := s.findAgentMessages(workerID)
-	s.Empty(targetMsgs, "received copies no longer written")
+	s.Empty(targetMsgs, "peers with no parentage get no received copy")
+}
+
+// A worker's report reaches its lead's CLI silently, through directSendMessage.
+// The received copy is the only record a person reading the lead's transcript
+// ever gets of what actually arrived, so it must be written — and it must name
+// the worker as sender, carry the report type, and address the lead.
+func (s *ChannelSuite) TestChannel_RouteMessage_ReceivedCopyAcrossDelegationEdge() {
+	leadID, _ := s.createNamedSession("Lead")
+	workerID, _ := s.createWorkerSession("Worker", leadID)
+	s.createChannelWithMembers("spawn-team", leadID, workerID)
+
+	// Worker → Lead: a report going up.
+	err := s.svc.RouteAgentMessage(context.Background(), AgentMessagePayload{
+		SenderSessionID: workerID,
+		TargetSessionID: leadID,
+		Content:         "plan is ready",
+		MessageType:     "plan",
+	})
+	s.Require().NoError(err)
+
+	leadMsgs := s.findAgentMessages(leadID)
+	s.Require().Len(leadMsgs, 1, "lead should hold the received copy of its worker's report")
+	s.Equal(DirectionReceived, leadMsgs[0].Direction)
+	s.Equal("Worker", leadMsgs[0].SenderName)
+	s.Equal(workerID, leadMsgs[0].SenderSessionID)
+	s.Equal("Lead", leadMsgs[0].TargetName)
+	s.Equal(leadID, leadMsgs[0].TargetSessionID)
+	s.Equal("plan", leadMsgs[0].MessageType)
+	s.Equal("plan is ready", leadMsgs[0].Content)
+
+	// Lead → Worker: an instruction going down gets one too.
+	err = s.svc.RouteAgentMessage(context.Background(), AgentMessagePayload{
+		SenderSessionID: leadID,
+		TargetSessionID: workerID,
+		Content:         "approved, proceed",
+	})
+	s.Require().NoError(err)
+
+	workerMsgs := s.findAgentMessages(workerID)
+	s.Require().Len(workerMsgs, 2, "worker holds its own sent copy plus the reply it received")
+	s.Equal(DirectionSent, workerMsgs[0].Direction)
+	s.Equal(DirectionReceived, workerMsgs[1].Direction)
+	s.Equal("Lead", workerMsgs[1].SenderName)
+	s.Equal("approved, proceed", workerMsgs[1].Content)
+}
+
+// Informational channel metadata stays on the channel. A spawn notice landing in
+// the lead's transcript would announce workers it already knows it created.
+func (s *ChannelSuite) TestChannel_RouteMessage_NoReceivedCopyForInformational() {
+	leadID, _ := s.createNamedSession("Lead")
+	workerID, _ := s.createWorkerSession("Worker", leadID)
+	channelID := s.createChannelWithMembers("intro-team", leadID, workerID)
+
+	_, err := s.svc.SendChannelMessage(context.Background(), ChannelMessageParams{
+		ChannelID:   channelID,
+		SenderType:  "session",
+		SenderID:    workerID,
+		SenderName:  "Worker",
+		Content:     "Worker has joined",
+		MessageType: "introduction",
+		Recipients:  []string{leadID},
+	})
+	s.Require().NoError(err)
+
+	s.Empty(s.findAgentMessages(leadID), "introductions never reach a session timeline")
+	s.Empty(s.findAgentMessages(workerID), "not even as the sender's own copy")
 }
 
 func (s *ChannelSuite) TestChannel_RouteMessage_LiveDelivery() {
