@@ -10,6 +10,7 @@ import { QuestionBanner } from "~/components/chat/banners/QuestionBanner";
 import { ResumeBanner } from "~/components/chat/banners/ResumeBanner";
 import { SpawnWorkerApprovalBanner } from "~/components/chat/banners/SpawnWorkerApprovalBanner";
 import { ContextBar } from "~/components/chat/ContextBar";
+import { CrewStrip } from "~/components/chat/CrewStrip";
 import { ChangesView } from "~/components/chat/changes/ChangesView";
 import { CommitDialog } from "~/components/chat/dialogs/CommitDialog";
 import { CreatePRDialog } from "~/components/chat/dialogs/CreatePRDialog";
@@ -62,6 +63,7 @@ import {
   stopSession,
   unarchiveSession,
 } from "~/lib/session/actions";
+import { deriveCrew } from "~/lib/session/crew";
 import {
   availableDockViews,
   type DockAvailability,
@@ -180,6 +182,11 @@ export function ChatPanel({
   } = useSessionState(sessionId);
   const agentRuns = useAgentRuns(sessionId);
   const [flightExpanded, setFlightExpanded] = useState(false);
+  const [crewExpanded, setCrewExpanded] = useState(false);
+  // The whole map, because membership is a property of the *other* sessions:
+  // a worker appearing is a new key, which a narrower selector cannot see.
+  const allSessions = useChatStore((s) => s.sessions);
+  const allProjects = useAppStore((s) => s.projects);
   const sessionListLoaded = useChatStore((s) => s.loadedProjects.has(projectId));
   // Schedules targeting this session (loops). Element refs are stable in the
   // store, so useShallow keeps the selector reference-stable across renders.
@@ -220,6 +227,13 @@ export function ChatPanel({
   const latestTurnIndex = turns[turns.length - 1]?.turnIndex;
   const agentFlight = useMemo(() => partitionAgentRuns(agentRuns), [agentRuns]);
   const agentBadge = useMemo(() => agentBadgeState(agentRuns), [agentRuns]);
+  const crew = useMemo(() => deriveCrew(allSessions, sessionId), [allSessions, sessionId]);
+  // A spawn can land in another checkout, so a chip resolves its own project
+  // rather than borrowing the lead's route params.
+  const crewProjectSlug = useCallback(
+    (id: string) => allProjects.find((p) => p.id === id)?.slug,
+    [allProjects],
+  );
   // No local seen-state: the server owns when a loop's attention clears
   // (`schedule.mark-viewed`, sent by LoopsPanel), and a failed loop
   // deliberately survives being looked at.
@@ -621,6 +635,21 @@ export function ChatPanel({
     />
   ) : null;
 
+  // Never gated on the lead being busy: workers outlive the turn that spawned
+  // them, so the moment this is most worth reading — idle, waiting on three
+  // check-ins — is exactly when a busy-gated strip would be gone. It sits
+  // below the flight rail because it is the more persistent of the two, and a
+  // strip that comes and goes should not shove the steady one around.
+  const crewStrip = (
+    <CrewStrip
+      crew={crew}
+      density={isMobile ? "line" : "rail"}
+      projectSlugFor={crewProjectSlug}
+      expanded={crewExpanded}
+      onExpandedChange={setCrewExpanded}
+    />
+  );
+
   const dockBody = !activeDockView ? null : activeDockView === "work" ? (
     <WorkView sessionId={sessionId} todos={todos} latestTurnIndex={latestTurnIndex} />
   ) : activeDockView === "changes" ? (
@@ -751,6 +780,7 @@ export function ChatPanel({
                 />
               )}
               {flightRail}
+              {crewStrip}
               <MessageComposer
                 key={sessionId}
                 projectId={projectId}
