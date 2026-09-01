@@ -97,6 +97,8 @@ export function ThreadSidebar() {
     });
   }, []);
 
+  const toggleLeadCollapsed = useUIStore((s) => s.toggleLeadCollapsed);
+
   const togglePin = useCallback(
     (vm: ThreadRowVM) => {
       // New pins land at the end of the pinned section.
@@ -233,6 +235,7 @@ export function ThreadSidebar() {
               onClick={() => openSession(vm)}
               onTogglePin={() => togglePin(vm)}
               onArchive={() => archive(vm)}
+              onToggleCollapse={() => toggleLeadCollapsed(vm.sessionId)}
             />
           ))}
           {groups.open.length === 0 && !isEmpty && (

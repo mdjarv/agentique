@@ -19,6 +19,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     sessionId: crypto.randomUUID(),
     name: "Upgrade claudecli-go to v0.3.0",
     untitled: false,
+    depth: 0,
     projectSlug: "agentkit",
     projectLabel: "agentkit",
     projectInitials: "AK",

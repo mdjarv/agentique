@@ -4,6 +4,8 @@ import {
   BookOpen,
   Bot,
   Check,
+  ChevronDown,
+  ChevronRight,
   CircleHelp,
   Diamond,
   GitMerge,
@@ -149,6 +151,8 @@ interface ThreadRowProps {
   onClick: () => void;
   onTogglePin: () => void;
   onArchive: () => void;
+  /** Fold this lead's workers away. Only ever passed for a lead row. */
+  onToggleCollapse?: () => void;
 }
 
 function rowAriaLabel(vm: ThreadRowVM): string {
@@ -226,11 +230,13 @@ function RowActions({
   persistent = false,
   onTogglePin,
   onArchive,
+  onToggleCollapse,
 }: {
   vm: ThreadRowVM;
   persistent?: boolean;
   onTogglePin: () => void;
   onArchive: () => void;
+  onToggleCollapse?: () => void;
 }) {
   const PinIcon = vm.pinned ? PinOff : Pin;
   const ArchiveIcon = vm.archived ? ArchiveRestore : Archive;
@@ -242,6 +248,22 @@ function RowActions({
       )}
     >
       {[
+        // Folding a crew away is a control, so it lives with the controls. The
+        // count itself stays on the repo line, where it is a fact worth
+        // scanning rather than an action worth hunting for.
+        ...(vm.collapsed !== undefined && onToggleCollapse
+          ? [
+              {
+                label: vm.collapsed ? "Show workers" : "Hide workers",
+                action: onToggleCollapse,
+                icon: vm.collapsed ? (
+                  <ChevronRight className="size-3" />
+                ) : (
+                  <ChevronDown className="size-3" />
+                ),
+              },
+            ]
+          : []),
         {
           label: vm.pinned ? "Unpin" : "Pin",
           action: onTogglePin,
@@ -298,6 +320,7 @@ export const ThreadRow = memo(function ThreadRow({
   onClick,
   onTogglePin,
   onArchive,
+  onToggleCollapse,
 }: ThreadRowProps) {
   if (compact) {
     // Two lines, even settled: a long remote slug (`webticket-ui~ad3e932
@@ -355,116 +378,169 @@ export const ThreadRow = memo(function ThreadRow({
   const showTodo = vm.todo && vm.todo.total > 0;
 
   return (
-    <div className={cn("group/thread relative", selected && "rounded-lg bg-sidebar-accent")}>
-      <button
-        type="button"
-        aria-label={rowAriaLabel(vm)}
-        onClick={onClick}
-        className={cn(
-          "block w-full cursor-pointer select-none rounded-lg px-2.5 py-1.5 text-left transition-colors",
-          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
-          "max-md:min-h-11",
-          !selected && "group-hover/thread:bg-sidebar-accent/60",
-        )}
-      >
-        {/* Repo line: chip · slug · @machine · rest outcome · time */}
-        <span className="flex items-center gap-1.5">
-          <SessionChip vm={vm} hued={vm.hued} />
-          <span
-            className={cn(
-              "min-w-0 shrink truncate font-mono text-[10px] font-medium",
-              !vm.hued && "text-muted-foreground",
-            )}
-            style={vm.hued ? { color: vm.projectColorFg } : undefined}
-          >
-            {vm.projectLabel}
-          </span>
-          <WorkspaceMark kind={vm.workspace} />
-          <SessionMachineTag vm={vm} />
-          {/* Only an OUTCOME earns words here. Parked states ride the chip's
+    <WorkerBranch vm={vm}>
+      <div className={cn("group/thread relative", selected && "rounded-lg bg-sidebar-accent")}>
+        <button
+          type="button"
+          aria-label={rowAriaLabel(vm)}
+          onClick={onClick}
+          className={cn(
+            "block w-full cursor-pointer select-none rounded-lg px-2.5 py-1.5 text-left transition-colors",
+            "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring/50",
+            "max-md:min-h-11",
+            !selected && "group-hover/thread:bg-sidebar-accent/60",
+          )}
+        >
+          {/* Repo line: chip · slug · @machine · rest outcome · time */}
+          <span className="flex items-center gap-1.5">
+            <SessionChip vm={vm} hued={vm.hued} />
+            <span
+              className={cn(
+                "min-w-0 shrink truncate font-mono text-[10px] font-medium",
+                !vm.hued && "text-muted-foreground",
+              )}
+              style={vm.hued ? { color: vm.projectColorFg } : undefined}
+            >
+              {vm.projectLabel}
+            </span>
+            <WorkspaceMark kind={vm.workspace} />
+            <SessionMachineTag vm={vm} />
+            {/* Only an OUTCOME earns words here. Parked states ride the chip's
               corner instead: they are the row's least consequential fact and
               were its longest word, and giving them up is what lets "finished"
               and "merged" read louder without being made louder.
               Unread rows show the word too — their third line is gone, so
               "finished" / "merged" has nowhere else to live. */}
-          {(!awake || vm.unread) && vm.restToken && !vm.parked && <RestMark token={vm.restToken} />}
-          <TimeSlot label={vm.timeLabel} yielded={selected} />
-        </span>
+            {(!awake || vm.unread) && vm.restToken && !vm.parked && (
+              <RestMark token={vm.restToken} />
+            )}
+            {/* On the repo line, not the state line: a lead is a lead whether or
+              not it is mid-turn, and gating this on `awake` hid the crew at
+              exactly the moment it mattered — an idle lead waiting on
+              check-ins. */}
+            {!!vm.workers && <CrewMark count={vm.workers} collapsed={vm.collapsed} />}
+            <TimeSlot label={vm.timeLabel} yielded={selected} />
+          </span>
 
-        {/* Title line — and the unread pill, which lives a line below the
+          {/* Title line — and the unread pill, which lives a line below the
             corner the actions occupy. */}
-        <span className="mt-px flex items-center gap-2">
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-[13px] font-medium text-foreground",
-              selected && "text-foreground-bright",
-              vm.unread && "font-semibold text-foreground-bright",
-              vm.untitled && "font-normal italic text-muted-foreground",
-              vm.struck &&
-                "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
-            )}
-          >
-            {vm.untitled ? "Untitled" : vm.name}
-          </span>
-          {vm.unread && <NewMark />}
-        </span>
-
-        {/* State line — awake rows only: glyph names the state, words carry
-            the specifics. */}
-        {awake && vm.livePhrase && (
-          <span className={cn("mt-px flex items-center gap-1.5", TONE_CLASS[vm.livePhrase.tone])}>
-            {stateGlyph(vm.badge, vm.workKind)}
-            <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
-              {vm.livePhrase.text}
+          <span className="mt-px flex items-center gap-2">
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-[13px] font-medium text-foreground",
+                selected && "text-foreground-bright",
+                vm.unread && "font-semibold text-foreground-bright",
+                vm.untitled && "font-normal italic text-muted-foreground",
+                vm.struck &&
+                  "font-normal text-muted-foreground-faint line-through decoration-muted-foreground/50",
+              )}
+            >
+              {vm.untitled ? "Untitled" : vm.name}
             </span>
-            {showTodo && vm.todo && !selected && (
-              <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
-                {vm.todo.done}/{vm.todo.total}
-              </span>
-            )}
-            {!!vm.workers && (
-              <span
-                className="inline-flex shrink-0 items-center gap-0.5 font-mono text-[10px] font-medium tabular-nums text-agent"
-                title={`Lead of ${vm.workers} worker${vm.workers !== 1 ? "s" : ""}`}
-              >
-                <Hash className="size-2.5" />
-                {vm.workers}
-              </span>
-            )}
+            {vm.unread && <NewMark />}
           </span>
-        )}
 
-        {/* Focused card (S1) — the row you're inside carries its identity
-            facts and a real todo bar. Its actions are not here: they are the
-            corner buttons, un-gated (also the touch path — the selected row is
-            the one mobile row with buttons). */}
-        {selected && (
-          <>
-            {(vm.branch || vm.model || vm.turns) && (
-              <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground-faint">
-                {[vm.branch, vm.model, vm.turns ? `${vm.turns} turns` : ""]
-                  .filter(Boolean)
-                  .join(" · ")}
+          {/* State line — awake rows only: glyph names the state, words carry
+            the specifics. */}
+          {awake && vm.livePhrase && (
+            <span className={cn("mt-px flex items-center gap-1.5", TONE_CLASS[vm.livePhrase.tone])}>
+              {stateGlyph(vm.badge, vm.workKind)}
+              <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
+                {vm.livePhrase.text}
               </span>
-            )}
-            {showTodo && vm.todo && (
-              <span className="mt-1.5 flex items-center gap-2">
-                <span className="h-[3px] min-w-0 flex-1 overflow-hidden rounded-full bg-border/60">
-                  <span
-                    className="block h-full rounded-full bg-primary"
-                    style={{ width: `${Math.round((vm.todo.done / vm.todo.total) * 100)}%` }}
-                  />
-                </span>
+              {showTodo && vm.todo && !selected && (
                 <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
                   {vm.todo.done}/{vm.todo.total}
                 </span>
-              </span>
-            )}
-          </>
-        )}
-      </button>
+              )}
+            </span>
+          )}
 
-      <RowActions vm={vm} persistent={selected} onTogglePin={onTogglePin} onArchive={onArchive} />
-    </div>
+          {/* Focused card (S1) — the row you're inside carries its identity
+            facts and a real todo bar. Its actions are not here: they are the
+            corner buttons, un-gated (also the touch path — the selected row is
+            the one mobile row with buttons). */}
+          {selected && (
+            <>
+              {(vm.branch || vm.model || vm.turns) && (
+                <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground-faint">
+                  {[vm.branch, vm.model, vm.turns ? `${vm.turns} turns` : ""]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+              {showTodo && vm.todo && (
+                <span className="mt-1.5 flex items-center gap-2">
+                  <span className="h-[3px] min-w-0 flex-1 overflow-hidden rounded-full bg-border/60">
+                    <span
+                      className="block h-full rounded-full bg-primary"
+                      style={{ width: `${Math.round((vm.todo.done / vm.todo.total) * 100)}%` }}
+                    />
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
+                    {vm.todo.done}/{vm.todo.total}
+                  </span>
+                </span>
+              )}
+            </>
+          )}
+        </button>
+
+        <RowActions
+          vm={vm}
+          persistent={selected}
+          onTogglePin={onTogglePin}
+          onArchive={onArchive}
+          onToggleCollapse={onToggleCollapse}
+        />
+      </div>
+    </WorkerBranch>
   );
 });
+
+/**
+ * The connector rail under a lead.
+ *
+ * Drawn by the worker rather than the lead so it needs no knowledge of how many
+ * siblings follow: each row draws its own segment, and the last one stops the
+ * vertical line at its own stub. A lead that loses its crew therefore leaves
+ * nothing behind to clean up.
+ */
+function WorkerBranch({ vm, children }: { vm: ThreadRowVM; children: React.ReactNode }) {
+  if (vm.depth === 0) return <>{children}</>;
+  return (
+    <div className="relative pl-4">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute left-[9px] top-0 w-px bg-border/70",
+          vm.lastChild ? "h-[15px]" : "bottom-0",
+        )}
+      />
+      <span aria-hidden className="absolute left-[9px] top-[15px] h-px w-[6px] bg-border/70" />
+      {children}
+    </div>
+  );
+}
+
+/**
+ * How many workers a lead has out, on the repo line.
+ *
+ * A hash and a count rather than a chevron: this reports, and the chevron that
+ * folds them lives with the row's other controls. Dimmed while collapsed, which
+ * is the only cue that rows are hidden below.
+ */
+function CrewMark({ count, collapsed }: { count: number; collapsed?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-0.5 font-mono text-[10px] font-medium tabular-nums",
+        collapsed ? "text-muted-foreground-faint" : "text-agent",
+      )}
+      title={`Lead of ${count} worker${count !== 1 ? "s" : ""}${collapsed ? " (hidden)" : ""}`}
+    >
+      <Hash className="size-2.5" />
+      {count}
+    </span>
+  );
+}

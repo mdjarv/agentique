@@ -95,6 +95,16 @@ interface UIState {
   /** Sync dock: expansion is a preference, not a gesture — it is remembered. */
   syncDockExpanded: boolean;
   /**
+   * Leads whose workers are folded away in the sidebar.
+   *
+   * Deliberately not persisted. Collapsing is a gesture about the list in
+   * front of you, not a preference about leads in general, and a collapse
+   * restored days later hides a crew whose existence is the thing you needed
+   * reminding of. Not persisting also sidesteps the pruning `dock` needs: the
+   * set empties itself on reload rather than accumulating dead session ids.
+   */
+  collapsedLeads: Set<string>;
+  /**
    * Hands-free: draw a live call as the driving surface rather than the strip.
    *
    * Remembered rather than per call, because it describes the journey and not
@@ -125,6 +135,7 @@ interface UIState {
   setDockWidth: (width: number) => void;
   setDockMaximized: (maximized: boolean) => void;
   setSyncDockExpanded: (expanded: boolean) => void;
+  toggleLeadCollapsed: (sessionId: string) => void;
   setHandsFree: (handsFree: boolean) => void;
   /** Call once a session has been created with these. Never on selection. */
   recordLastUsed: (settings: LastUsedSettings) => void;
@@ -151,6 +162,7 @@ export const useUIStore = create<UIState>()(
       dockWidth: 500,
       dockMaximized: false,
       syncDockExpanded: false,
+      collapsedLeads: new Set<string>(),
       handsFree: false,
       lastUsed: DEFAULT_LAST_USED,
       theme: "dark" as Theme,
@@ -225,6 +237,15 @@ export const useUIStore = create<UIState>()(
       setDockMaximized: (maximized) => set({ dockMaximized: maximized }),
 
       setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
+
+      // A new Set every time: the selector reading it compares by reference,
+      // and mutating in place would leave every nested row on screen unchanged.
+      toggleLeadCollapsed: (sessionId) =>
+        set((state) => {
+          const next = new Set(state.collapsedLeads);
+          if (!next.delete(sessionId)) next.add(sessionId);
+          return { collapsedLeads: next };
+        }),
 
       setHandsFree: (handsFree) => set({ handsFree }),
 

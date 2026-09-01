@@ -198,6 +198,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     sessionId: "s-1",
     name: "Row",
     untitled: false,
+    depth: 0,
     projectSlug: "proj",
     projectLabel: "proj",
     projectInitials: "PR",

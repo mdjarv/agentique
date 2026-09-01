@@ -55,6 +55,18 @@ export interface ThreadRowVM {
   sessionId: string;
   name: string;
   untitled: boolean;
+  /** The lead that spawned this session, when one did. */
+  parentSessionId?: string;
+  /**
+   * How far this row is indented under a lead. Nesting is one level deep by
+   * construction: a worker cannot spawn, so it can never have children of its
+   * own, and a depth the data cannot reach is a state to keep out of the type.
+   */
+  depth: 0 | 1;
+  /** Last worker under its lead — the connector rail stops at this row. */
+  lastChild?: boolean;
+  /** A lead whose workers are folded away. Undefined on every other row. */
+  collapsed?: boolean;
   /** Routing slug — qualified with a machine suffix for remote projects. */
   projectSlug: string;
   /** The project as a reader names it — its name, not its slug. */

@@ -30,6 +30,7 @@ import { useAppStore } from "~/stores/app-store";
 import { type SessionData, useChatStore } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { usePulseStore } from "~/stores/pulse-store";
+import { useUIStore } from "~/stores/ui-store";
 import {
   compareOpenRows,
   deriveBadge,
@@ -41,6 +42,7 @@ import {
   isTerminalState,
   sectionFor,
 } from "./derive";
+import { nestWorkers } from "./nest";
 import type { ThreadGroups, ThreadRowVM } from "./types";
 
 /** Compact summary for the machine line while an approval blocks the agent. */
@@ -75,6 +77,7 @@ function lastActivity(meta: SessionData["meta"]): number {
 
 export function useThreadGroups(searchQuery: string): ThreadGroups {
   const sessions = useChatStore((s) => s.sessions);
+  const collapsedLeads = useUIStore((s) => s.collapsedLeads);
   const projects = useAppStore((s) => s.projects);
   const machines = useMachineStore((s) => s.machines);
   const machineStatuses = useMachineStore((s) => s.statuses);
@@ -161,6 +164,10 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         sessionId: meta.id,
         name: meta.name || "",
         untitled: !meta.name,
+        parentSessionId: meta.parentSessionId || undefined,
+        // Flat here on purpose: which section a row belongs to and what it sits
+        // next to are separate questions, and `nestWorkers` answers the second.
+        depth: 0,
         // Routing needs the session's OWN (machine-qualified) slug; the label
         // beside it is the repo's, so both copies read as one project.
         projectSlug: project.slug,
@@ -254,7 +261,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         b.lastActivity - a.lastActivity,
     );
 
-    return { pinned, open, stale, archived };
+    return nestWorkers({ pinned, open, stale, archived }, collapsedLeads);
   }, [
     sessions,
     projects,
@@ -264,5 +271,6 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     pulses,
     resolvedTheme,
     searchQuery,
+    collapsedLeads,
   ]);
 }
