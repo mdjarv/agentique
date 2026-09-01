@@ -97,6 +97,12 @@ export interface ThreadRowVM {
   livePhrase?: MachineLine;
   /** Refines the `working` glyph; ignored for every other badge. */
   workKind?: WorkKind;
+  /**
+   * The CLI is producing right now — the chip traces its comet and the time
+   * slot yields to the orbit. Narrower than {@link awake}: a row blocked on an
+   * approval is awake and must not animate, because nothing is moving.
+   */
+  live: boolean;
   /** One-word outcome shown inline on resting rows ("stopped", "evicted", …). */
   restToken: RestToken;
   /**

@@ -435,6 +435,30 @@ the rail cannot say "stopped" on the overview. Grey stays the shelf's and
 Archived's language: both render `compact`, which is grey and collapsed by
 construction.
 
+**Live is a mark that travels, and it is the only thing in the rail that
+moves.** `LiveMarks.tsx` draws one shape at two radii — a bright arc on a faint
+track — around the chip (`ChipComet`) and in the time slot (`OrbitArc`). Travel
+rather than pulse is forced by the size: at 10px an in-place mark signals
+through one property at one point, which peripheral vision does not resolve,
+where a path 60px long is caught before it is read. **The track is
+load-bearing**, not decoration: it is what the mark looks like at rest, so a
+glance landing on the arc's empty side still sees something, and
+`prefers-reduced-motion` holds the head still on the track rather than removing
+the state. One period across every row and no per-row stagger — marks that drift
+into phase read as one system, six phases read as noise.
+
+`isRunning` gates it, and is deliberately narrower than `isAwake`: a row blocked
+on an approval or a question is awake and emphatically not running, and
+animating it would contradict the amber triangle beside it. `merging` counts,
+because git is working. Colour stays the project's, so hue means filing and
+motion alone means live.
+
+**The orbit replaces the age rather than crowding it**, and only while running,
+which costs nothing — a running session's recency is "now", so the number is
+least useful at exactly the moment the mark is most useful. The clock keeps the
+slot everywhere it still answers something, which is what makes Open's recency
+sort readable.
+
 **A parked row wears its mark on the chip, not in words.** `stopped`,
 `evicted` and `away` are one concept — `isParked`, the process is gone, the
 work is not, and the next message resumes it either way — so in the rail they

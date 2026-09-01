@@ -67,6 +67,19 @@ export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
   return null;
 }
 
+/**
+ * The CLI is producing something right now, which is the only thing the live
+ * marks may claim.
+ *
+ * Narrower than {@link isAwake} on purpose. A row blocked on an approval or a
+ * question is awake and is emphatically NOT running — nothing is moving, it is
+ * waiting on a person — and animating it would say the opposite of what the
+ * amber triangle beside it says. `merging` counts: git is working.
+ */
+export function isRunning(badge: ThreadBadge): boolean {
+  return badge === "working" || badge === "planning" || badge === "merging";
+}
+
 /** A row is awake — and earns its third line — for every badge except rest
  *  ("off" = evicted counts as rest; its story is the rest token).
  *

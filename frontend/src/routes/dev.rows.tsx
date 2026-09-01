@@ -6,6 +6,7 @@
  * eyeballed without one. Presentational only — VMs are hand-built here.
  */
 import { createFileRoute } from "@tanstack/react-router";
+import { isRunning } from "~/components/layout/thread-sidebar/derive";
 import { ThreadRow } from "~/components/layout/thread-sidebar/ThreadRow";
 import type { ThreadRowVM } from "~/components/layout/thread-sidebar/types";
 import { isParked } from "~/lib/session/rest-state";
@@ -42,6 +43,9 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     // that says `restToken: "stopped"` and `parked: false` would render a
     // state the real sidebar cannot produce.
     parked: isParked(overrides.restToken ?? ""),
+    // Derived, not hardcoded: the gallery must not be able to show a live mark
+    // on a badge the app would leave still.
+    live: isRunning(overrides.badge ?? null),
   };
 }
 

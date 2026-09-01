@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { memo } from "react";
+import { OrbitArc } from "~/components/layout/session/LiveMarks";
 import { WORKTREE_GLYPH, WORKTREE_LABEL, type WorktreeKind } from "~/lib/session/location";
 import { REST_GLYPH, type RestToken } from "~/lib/session/rest-state";
 import { cn } from "~/lib/utils";
@@ -121,24 +122,48 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
       hued={hued}
       unread={vm.unread}
       parked={vm.parked}
+      live={vm.live}
     />
   );
 }
 
 /**
- * The right-aligned timestamp. It yields the corner to {@link RowActions} —
- * on hover, and for as long as the row is the focused one — rather than being
- * overlapped by them; `opacity` and not `hidden`, so the row never reflows.
+ * The right-aligned timestamp, and what stands in its place while a session
+ * runs.
+ *
+ * The orbit replaces the age rather than crowding it, and that costs nothing:
+ * a running session's recency is "now", so the number is least useful at
+ * exactly the moment the mark is most useful. The clock keeps the slot on every
+ * row where it still answers something — which is what makes the Open
+ * section's recency sort readable — and yields it on the rows where it does
+ * not.
+ *
+ * Either way the slot yields the corner to {@link RowActions} on hover and for
+ * as long as the row is the focused one, rather than being overlapped by them;
+ * `opacity` and not `hidden`, so the row never reflows.
  */
-function TimeSlot({ label, yielded }: { label: string; yielded: boolean }) {
+function TimeSlot({
+  label,
+  yielded,
+  live,
+  color,
+}: {
+  label: string;
+  yielded: boolean;
+  live?: boolean;
+  /** The project accent. Hue stays filing; motion alone means live. */
+  color?: string;
+}) {
   return (
     <span
       className={cn(
-        "ml-auto shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground-faint",
+        "ml-auto flex shrink-0 items-center font-mono text-[10.5px] tabular-nums text-muted-foreground-faint",
         yielded ? "opacity-0" : "md:group-hover/thread:opacity-0",
       )}
+      style={live ? { color } : undefined}
+      title={live ? `Running · last activity ${label}` : undefined}
     >
-      {label}
+      {live ? <OrbitArc /> : label}
     </span>
   );
 }
@@ -419,7 +444,12 @@ export const ThreadRow = memo(function ThreadRow({
               exactly the moment it mattered — an idle lead waiting on
               check-ins. */}
             {!!vm.workers && <CrewMark count={vm.workers} collapsed={vm.collapsed} />}
-            <TimeSlot label={vm.timeLabel} yielded={selected} />
+            <TimeSlot
+              label={vm.timeLabel}
+              yielded={selected}
+              live={vm.live}
+              color={vm.projectColorFg}
+            />
           </span>
 
           {/* Title line — and the unread pill, which lives a line below the

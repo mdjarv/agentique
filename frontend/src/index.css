@@ -1078,3 +1078,58 @@
   mask-composite: intersect;
   -webkit-mask-composite: source-in;
 }
+
+/* ── Live marks ─────────────────────────────────────────────────────────────
+   A bright arc travelling a faint track, at two radii: around the 14px chip
+   (`.chip-comet`) and in the 10px time slot (`.orbit-arc`). See
+   `components/layout/session/LiveMarks.tsx` for why travel rather than pulse.
+
+   The dash figures are the paths' actual lengths in viewBox units, so the head
+   completes exactly one lap per cycle:
+     chip  — a 21.6 square at r=6.2:  4*(21.6-2*6.2) + 2*PI*6.2  = 75.76
+     orbit — a circle at r=10:        2*PI*10                    = 62.83
+   Change a geometry and both numbers move with it, or the arc drifts. */
+.live-arc {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+
+/* The path itself, always drawn. This is the resting state — reduced motion
+   holds the head still on it, so calming the animation never removes the fact
+   that the session is live. */
+.live-arc-track {
+  opacity: 0.22;
+}
+
+.chip-comet .live-arc-head {
+  stroke-dasharray: 15 60.76;
+}
+
+.orbit-arc .live-arc-head {
+  stroke-dasharray: 17 45.83;
+}
+
+/* One period across every row and no per-row delay: marks left to drift into
+   phase read as one system, where six phases read as noise. */
+@media (prefers-reduced-motion: no-preference) {
+  .chip-comet .live-arc-head {
+    animation: chip-comet-lap 1.7s linear infinite;
+  }
+
+  .orbit-arc .live-arc-head {
+    animation: orbit-arc-lap 1.6s linear infinite;
+  }
+}
+
+@keyframes chip-comet-lap {
+  to {
+    stroke-dashoffset: -75.76;
+  }
+}
+
+@keyframes orbit-arc-lap {
+  to {
+    stroke-dashoffset: -62.83;
+  }
+}

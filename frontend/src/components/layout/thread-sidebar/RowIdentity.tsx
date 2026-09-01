@@ -5,6 +5,7 @@
  * to look the same whichever list it turns up in. Props are primitives, not a
  * view-model, so a row type that is not a session can still wear them.
  */
+import { ChipComet } from "~/components/layout/session/LiveMarks";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { PARKED_GLYPH, PARKED_TITLE } from "~/lib/session/rest-state";
@@ -31,6 +32,12 @@ export interface ChipProps {
    * away. Renders the moon in the opposite corner; see {@link Chip}.
    */
   parked?: boolean;
+  /**
+   * The CLI is producing right now — the chip wears a comet tracing its border.
+   * Deliberately narrower than "awake": a row blocked on an approval must not
+   * animate, because nothing is moving there.
+   */
+  live?: boolean;
 }
 
 /**
@@ -50,7 +57,16 @@ export interface ChipProps {
  * green, which is right — grey means filed, the dot means unseen, and those are
  * different claims.
  */
-export function Chip({ iconId, initials, colorBg, colorFg, hued, unread, parked }: ChipProps) {
+export function Chip({
+  iconId,
+  initials,
+  colorBg,
+  colorFg,
+  hued,
+  unread,
+  parked,
+  live,
+}: ChipProps) {
   const Icon = useProjectIcon(iconId ?? "");
   const square = (
     <span
@@ -72,12 +88,15 @@ export function Chip({ iconId, initials, colorBg, colorFg, hued, unread, parked 
     </span>
   );
 
-  // Both marks are *siblings* of the square: a mask paints its children too, so
-  // anything nested inside would be cut away by the very notch it sits in.
-  if (!unread && !parked) return <span className="flex shrink-0">{square}</span>;
+  // Every mark is a *sibling* of the square: a mask paints its children too, so
+  // anything nested inside would be cut away by the very notch it sits in. The
+  // comet has the same problem for a different reason — it rides 2px outside
+  // the square, which the mask would clip.
+  if (!unread && !parked && !live) return <span className="flex shrink-0">{square}</span>;
   return (
     <span className="relative flex shrink-0" title={parked ? PARKED_TITLE : undefined}>
       {square}
+      {live && <ChipComet />}
       {unread && (
         <span className="absolute -right-0.5 -top-0.5 size-[7px] rounded-full bg-success" />
       )}

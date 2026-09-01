@@ -8,6 +8,7 @@ function row(sessionId: string, overrides: Partial<ThreadRowVM> = {}): ThreadRow
     name: sessionId,
     untitled: false,
     depth: 0,
+    live: false,
     projectSlug: "proj",
     projectLabel: "proj",
     projectInitials: "PR",
