@@ -81,7 +81,10 @@ non-loopback Host is rejected to stop DNS rebinding. Such a server advertises
 
 Paired machines are **account state, not device state**. The catalog lives in the
 primary's `machines` table, guarded by the full-access role, and holds each
-remote's bearer token, public session id and pinned identity key. Any full-access
+remote's bearer token, public session id, pinned identity key and platform OS
+(the descriptor's GOOS, refreshed on connect — the fact behind the platform
+mark a machine wears wherever no user-picked icon overrides it;
+`frontend/src/lib/machines/platform.tsx` is the one glyph vocabulary). Any full-access
 client that signs into the primary inherits every paired machine. Browser
 localStorage keeps only public metadata; bearer tokens live in memory and are
 reloaded from the primary after authentication.
