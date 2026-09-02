@@ -128,48 +128,64 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
 }
 
 /**
- * The right-aligned timestamp, and what stands in its place while a session
- * runs.
+ * The right-aligned timestamp on the repo line.
  *
- * The orbit replaces the age rather than crowding it, and that costs nothing:
- * a running session's recency is "now", so the number is least useful at
- * exactly the moment the mark is most useful. The clock keeps the slot on every
- * row where it still answers something — which is what makes the Open
- * section's recency sort readable — and yields it on the rows where it does
- * not.
+ * The slot yields the corner to {@link RowActions} on hover and for as long as
+ * the row is the focused one, rather than being overlapped by them; `opacity`
+ * and not `hidden`, so the row never reflows. A clock can do that: the number
+ * it holds keeps, and the corner it holds is the only place two icon buttons
+ * fit.
  *
- * Either way the slot yields the corner to {@link RowActions} on hover and for
- * as long as the row is the focused one, rather than being overlapped by them;
- * `opacity` and not `hidden`, so the row never reflows.
- *
- * The orbit yields with it, and that is only affordable because the same mark
- * is riding the chip at the other end of the line ({@link ChipComet}) — where
- * nothing ever takes its place. Reserving the corner instead would put the two
- * buttons on a moving target: liveness ends on its own, so they would slide
- * under a cursor already on them, and one of them archives.
+ * A running row renders no clock at all — its recency is "now" — and the mark
+ * that says so lives one line down ({@link LiveSlot}), because that is the
+ * question the corner cannot answer.
  */
-function TimeSlot({
-  label,
-  yielded,
-  live,
-  color,
-}: {
-  label: string;
-  yielded: boolean;
-  live?: boolean;
-  /** The project accent. Hue stays filing; motion alone means live. */
-  color?: string;
-}) {
+function TimeSlot({ label, yielded, live }: { label: string; yielded: boolean; live?: boolean }) {
+  if (live) return null;
   return (
     <span
       className={cn(
         "ml-auto flex shrink-0 items-center font-mono text-[10.5px] tabular-nums text-muted-foreground-faint",
         yielded ? "opacity-0" : "md:group-hover/thread:opacity-0",
       )}
-      style={live ? { color } : undefined}
-      title={live ? `Running · last activity ${label}` : undefined}
     >
-      {live ? <OrbitArc /> : label}
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The orbit that says a session is producing right now, at the right edge of
+ * the **title** line.
+ *
+ * It sat in the time slot, one line up, and that was wrong for the reason
+ * {@link NewMark} was already right: the corner belongs to the row's actions on
+ * hover and for as long as the row is the focused one, and a mark meaning
+ * *running* cannot yield the way a timestamp can. It disappeared on precisely
+ * the two rows you were looking hardest at — the one under the cursor and the
+ * one you were inside.
+ *
+ * Nothing was reserved to fix it instead, because every reservation costs
+ * something worse. Holding the corner open would put the two buttons on a
+ * moving target: liveness ends on its own, so they would slide under a cursor
+ * already on them, and one of them archives. Sliding the orbit aside as the
+ * buttons arrive animates the one mark on the row whose whole job is that
+ * motion means live.
+ *
+ * So it takes the shelf the row already keeps for marks that must not yield —
+ * the title line's right edge, directly below the clock's own column, clear of
+ * the buttons on both densities. It is drawn last so it is flush right and its
+ * x never moves; `new` is the one thing that can share the line, and it steps
+ * left.
+ */
+function LiveSlot({ color, timeLabel }: { color: string; timeLabel: string }) {
+  return (
+    <span
+      className="flex shrink-0 items-center"
+      style={{ color }}
+      title={`Running · last activity ${timeLabel}`}
+    >
+      <OrbitArc />
     </span>
   );
 }
@@ -234,7 +250,9 @@ function RestMark({ token }: { token: Exclude<RestToken, ""> }) {
  *
  * It sits on the title line and not the identity line's time slot because that
  * slot is where the row's actions come in on hover and stay on the focused row,
- * and a mark that means *unread* cannot yield the way a timestamp can.
+ * and a mark that means *unread* cannot yield the way a timestamp can. That
+ * makes this line the row's shelf for exactly such marks, which is why
+ * {@link LiveSlot} came down to join it rather than inventing a third place.
  *
  * The other half is the notch on the chip ({@link Chip}) — this says what that
  * one means.
@@ -274,7 +292,11 @@ function RowActions({
   return (
     <span
       className={cn(
-        "absolute right-2 top-0.5 gap-0.5",
+        // `max-md:top-0` pays for the taller touch targets below: at 24px they
+        // reach to within a pixel of the title line, which is where the live
+        // orbit now sits. Two pixels back is the whole difference between a
+        // gap and a near-miss.
+        "absolute right-2 top-0.5 gap-0.5 max-md:top-0",
         persistent ? "flex" : "hidden md:group-hover/thread:flex",
       )}
     >
@@ -450,16 +472,11 @@ export const ThreadRow = memo(function ThreadRow({
               exactly the moment it mattered — an idle lead waiting on
               check-ins. */}
             {!!vm.workers && <CrewMark count={vm.workers} collapsed={vm.collapsed} />}
-            <TimeSlot
-              label={vm.timeLabel}
-              yielded={selected}
-              live={vm.live}
-              color={vm.projectColorFg}
-            />
+            <TimeSlot label={vm.timeLabel} yielded={selected} live={vm.live} />
           </span>
 
-          {/* Title line — and the unread pill, which lives a line below the
-            corner the actions occupy. */}
+          {/* Title line — and the two marks that cannot yield the corner the
+            actions occupy: unread, and the live orbit. */}
           <span className="mt-px flex items-center gap-2">
             <span
               className={cn(
@@ -474,6 +491,7 @@ export const ThreadRow = memo(function ThreadRow({
               {vm.untitled ? "Untitled" : vm.name}
             </span>
             {vm.unread && <NewMark />}
+            {vm.live && <LiveSlot color={vm.projectColorFg} timeLabel={vm.timeLabel} />}
           </span>
 
           {/* State line — awake rows only: glyph names the state, words carry

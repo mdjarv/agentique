@@ -37,13 +37,9 @@
  * their element's children away, and an arc nested inside would be sliced by
  * the very notch it passes.
  *
- * It is also the half of the mark that **never yields**. The row's top-right
- * corner belongs to {@link RowActions} on hover and for as long as the row is
- * the focused one, so the orbit standing in the time slot goes with the clock —
- * which is precisely why the mark was drawn at two radii. The comet is at the
- * one x every row shape shares, and it is on the row you are inside, so it has
- * to carry the state alone; drawn in inherited ink it read as chrome, which is
- * how a running session came to look still exactly where it was being watched.
+ * It draws in the project's hue, not inherited ink: the two radii are one mark,
+ * and a mark that changes colour halfway across the row is two. Drawn in the
+ * row's own foreground it read as chrome rather than as state.
  */
 export function ChipComet({ color }: { color?: string }) {
   return (
@@ -76,16 +72,17 @@ export function ChipComet({ color }: { color?: string }) {
 }
 
 /**
- * The 10px orbit that stands in the time slot while a session runs.
+ * The 10px orbit a running row wears at the right edge of its title line.
  *
  * It replaces the age rather than crowding it, and only while running — which
  * costs nothing, because a running session's recency is "now". The clock keeps
- * the slot on every row where the number still answers something, and yields it
- * on the rows where it does not.
+ * its own slot on every row where the number still answers something, and a
+ * running row simply draws none.
  *
- * This is the half that *can* be given up: the corner is the row's actions' as
- * soon as the row is hovered or focused, and {@link ChipComet} is still saying
- * the same thing one column over.
+ * The two are a line apart rather than in one slot because the clock's corner
+ * is also the row's action corner, and a mark meaning *running* cannot yield to
+ * a hover the way a timestamp can — see `ThreadRow.LiveSlot` for why no
+ * reservation in that corner was cheaper than moving.
  *
  * Its stroke is the thicker of the two in viewBox units and that is not a
  * disagreement with the comet — it is what makes them agree. The two marks

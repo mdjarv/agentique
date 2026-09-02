@@ -459,6 +459,21 @@ least useful at exactly the moment the mark is most useful. The clock keeps the
 slot everywhere it still answers something, which is what makes Open's recency
 sort readable.
 
+**It replaces the clock without taking its corner.** That corner is also where
+the row's pin and archive come in — on hover, and for as long as the row is the
+focused one — so anything sitting there has to be able to yield, and a mark
+meaning *running* cannot: it went dark on the row under the cursor and the row
+you were inside, the two the question is asked about. A reservation is worse
+either way round. Hold the corner open and the buttons ride a target that moves
+on its own when the turn ends, one of which archives; slide the orbit aside as
+they arrive and the row's one moving mark moves for a reason that is not
+liveness. So it sits at the right edge of the **title** line, the shelf the row
+already keeps for marks that cannot yield (`NewMark`, on the same argument),
+directly below the clock's column and clear of the buttons at both densities —
+`RowActions` takes `max-md:top-0` to keep that true where the touch targets grow
+to 24px. `new` is the one thing that can share the line and steps left, because
+the orbit is drawn last and its x never moves.
+
 **A parked row wears its mark on the chip, not in words.** `stopped`,
 `evicted` and `away` are one concept — `isParked`, the process is gone, the
 work is not, and the next message resumes it either way — so in the rail they
