@@ -214,6 +214,9 @@ type Querier interface {
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
+	// platform_os keeps its stored value when the caller sends empty: a client
+	// that predates the field re-upserts rows on re-pair, and blanking a known
+	// platform would strip the glyph until the next fresh pair.
 	UpsertMachine(ctx context.Context, arg UpsertMachineParams) error
 	UpsertModelResolution(ctx context.Context, arg UpsertModelResolutionParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error

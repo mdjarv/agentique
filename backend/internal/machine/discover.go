@@ -29,6 +29,9 @@ type DiscoveredPeer struct {
 	URL       string `json:"url"`
 	Version   string `json:"version"`
 	Pairing   bool   `json:"pairing"`
+	// PlatformOs is the peer's GOOS from its descriptor; empty when the peer
+	// predates the field or reports something out of bounds.
+	PlatformOs string `json:"platformOs"`
 }
 
 type tailnetPeer struct {
@@ -166,6 +169,9 @@ func probeDescriptor(ctx context.Context, client *http.Client, base string) (Dis
 		Label        string          `json:"label"`
 		Version      string          `json:"version"`
 		Capabilities map[string]bool `json:"capabilities"`
+		Platform     struct {
+			OS string `json:"os"`
+		} `json:"platform"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxIdentityResponseBytes+1))
 	if err != nil || len(raw) > maxIdentityResponseBytes {
@@ -177,11 +183,16 @@ func probeDescriptor(ctx context.Context, client *http.Client, base string) (Dis
 	if len([]rune(desc.Label)) > 64 || len([]rune(desc.Version)) > 128 || len(desc.Capabilities) > 64 {
 		return DiscoveredPeer{}, false
 	}
+	platformOS := desc.Platform.OS
+	if !ValidPlatformOS(platformOS) {
+		platformOS = "" // out-of-bounds descriptor value degrades to unknown
+	}
 	return DiscoveredPeer{
-		MachineID: desc.MachineID,
-		Label:     desc.Label,
-		URL:       base,
-		Version:   desc.Version,
-		Pairing:   desc.Capabilities["pairing"],
+		MachineID:  desc.MachineID,
+		Label:      desc.Label,
+		URL:        base,
+		Version:    desc.Version,
+		Pairing:    desc.Capabilities["pairing"],
+		PlatformOs: platformOS,
 	}, true
 }

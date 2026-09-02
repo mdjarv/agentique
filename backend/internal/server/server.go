@@ -457,6 +457,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			"machineIcon":        machineIcon,
 			"machineLabelPinned": cfg.MachineLabelPinned,
 			"version":            cfg.Version,
+			// Same shape as the well-known descriptor's platform block, so a
+			// client learns this host's OS from whichever it reads first.
+			"platform": map[string]string{
+				"os":   goruntime.GOOS,
+				"arch": goruntime.GOARCH,
+			},
 			"features": map[string]bool{
 				"browser": cfg.ExperimentalBrowser,
 				"teams":   cfg.ExperimentalTeams,
@@ -595,6 +601,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"icon":        m.Icon,
 				"sessionId":   m.SessionID,
 				"identityKey": m.IdentityKey,
+				"platformOs":  m.PlatformOs,
 			})
 		}
 		httperror.JSON(w, http.StatusOK, out)
@@ -611,6 +618,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			IdentityKey string `json:"identityKey"`
 			AddedAt     string `json:"addedAt"`
 			Icon        string `json:"icon"`
+			PlatformOs  string `json:"platformOs"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httperror.RespondError(w, httperror.BadRequest("invalid request body"))
@@ -638,6 +646,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			httperror.RespondError(w, httperror.BadRequest("identityKey is invalid"))
 			return
 		}
+		// platformOs is the remote's GOOS from its pairing descriptor. Empty is
+		// allowed (an older client, or a descriptor that omitted it) and the
+		// upsert then keeps any previously stored value.
+		if !machine.ValidPlatformOS(req.PlatformOs) {
+			httperror.RespondError(w, httperror.BadRequest("platformOs must be a lowercase OS name"))
+			return
+		}
 		if req.AddedAt == "" {
 			req.AddedAt = time.Now().UTC().Format(time.RFC3339)
 		} else if _, err := time.Parse(time.RFC3339, req.AddedAt); err != nil {
@@ -653,6 +668,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			Icon:        req.Icon,
 			SessionID:   req.SessionID,
 			IdentityKey: req.IdentityKey,
+			PlatformOs:  req.PlatformOs,
 		}); err != nil {
 			httperror.RespondError(w, httperror.Internal("save machine", err))
 			return

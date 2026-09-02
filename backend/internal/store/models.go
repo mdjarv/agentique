@@ -78,6 +78,7 @@ type Machine struct {
 	Icon        string `json:"icon"`
 	SessionID   string `json:"session_id"`
 	IdentityKey string `json:"identity_key"`
+	PlatformOs  string `json:"platform_os"`
 }
 
 type Message struct {

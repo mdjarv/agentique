@@ -35,7 +35,7 @@ func (q *Queries) GetHostPresentation(ctx context.Context) (GetHostPresentationR
 }
 
 const getMachine = `-- name: GetMachine :one
-SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key FROM machines WHERE machine_id = ?
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os FROM machines WHERE machine_id = ?
 `
 
 func (q *Queries) GetMachine(ctx context.Context, machineID string) (Machine, error) {
@@ -50,12 +50,13 @@ func (q *Queries) GetMachine(ctx context.Context, machineID string) (Machine, er
 		&i.Icon,
 		&i.SessionID,
 		&i.IdentityKey,
+		&i.PlatformOs,
 	)
 	return i, err
 }
 
 const listMachines = `-- name: ListMachines :many
-SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key FROM machines ORDER BY label
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os FROM machines ORDER BY label
 `
 
 func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
@@ -76,6 +77,7 @@ func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
 			&i.Icon,
 			&i.SessionID,
 			&i.IdentityKey,
+			&i.PlatformOs,
 		); err != nil {
 			return nil, err
 		}
@@ -127,15 +129,16 @@ func (q *Queries) UpdateMachinePresentation(ctx context.Context, arg UpdateMachi
 }
 
 const upsertMachine = `-- name: UpsertMachine :exec
-INSERT INTO machines (machine_id, label, base_url, token, added_at, icon, session_id, identity_key)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO machines (machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(machine_id) DO UPDATE SET
   label = excluded.label,
   base_url = excluded.base_url,
   token = excluded.token,
   icon = excluded.icon,
   session_id = excluded.session_id,
-  identity_key = excluded.identity_key
+  identity_key = excluded.identity_key,
+  platform_os = CASE WHEN excluded.platform_os = '' THEN machines.platform_os ELSE excluded.platform_os END
 `
 
 type UpsertMachineParams struct {
@@ -147,8 +150,12 @@ type UpsertMachineParams struct {
 	Icon        string `json:"icon"`
 	SessionID   string `json:"session_id"`
 	IdentityKey string `json:"identity_key"`
+	PlatformOs  string `json:"platform_os"`
 }
 
+// platform_os keeps its stored value when the caller sends empty: a client
+// that predates the field re-upserts rows on re-pair, and blanking a known
+// platform would strip the glyph until the next fresh pair.
 func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMachine,
 		arg.MachineID,
@@ -159,6 +166,7 @@ func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) er
 		arg.Icon,
 		arg.SessionID,
 		arg.IdentityKey,
+		arg.PlatformOs,
 	)
 	return err
 }
