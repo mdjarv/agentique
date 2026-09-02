@@ -14,9 +14,37 @@ import (
 type Handler struct{}
 
 type browseResponse struct {
-	Path    string  `json:"path"`
-	Parent  string  `json:"parent"`
-	Entries []entry `json:"entries"`
+	Path   string `json:"path"`
+	Parent string `json:"parent"`
+	// Segments is the path split into breadcrumbs by THIS server, root (or
+	// volume, "C:\" on Windows) first. The server computes them because only
+	// it knows its own separator and root shape — a client splitting on "/"
+	// renders a Windows path as one giant crumb and a dead root button.
+	Segments []segment `json:"segments"`
+	Entries  []entry   `json:"entries"`
+}
+
+type segment struct {
+	// Name is what the crumb shows ("Users", or "C:\" / "/" for the root).
+	Name string `json:"name"`
+	// Path is the absolute path navigating to this crumb requests.
+	Path string `json:"path"`
+}
+
+// pathSegments walks dirPath up to its root, emitting one breadcrumb per
+// component. The loop ends where Dir stops changing the path — "/" on unix,
+// the volume ("C:\", `\\host\share`) on Windows — and that terminal element
+// is itself the first crumb, so the client needs no hardcoded root button.
+func pathSegments(dirPath string) []segment {
+	var segs []segment
+	for {
+		parent := filepath.Dir(dirPath)
+		if parent == dirPath {
+			return append([]segment{{Name: dirPath, Path: dirPath}}, segs...)
+		}
+		segs = append([]segment{{Name: filepath.Base(dirPath), Path: dirPath}}, segs...)
+		dirPath = parent
+	}
 }
 
 type entry struct {
@@ -109,9 +137,10 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httperror.JSON(w, http.StatusOK, browseResponse{
-		Path:    dirPath,
-		Parent:  parent,
-		Entries: entries,
+		Path:     dirPath,
+		Parent:   parent,
+		Segments: pathSegments(dirPath),
+		Entries:  entries,
 	})
 }
 

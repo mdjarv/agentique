@@ -185,6 +185,9 @@ export interface DirectoryEntry {
 export interface BrowseResult {
   path: string;
   parent: string;
+  /** Breadcrumbs computed by the serving machine, root/volume first. Absent
+   *  from older servers — the browser then falls back to splitting on "/". */
+  segments?: { name: string; path: string }[];
   entries: DirectoryEntry[];
 }
 

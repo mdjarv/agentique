@@ -50,7 +50,17 @@ export function DirectoryBrowser({ initialPath, onSelect, machineId }: Directory
     };
   }, [browsePath, machineId]);
 
-  const pathSegments = result?.path.split("/").filter(Boolean) ?? [];
+  // The serving machine computes its own breadcrumbs (it knows its separator
+  // and root shape — "C:\" is one crumb, not a split casualty). The "/"-split
+  // is only the fallback for older servers that do not send segments, where
+  // POSIX paths were the only ones that ever worked anyway.
+  const pathSegments =
+    result?.segments ??
+    (result?.path ?? "")
+      .split("/")
+      .filter(Boolean)
+      .map((name, i, all) => ({ name, path: `/${all.slice(0, i + 1).join("/")}` }));
+  const hasServerRoot = !!result?.segments;
 
   return (
     <div className="space-y-2">
@@ -64,26 +74,29 @@ export function DirectoryBrowser({ initialPath, onSelect, machineId }: Directory
         >
           <Home className="h-3.5 w-3.5" />
         </button>
-        <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground-faint" />
-        <button
-          type="button"
-          onClick={() => navigate("/")}
-          className="shrink-0 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground"
-        >
-          /
-        </button>
+        {!hasServerRoot && (
+          <>
+            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground-faint" />
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="shrink-0 rounded px-1 py-0.5 text-muted-foreground hover:text-foreground"
+            >
+              /
+            </button>
+          </>
+        )}
         {pathSegments.map((segment, i) => {
-          const segmentPath = `/${pathSegments.slice(0, i + 1).join("/")}`;
           const isLast = i === pathSegments.length - 1;
           return (
-            <span key={segmentPath} className="flex items-center gap-0.5">
+            <span key={segment.path} className="flex items-center gap-0.5">
               <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground-faint" />
               <button
                 type="button"
-                onClick={() => navigate(segmentPath)}
+                onClick={() => navigate(segment.path)}
                 className={`shrink-0 rounded px-1 py-0.5 ${isLast ? "text-foreground font-medium" : "text-muted-foreground hover:text-foreground"}`}
               >
-                {segment}
+                {segment.name}
               </button>
             </span>
           );
