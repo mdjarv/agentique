@@ -1,17 +1,14 @@
-import { Archive, ArchiveRestore, Check, Copy, Pencil, Pin, PinOff } from "lucide-react";
+import { Check, Copy, Pencil } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { IconPicker } from "~/components/chat/IconPicker";
 import { ProviderBadge } from "~/components/chat/ProviderBadge";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useWebSocket } from "~/hooks/useWebSocket";
 import { EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import { sessionModelLabel } from "~/lib/model-catalog";
-import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { getSessionIconComponent } from "~/lib/session/icons";
-import { cn, getErrorMessage } from "~/lib/utils";
+import { cn } from "~/lib/utils";
 import type { SessionMetadata } from "~/stores/chat-store";
 
 interface SessionIdentityProps {
@@ -288,56 +285,7 @@ export function SessionIdentity({
             </button>
           </IconPicker>
         </div>
-
-        {/* Sidebar placement — the touch home for actions the thread sidebar
-            only offers on hover (rows carry no buttons on mobile). */}
-        <SidebarPlacementSection meta={meta} />
       </PopoverContent>
     </Popover>
-  );
-}
-
-function SidebarPlacementSection({ meta }: { meta: SessionMetadata }) {
-  const ws = useWebSocket();
-  const archived = !!meta.archivedAt;
-  const PinIcon = meta.pinned ? PinOff : Pin;
-
-  const togglePin = () => {
-    setSessionPinned(ws, meta.id, !meta.pinned, meta.pinned ? 0 : meta.pinOrder + 1).catch((err) =>
-      toast.error(getErrorMessage(err, "Failed to update pin")),
-    );
-  };
-
-  const toggleArchived = () => {
-    const action = archived ? unarchiveSession : archiveSession;
-    action(ws, meta.id).catch((err) =>
-      toast.error(getErrorMessage(err, archived ? "Failed to unarchive" : "Failed to archive")),
-    );
-  };
-
-  return (
-    <div className="space-y-1">
-      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-        Sidebar
-      </span>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={togglePin}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-        >
-          <PinIcon className="size-4" />
-          <span>{meta.pinned ? "Unpin" : "Pin"}</span>
-        </button>
-        <button
-          type="button"
-          onClick={toggleArchived}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-        >
-          {archived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
-          <span>{archived ? "Unarchive" : "Archive"}</span>
-        </button>
-      </div>
-    </div>
   );
 }

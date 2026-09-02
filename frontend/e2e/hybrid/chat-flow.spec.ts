@@ -17,6 +17,26 @@ test.beforeEach(async ({ request }) => {
   await resetFixture(request);
 });
 
+test("chat header keeps pin and archive actions directly accessible", async ({ page, request }) => {
+  await seedFixture(request, basicChatSeed());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/project/fixture-project/session/eee00002");
+
+  const pin = page.getByRole("button", { name: "Pin session", exact: true });
+  const archive = page.getByRole("button", { name: "Archive session", exact: true });
+  await expect(pin).toBeVisible();
+  await expect(archive).toBeVisible();
+  await expect(page.getByRole("button", { name: "Archive", exact: true })).toHaveCount(0);
+
+  await pin.click();
+  await expect(page.getByRole("button", { name: "Unpin session", exact: true })).toBeVisible();
+
+  await archive.click();
+  await page.waitForURL("/project/fixture-project/session/new", { timeout: 5_000 });
+  await page.goto("/project/fixture-project/session/eee00002");
+  await expect(page.getByRole("button", { name: "Unarchive session", exact: true })).toBeVisible();
+});
+
 test("basic chat flow: query produces streamed response with tool use", async ({
   page,
   request,

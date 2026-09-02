@@ -1,5 +1,6 @@
-import { ArrowUp, Clock } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, Clock, Pin, PinOff } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
@@ -23,6 +24,7 @@ import {
   useProjectMachine,
 } from "~/components/machines/MachineChip";
 import { untilText } from "~/components/schedules/schedule-format";
+import { Button } from "~/components/ui/button";
 import type { useGitActions } from "~/hooks/git/useGitActions";
 import { useChannelManagement } from "~/hooks/session/useChannelManagement";
 import { useSessionActions } from "~/hooks/session/useSessionActions";
@@ -32,7 +34,8 @@ import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { machineHue, machineWash } from "~/lib/machine-colors";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
-import { sessionShortId } from "~/lib/utils";
+import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
+import { getErrorMessage, sessionShortId } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
@@ -88,6 +91,7 @@ export function SessionHeader({
   const isBusy = isRunning;
   const canStop = meta.state === "idle" || meta.state === "running" || meta.state === "merging";
   const canRestart = canStop || meta.state === "stopped" || meta.state === "failed";
+  const canArchive = meta.state !== "running" && meta.state !== "merging";
 
   const [activeDialog, setActiveDialog] = useState<ActiveDialog>("none");
 
@@ -146,14 +150,16 @@ export function SessionHeader({
     />
   );
 
+  const placementActions = <SessionPlacementActions meta={meta} canArchive={canArchive} />;
+
   return (
     <>
       <PageHeader accentColor={accentColor} wash={wash}>
         {isMobile ? (
           // Mobile: the full name owns the header (up to two lines) with a dim
           // status/branch/ahead subline. Tapping opens the detail sheet. The
-          // finish action lives on the tab strip below (see ChatPanel), and the
-          // read-only effort/branch chips move into the sheet.
+          // branch finish action lives on the strip below (see ChatPanel), and
+          // the read-only effort/branch chips move into the sheet.
           <>
             <SessionIdentity
               meta={meta}
@@ -176,6 +182,7 @@ export function SessionHeader({
                   sheet is unreachable — only a `?dock=` deep link could open
                   it. */}
               {dockToggle}
+              {placementActions}
               <ConnectionIndicator />
               {actionMenu}
             </div>
@@ -223,12 +230,8 @@ export function SessionHeader({
                 className="h-7 px-2 text-xs [&>button]:h-7 [&>button]:text-xs"
               />
 
-              {/* The project checkout's own drift is the sidebar sync dock's
-                  subject, not this header's: it is a different working
-                  directory with a different remote relationship, and the dock
-                  reports how stale the count is, which these pills never did.
-                  Archive lives in the ⋯ menu beside this, and in the identity
-                  popover — it files a session away, it is not a git verb. */}
+              {placementActions}
+
               {actionMenu}
             </div>
           </>
@@ -278,6 +281,76 @@ export function SessionHeader({
         }}
       />
     </>
+  );
+}
+
+function SessionPlacementActions({
+  meta,
+  canArchive,
+}: {
+  meta: SessionMetadata;
+  canArchive: boolean;
+}) {
+  const ws = useWebSocket();
+  const archived = !!meta.archivedAt;
+  const pinLabel = meta.pinned ? "Unpin session" : "Pin session";
+  const archiveLabel = archived ? "Unarchive session" : "Archive session";
+  const PinIcon = meta.pinned ? PinOff : Pin;
+
+  const togglePin = () => {
+    setSessionPinned(ws, meta.id, !meta.pinned, meta.pinned ? 0 : meta.pinOrder + 1).catch((err) =>
+      toast.error(getErrorMessage(err, "Failed to update pin")),
+    );
+  };
+
+  const toggleArchive = () => {
+    const action = archived ? unarchiveSession : archiveSession;
+    action(ws, meta.id).catch((err) =>
+      toast.error(
+        getErrorMessage(
+          err,
+          archived ? "Failed to unarchive session" : "Failed to archive session",
+        ),
+      ),
+    );
+  };
+
+  return (
+    <fieldset className="flex items-center gap-0.5" aria-label="Session placement">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={togglePin}
+        aria-label={pinLabel}
+        aria-pressed={meta.pinned}
+        title={pinLabel}
+        className={
+          meta.pinned ? "bg-primary/10 text-primary hover:bg-primary/15" : "text-muted-foreground"
+        }
+      >
+        <PinIcon className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={toggleArchive}
+        disabled={!archived && !canArchive}
+        aria-label={
+          !archived && !canArchive
+            ? "Archive session, unavailable while session is running"
+            : archiveLabel
+        }
+        aria-pressed={archived}
+        title={
+          !archived && !canArchive ? "Archive unavailable while session is running" : archiveLabel
+        }
+        className="text-muted-foreground"
+      >
+        {archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+      </Button>
+    </fieldset>
   );
 }
 

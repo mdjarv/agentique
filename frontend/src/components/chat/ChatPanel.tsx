@@ -48,7 +48,6 @@ import { sessionModelLabel } from "~/lib/model-catalog";
 import { useNavigationGuard } from "~/lib/navigation";
 import { markScheduleViewed } from "~/lib/schedule-actions";
 import {
-  archiveSession,
   createSession,
   enqueueMessage,
   interruptSession,
@@ -61,7 +60,6 @@ import {
   setPermissionMode,
   setSessionModel,
   stopSession,
-  unarchiveSession,
 } from "~/lib/session/actions";
 import { deriveCrew } from "~/lib/session/crew";
 import {
@@ -441,18 +439,6 @@ export function ChatPanel({
     interruptSession(ws, sessionId).catch(console.error);
   }, [ws, sessionId]);
 
-  const handleArchive = useCallback(() => {
-    archiveSession(ws, sessionId).catch((err) => {
-      toast.error(getErrorMessage(err, "Failed to archive session"));
-    });
-  }, [ws, sessionId]);
-
-  const handleUnarchive = useCallback(() => {
-    unarchiveSession(ws, sessionId).catch((err) => {
-      toast.error(getErrorMessage(err, "Failed to unarchive session"));
-    });
-  }, [ws, sessionId]);
-
   // Settings application mutates session state on the backend (set-model,
   // set-permission, set-auto-approve), so it must wait until the user has
   // committed to the template — i.e. either no variables to fill, or the
@@ -716,8 +702,8 @@ export function ChatPanel({
           onSendMessage={handleSend}
         />
 
-        {/* Mobile-only strip for the state-aware finish action. The dock's own
-            control lives in the header, where it is on every layout. */}
+        {/* Mobile-only strip for branch completion. Pin, archive, and the
+            dock's own control live in the header on every layout. */}
         {isMobile && finishKind && (
           <div className="shrink-0 flex items-center justify-end gap-2 px-2 py-1 border-b text-xs">
             <SessionFinishAction
@@ -726,8 +712,6 @@ export function ChatPanel({
               projectGitStatus={projectGitStatus}
               mainBranch={mainBranch}
               onSendMessage={handleSend}
-              onArchive={handleArchive}
-              onUnarchive={handleUnarchive}
             />
           </div>
         )}
