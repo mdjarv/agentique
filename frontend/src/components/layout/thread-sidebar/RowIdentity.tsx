@@ -96,7 +96,11 @@ export function Chip({
   return (
     <span className="relative flex shrink-0" title={parked ? PARKED_TITLE : undefined}>
       {square}
-      {live && <ChipComet />}
+      {/* The hue is the project's, exactly as it is on the orbit in the time
+          slot — a mark that changes colour between its two radii is two marks.
+          Inherited ink made this one read as chrome, and it is the only live
+          mark left on a hovered or focused row. */}
+      {live && <ChipComet color={hued ? colorFg : undefined} />}
       {unread && (
         <span className="absolute -right-0.5 -top-0.5 size-[7px] rounded-full bg-success" />
       )}

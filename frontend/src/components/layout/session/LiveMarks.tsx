@@ -36,13 +36,22 @@
  * Renders as a *sibling* of the chip square, never a child: the notch masks cut
  * their element's children away, and an arc nested inside would be sliced by
  * the very notch it passes.
+ *
+ * It is also the half of the mark that **never yields**. The row's top-right
+ * corner belongs to {@link RowActions} on hover and for as long as the row is
+ * the focused one, so the orbit standing in the time slot goes with the clock —
+ * which is precisely why the mark was drawn at two radii. The comet is at the
+ * one x every row shape shares, and it is on the row you are inside, so it has
+ * to carry the state alone; drawn in inherited ink it read as chrome, which is
+ * how a running session came to look still exactly where it was being watched.
  */
-export function ChipComet() {
+export function ChipComet({ color }: { color?: string }) {
   return (
     <svg
       aria-hidden="true"
       viewBox="0 0 24 24"
       className="chip-comet pointer-events-none absolute -inset-[2px] size-[18px]"
+      style={color ? { color } : undefined}
     >
       <rect
         className="live-arc live-arc-track"
@@ -73,6 +82,10 @@ export function ChipComet() {
  * costs nothing, because a running session's recency is "now". The clock keeps
  * the slot on every row where the number still answers something, and yields it
  * on the rows where it does not.
+ *
+ * This is the half that *can* be given up: the corner is the row's actions' as
+ * soon as the row is hovered or focused, and {@link ChipComet} is still saying
+ * the same thing one column over.
  */
 export function OrbitArc() {
   return (

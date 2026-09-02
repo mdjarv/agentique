@@ -141,6 +141,12 @@ function SessionChip({ vm, hued }: { vm: ThreadRowVM; hued: boolean }) {
  * Either way the slot yields the corner to {@link RowActions} on hover and for
  * as long as the row is the focused one, rather than being overlapped by them;
  * `opacity` and not `hidden`, so the row never reflows.
+ *
+ * The orbit yields with it, and that is only affordable because the same mark
+ * is riding the chip at the other end of the line ({@link ChipComet}) — where
+ * nothing ever takes its place. Reserving the corner instead would put the two
+ * buttons on a moving target: liveness ends on its own, so they would slide
+ * under a cursor already on them, and one of them archives.
  */
 function TimeSlot({
   label,
