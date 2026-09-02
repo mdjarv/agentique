@@ -129,60 +129,29 @@ export function LocationPicker({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          disabled={disabled}
-          className={cn(
-            ZONE,
-            "border-l border-border/50 cursor-pointer hover:brightness-110",
-            worktree ? "text-muted-foreground" : "bg-warning/15 text-warning font-medium",
-          )}
-          title={
-            worktree
-              ? "A linked worktree — edits are isolated from the project checkout"
-              : "The main worktree — edits land in the checkout everything else is linked to"
-          }
-        >
-          <WorktreeGlyph className="size-3 shrink-0" />
-          <span className="truncate max-w-[16ch]">{worktreeLabel}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-70" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" className="min-w-[16rem]">
-          <div className="px-2 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/70 select-none">
-            Worktree
-          </div>
-          <DropdownMenuItem
-            onClick={() => onWorktreeChange(true)}
-            className="text-xs gap-2 items-start"
-          >
-            <Check className={cn("h-3 w-3 mt-0.5", worktree ? "opacity-100" : "opacity-0")} />
-            <div className="flex flex-col gap-0.5">
-              <span className="flex items-center gap-1.5">
-                <GitBranch className="h-3 w-3" />A new linked worktree
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                Its own branch and directory — edits are isolated
-              </span>
-            </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => onWorktreeChange(false)}
-            className="text-xs gap-2 items-start"
-          >
-            <Check className={cn("h-3 w-3 mt-0.5", worktree ? "opacity-0" : "opacity-100")} />
-            <div className="flex flex-col gap-0.5">
-              <span className="flex items-center gap-1.5 text-warning">
-                <FolderOpen className="h-3 w-3" />
-                The main worktree
-                {projectBranch ? ` · ${projectBranch}` : ""}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                Edits land in the checkout everything else is linked to
-              </span>
-            </div>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Worktree vs main is one bit with no third option coming, so the zone
+          is a toggle rather than a menu — a dropdown was two clicks and a read
+          for a choice the glyph and tint already state. The title carries what
+          each side means and what a click does. */}
+      <button
+        type="button"
+        disabled={disabled}
+        aria-pressed={!worktree}
+        onClick={() => onWorktreeChange(!worktree)}
+        className={cn(
+          ZONE,
+          "border-l border-border/50 cursor-pointer hover:brightness-110 disabled:cursor-default",
+          worktree ? "text-muted-foreground" : "bg-warning/15 text-warning font-medium",
+        )}
+        title={
+          worktree
+            ? "A new linked worktree — its own branch and directory, edits are isolated. Click to work in the main worktree instead."
+            : `The main worktree${projectBranch ? ` (${projectBranch})` : ""} — edits land in the checkout everything else is linked to. Click to work in a new linked worktree instead.`
+        }
+      >
+        <WorktreeGlyph className="size-3 shrink-0" />
+        <span className="truncate max-w-[16ch]">{worktreeLabel}</span>
+      </button>
     </span>
   );
 }

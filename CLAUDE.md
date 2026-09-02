@@ -556,8 +556,10 @@ phone, where a 22px zone is under the 44px touch target: there the whole pill is
 one target opening one sheet with both sections.
 
 Before a session exists the same element is the **picker** (`LocationPicker`, in
-the new-session hero) — same shape, same zones, one caret each, so what you
-choose is what you will see in the header. It replaced a host picker in the hero
+the new-session hero) — same shape, same zones, so what you choose is what you
+will see in the header. The machine zone is a menu (n machines); the worktree
+zone is a **toggle**, because worktree-vs-main is one bit with no third option
+coming, and a dropdown was two clicks and a read for it. It replaced a host picker in the hero
 and a Worktree/Local toggle in the composer, 400px apart. It is deliberately not
 a composer control: that would fork the new-session composer from the in-session
 one, and at `tray` density the phone's row cannot hold a two-zone pill, so it
