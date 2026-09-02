@@ -86,12 +86,23 @@ export function ChipComet({ color }: { color?: string }) {
  * This is the half that *can* be given up: the corner is the row's actions' as
  * soon as the row is hovered or focused, and {@link ChipComet} is still saying
  * the same thing one column over.
+ *
+ * Its stroke is the thicker of the two in viewBox units and that is not a
+ * disagreement with the comet — it is what makes them agree. The two marks
+ * render at different sizes from the same 24-unit box, so a shared number is
+ * two different widths on screen; matching what the reader actually sees (4 of
+ * 24 at 10px, 2 of 24 at 18px — about 1.6px each) is what stops the smaller one
+ * washing out to grey while the larger one reads as a second border.
+ *
+ * The radius comes in to 9.5 to pay for the stroke: at r=10 the outer edge
+ * lands exactly on the viewBox wall, and SVG clips there, flattening the arc at
+ * the four cardinal points. The dash figures below move with the radius.
  */
 export function OrbitArc() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="orbit-arc size-[10px]">
-      <circle className="live-arc live-arc-track" cx="12" cy="12" r="10" strokeWidth={3} />
-      <circle className="live-arc live-arc-head" cx="12" cy="12" r="10" strokeWidth={3} />
+      <circle className="live-arc live-arc-track" cx="12" cy="12" r="9.5" strokeWidth={4} />
+      <circle className="live-arc live-arc-head" cx="12" cy="12" r="9.5" strokeWidth={4} />
     </svg>
   );
 }

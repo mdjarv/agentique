@@ -1087,8 +1087,10 @@
    The dash figures are the paths' actual lengths in viewBox units, so the head
    completes exactly one lap per cycle:
      chip  — a 21.6 square at r=6.2:  4*(21.6-2*6.2) + 2*PI*6.2  = 75.76
-     orbit — a circle at r=10:        2*PI*10                    = 62.83
-   Change a geometry and both numbers move with it, or the arc drifts. */
+     orbit — a circle at r=9.5:       2*PI*9.5                   = 59.69
+   Change a geometry and both numbers move with it, or the arc drifts. Each
+   head is ~27% of its own lap, which is where the two marks read as one
+   system — the fraction is what matches, never the raw dash. */
 .live-arc {
   fill: none;
   stroke: currentColor;
@@ -1113,7 +1115,7 @@
 }
 
 .orbit-arc .live-arc-head {
-  stroke-dasharray: 17 45.83;
+  stroke-dasharray: 16.2 43.49;
 }
 
 /* One period across every row and no per-row delay: marks left to drift into
@@ -1136,6 +1138,6 @@
 
 @keyframes orbit-arc-lap {
   to {
-    stroke-dashoffset: -62.83;
+    stroke-dashoffset: -59.69;
   }
 }
