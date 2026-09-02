@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"unicode/utf16"
 
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
@@ -27,7 +28,7 @@ const taskName = "agentique"
 // taskDisplayPath is how Task Scheduler identifies a root-level task.
 const taskDisplayPath = `\agentique`
 
-var taskTemplate = template.Must(template.New("task").Parse(`<?xml version="1.0" encoding="UTF-8"?>
+var taskTemplate = template.Must(template.New("task").Parse(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>{{.Description}}</Description>
@@ -106,7 +107,12 @@ func createTask(taskName, binaryPath, arguments, description string) error {
 		return fmt.Errorf("create task definition file: %w", err)
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(buf.String()); err != nil {
+	// UTF-16LE with a BOM, matching the template's declaration. schtasks
+	// widens the file's bytes to UTF-16 before MSXML parses them, so a UTF-8
+	// file declaring UTF-8 fails with "(1,40) unable to switch the encoding" —
+	// the declaration disagrees with the width the parser already sees.
+	// Task Scheduler's own exports are UTF-16LE+BOM for the same reason.
+	if _, err := tmp.Write(utf16leBOM(buf.String())); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write task definition: %w", err)
 	}
@@ -223,4 +229,17 @@ func xmlEscape(s string) string {
 	var b strings.Builder
 	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// utf16leBOM encodes s as UTF-16 little-endian prefixed with a byte-order
+// mark — the one encoding schtasks /XML accepts unambiguously (see the
+// comment at the write site in createTask).
+func utf16leBOM(s string) []byte {
+	u := utf16.Encode([]rune(s))
+	b := make([]byte, 0, 2+len(u)*2)
+	b = append(b, 0xFF, 0xFE)
+	for _, r := range u {
+		b = append(b, byte(r), byte(r>>8))
+	}
+	return b
 }

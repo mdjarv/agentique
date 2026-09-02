@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -80,9 +82,13 @@ func runServiceInstall(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: binary is at %s\n", exe)
 		fmt.Println("  The service unit will reference this path.")
 		fmt.Println("  Consider moving it first:")
-		fmt.Println("    sudo cp " + exe + " /usr/local/bin/agentique")
-		fmt.Println("  Or for user-local install:")
-		fmt.Println("    mkdir -p ~/.local/bin && cp " + exe + " ~/.local/bin/agentique")
+		if runtime.GOOS == "windows" {
+			fmt.Println(`    to %LOCALAPPDATA%\Programs\agentique\agentique.exe (where install.ps1 puts it)`)
+		} else {
+			fmt.Println("    sudo cp " + exe + " /usr/local/bin/agentique")
+			fmt.Println("  Or for user-local install:")
+			fmt.Println("    mkdir -p ~/.local/bin && cp " + exe + " ~/.local/bin/agentique")
+		}
 		fmt.Println()
 		fmt.Printf("Install from current location anyway? [y/N] ")
 		reader := bufio.NewReader(os.Stdin)
@@ -243,17 +249,27 @@ func runServiceStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// isStandardBinPath reports whether exe sits in a directory installs normally
+// land in, so the "consider moving it" nag stays quiet there. Compared as
+// cleaned directories (case-insensitively on Windows), not string prefixes —
+// a Windows exe under home\.local\bin never matches a "/"-joined prefix.
 func isStandardBinPath(exe string) bool {
-	standardPrefixes := []string{
-		"/usr/local/bin/",
-		"/usr/bin/",
+	dir := filepath.Clean(filepath.Dir(exe))
+	var standard []string
+	if runtime.GOOS == "windows" {
+		if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+			standard = append(standard, filepath.Join(lad, "Programs", "agentique"))
+		}
+	} else {
+		standard = append(standard, "/usr/local/bin", "/usr/bin")
 	}
-	home, _ := os.UserHomeDir()
-	if home != "" {
-		standardPrefixes = append(standardPrefixes, home+"/.local/bin/")
+	// just install's home on every platform.
+	if home, _ := os.UserHomeDir(); home != "" {
+		standard = append(standard, filepath.Join(home, ".local", "bin"))
 	}
-	for _, prefix := range standardPrefixes {
-		if strings.HasPrefix(exe, prefix) {
+	for _, s := range standard {
+		s = filepath.Clean(s)
+		if dir == s || (runtime.GOOS == "windows" && strings.EqualFold(dir, s)) {
 			return true
 		}
 	}
