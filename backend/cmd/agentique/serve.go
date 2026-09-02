@@ -356,6 +356,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("stamp owner identity: %w", err)
 	}
 
+	// Windows only (unix no-op): confine ourselves and every descendant in a
+	// kill-on-close job object, so the CLI subtree cannot outlive the server —
+	// the reapers below are /proc-based and no-ops there. Warn-and-continue:
+	// unconfined is exactly the pre-existing behaviour, and refusing to boot
+	// over a lifecycle backstop would be worse.
+	if err := procctl.ConfineProcessTree(); err != nil {
+		slog.Warn("process-tree confinement unavailable — CLI subprocesses may outlive an ungraceful exit", "error", err)
+	}
+
 	db, err := store.Open(dbFile)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
@@ -719,6 +728,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
+	// Windows has no SIGTERM delivery, and a Scheduled Task's /End is a hard
+	// TerminateProcess — so `agentique service stop` and the tray request a
+	// graceful stop through a named kernel event instead. On unix this returns
+	// a nil channel, which never fires in the select below.
+	stopReq, err := procctl.NotifyStopRequests(paths.DataDir())
+	if err != nil {
+		slog.Warn("stop-request listener unavailable — service stop falls back to hard kill", "error", err)
+	}
+
 	listenErr := make(chan error, 1)
 	go func() {
 		host, port, _ := net.SplitHostPort(addr)
@@ -743,6 +761,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		removePIDFile() // os.Exit skips deferred cleanup
 		os.Exit(1)
 	case <-done:
+	case <-stopReq:
+		slog.Info("stop requested via service control")
 	}
 	slog.Info("shutting down")
 

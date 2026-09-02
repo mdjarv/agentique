@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 )
 
 // Windows has no per-user service manager equivalent to systemd --user or a
@@ -132,7 +134,7 @@ func installWindows(binaryPath string) error {
 
 func uninstallWindows() error {
 	// Best effort stop; the task may not be running.
-	exec.Command("schtasks", "/End", "/TN", taskName).CombinedOutput()
+	_ = stopWindows()
 
 	if out, err := exec.Command("schtasks", "/Delete", "/TN", taskName, "/F").CombinedOutput(); err != nil {
 		// Deleting a non-existent task is not an error for our purposes.
@@ -165,7 +167,9 @@ func statusWindows() (Status, error) {
 }
 
 func restartWindows() error {
-	exec.Command("schtasks", "/End", "/TN", taskName).CombinedOutput()
+	// Best effort, as before: the task may not be running, in which case the
+	// stop path (including its /End fallback) errors and /Run alone is right.
+	_ = stopWindows()
 	if out, err := exec.Command("schtasks", "/Run", "/TN", taskName).CombinedOutput(); err != nil {
 		return fmt.Errorf("schtasks /Run: %w\n%s", err, out)
 	}
@@ -179,7 +183,28 @@ func startWindows() error {
 	return nil
 }
 
+// stopGrace bounds how long a graceful stop waits before falling back to a
+// hard kill: the serve loop's HTTP drain is 5s and the cooperative session
+// close can add several more per busy CLI.
+const stopGrace = 30 * time.Second
+
 func stopWindows() error {
+	// Ask the server to shut down through its stop event first — schtasks /End
+	// is TerminateProcess, which skips the HTTP drain, cooperative session
+	// close and pid-file removal. ErrNoStopListener (server down, or a build
+	// predating the event) falls straight through to /End; so does a server
+	// that ignores the request past the grace window. The hard path no longer
+	// leaks the CLI subtree — job confinement kills it — it only skips the
+	// drain.
+	if err := procctl.RequestStop(paths.DataDir()); err == nil {
+		deadline := time.Now().Add(stopGrace)
+		for time.Now().Before(deadline) {
+			if s, _ := statusWindows(); !s.Running {
+				return nil
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 	if out, err := exec.Command("schtasks", "/End", "/TN", taskName).CombinedOutput(); err != nil {
 		return fmt.Errorf("schtasks /End: %w\n%s", err, out)
 	}

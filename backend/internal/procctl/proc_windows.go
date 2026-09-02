@@ -59,11 +59,13 @@ func killByPID(pid int) error {
 	return proc.Kill()
 }
 
-// findCLIProcesses is not implemented on Windows: process enumeration with
-// command-line inspection requires toolhelp + NtQueryInformationProcess, and
-// the orphan model differs (createNewProcessGroup + job objects rather than
-// POSIX process groups). The orphan reaper is therefore a no-op on Windows for
-// now; the Windows port tracks this separately.
+// findCLIProcesses is deliberately a no-op on Windows, which makes both
+// reapers no-ops. Orphan prevention lives in ConfineProcessTree instead: the
+// server and every descendant share a kill-on-close job object, so a CLI
+// subtree cannot outlive the server no matter how it exits — there is nothing
+// for a startup reap to find. The one gap is a boot where confinement itself
+// failed (logged at startup); a toolhelp + NtQueryInformationProcess scan
+// could cover it, but a leak that rare does not buy that much unsafe code.
 func findCLIProcesses(owner string) []CLIProcess { return nil }
 
 // terminateGroup / killGroup have no POSIX process-group analogue here. They are

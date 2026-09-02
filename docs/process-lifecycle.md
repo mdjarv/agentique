@@ -61,8 +61,8 @@ mechanisms below. There is **no ambient-context safety net**.
   process still a direct child of the server — catching the shutdown race (#2).
 - A session-package test (`preamble_marker_test.go`) asserts the marker stays a
   substring of `preambleIdentity`, so a preamble reword can't silently blind the
-  reaper. Windows does not enumerate (`findCLIProcesses` returns nil) — its
-  orphan model differs; tracked separately with the Windows port.
+  reaper. Windows does not enumerate (`findCLIProcesses` returns nil) — orphans
+  are prevented there rather than reaped; see "Job-object containment" below.
 
 ### Idle eviction — `internal/session/idle_evict.go` (Layer C)
 Opt-in via `[session] idle-evict-timeout` (env
@@ -113,6 +113,41 @@ kernel/systemd govern the whole tree as one:
 
 This is what makes DB-persisted PIDs unnecessary for crash-safety: the kernel
 enforces subtree cleanup, no bookkeeping that PID reuse could corrupt.
+
+### Job-object containment — Windows (the OS-level guarantee there)
+Windows has neither POSIX process groups the reaper could signal nor a `/proc`
+to scan, so containment inverts: instead of reaping orphans, it makes them
+impossible. `procctl.ConfineProcessTree()` (called from `serve.go` right after
+`StampOwner`) puts the server itself in a job object with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`; every descendant — the provider CLI, its
+MCP servers, node, Chromium — inherits membership. The server holds the only
+job handle and never closes it, so *any* exit (graceful, crash,
+`schtasks /End`, TerminateProcess) closes the handle table and the kernel kills
+the whole tree. Both reapers stay no-ops on Windows because there is nothing
+left for them to find; the one gap is a boot where confinement itself failed
+(nested-job support needs Windows 8+), which is logged at startup and degrades
+to the old leak, never to a refused boot.
+
+**Graceful stop is a named kernel event, because Windows has no SIGTERM.** A
+Scheduled Task's `/End` is a hard TerminateProcess, which used to mean the
+serve loop's shutdown block (HTTP drain, cooperative session close, pid-file
+removal) never ran under service management. `procctl.NotifyStopRequests`
+creates `Global\agentique-stop-<sha256(datadir)[:8]>` — keyed by data dir like
+the instance lock, `Global\` so an SSH session can stop the interactive
+session's server, default DACL so another local user cannot — and the serve
+loop selects on it beside SIGTERM. `agentique service stop` and the tray call
+`procctl.RequestStop` first and fall back to the hard path only when nothing
+listens or the grace window (30s) expires; with the job object, even that
+fallback no longer leaks — it only skips the drain. On unix both functions are
+no-ops (`RequestStop` reports `ErrNoStopListener`) and `Terminate`'s SIGTERM
+remains the graceful path.
+
+What job confinement does **not** give: per-session tree-kill. Stopping one
+session still goes through the connector's cooperative close, and on Windows
+claudecli-go's kill reaches only `claude.exe` itself — its MCP children exit on
+stdin EOF, best-effort. The exact fix is a per-spawn job object inside
+claudecli-go/codexcli-go, which own the `exec.Cmd`; until then a wedged MCP
+child survives its session but never the server.
 
 ## Known gap — PID not exposed
 The reaper matches by command-line marker because `claudecli.ProcessInfo` (and

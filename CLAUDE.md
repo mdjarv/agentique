@@ -168,6 +168,13 @@ group leadership, and this server's data-dir owner stamp all hold. Matching fail
 closed, and "orphan" means reparented away from us, not `PPID == 1` (systemd is a
 subreaper). Idle eviction is opt-in and lazy-resumes on the next message.
 
+On Windows the model inverts: orphans are prevented, not reaped. Serve confines
+itself and every descendant in a kill-on-close job object
+(`procctl.ConfineProcessTree`), so the CLI subtree dies with the server however
+it exits, and both reapers stay no-ops there by design. Graceful stop is the
+named stop event (`procctl.RequestStop`), never `schtasks /End` first — /End is
+a hard TerminateProcess that skips the drain.
+
 **A reclaim reports itself, because it borrows the stop button's mechanism.**
 The sweep goes through `StopSession`, so what it leaves behind is a row no
 different from one somebody stopped on purpose — and every surface read it that

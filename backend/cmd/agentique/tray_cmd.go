@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
 	"github.com/mdjarv/agentique/backend/internal/service"
 )
@@ -77,6 +78,18 @@ func stopServer() error {
 	pid, alive := readServerPID()
 	if !alive {
 		return nil // already down, or never ours to stop
+	}
+	// Graceful first. On Windows, Terminate is TerminateProcess, so ask the
+	// server to drain through its stop event and give it a grace window; on
+	// unix RequestStop reports ErrNoStopListener and Terminate below is
+	// SIGTERM — already the graceful path.
+	if err := procctl.RequestStop(paths.DataDir()); err == nil {
+		for range 60 {
+			if !procctl.Alive(pid) {
+				return nil
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 	return procctl.Terminate(pid)
 }
