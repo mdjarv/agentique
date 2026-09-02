@@ -99,8 +99,11 @@ export function Chip({
       {/* The hue is the project's, exactly as it is on the orbit in the time
           slot — a mark that changes colour between its two radii is two marks.
           Inherited ink made this one read as chrome, and it is the only live
-          mark left on a hovered or focused row. */}
-      {live && <ChipComet color={hued ? colorFg : undefined} />}
+          mark left on a hovered or focused row.
+          Unconditional, and not gated on `hued`: the orbit is not gated either,
+          and the grey rule cannot reach a live row anyway — `isHued` goes false
+          only for archived or merged-and-terminal, none of which run. */}
+      {live && <ChipComet color={colorFg} />}
       {unread && (
         <span className="absolute -right-0.5 -top-0.5 size-[7px] rounded-full bg-success" />
       )}

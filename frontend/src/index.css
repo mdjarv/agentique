@@ -1097,9 +1097,15 @@
 
 /* The path itself, always drawn. This is the resting state — reduced motion
    holds the head still on it, so calming the animation never removes the fact
-   that the session is live. */
+   that the session is live.
+
+   It has to hold the hue as well as the shape. The head covers about a quarter
+   of the lap, so for three quarters of every cycle the track IS the mark, and
+   at 0.22 a saturated accent composites to something the eye reads as grey —
+   the mark looked like it lost its colour as the head went by. 0.4 keeps the
+   head's lead (2.5:1, still unmistakable) and keeps the ring the project's. */
 .live-arc-track {
-  opacity: 0.22;
+  opacity: 0.4;
 }
 
 .chip-comet .live-arc-head {
