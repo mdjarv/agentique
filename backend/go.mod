@@ -10,8 +10,8 @@ require (
 	fyne.io/systray v1.12.2
 	github.com/BurntSushi/toml v1.6.0
 	github.com/allbin/agentkit v0.4.0
-	github.com/allbin/claudecli-go v0.7.1
-	github.com/allbin/codexcli-go v0.3.0
+	github.com/allbin/claudecli-go v0.7.2
+	github.com/allbin/codexcli-go v0.3.1
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
