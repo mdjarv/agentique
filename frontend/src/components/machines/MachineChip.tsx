@@ -1,4 +1,4 @@
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import type { MachineEntry, MachineStatus } from "~/stores/machine-store";
@@ -43,7 +43,7 @@ export function MachineChip({
   const status = useMachineStatus(machine?.machineId);
   const fault = useMachineFault(machine?.machineId);
   if (!machine) return null;
-  const Icon = getMachineIcon(machine.icon ?? "") ?? DEFAULT_MACHINE_ICON;
+  const Icon = resolveMachineGlyph(machine.icon, machine.platformOs);
 
   return (
     <span

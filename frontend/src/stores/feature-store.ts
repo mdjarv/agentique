@@ -23,6 +23,8 @@ interface FeatureState {
   machineIcon: string;
   /** AGENTIQUE_MACHINE_LABEL is set, so the name can't be changed from here. */
   machineLabelPinned: boolean;
+  /** This host's own OS (GOOS), from /api/health. Empty on older servers. */
+  machinePlatformOs: string;
   version: string;
   loaded: boolean;
   load: () => Promise<void>;
@@ -38,6 +40,7 @@ export const useFeatureStore = create<FeatureState>((set, get) => ({
   machineLabel: "",
   machineIcon: "",
   machineLabelPinned: false,
+  machinePlatformOs: "",
   version: "",
   loaded: false,
   load: async () => {
@@ -53,6 +56,7 @@ export const useFeatureStore = create<FeatureState>((set, get) => ({
           machineLabel: data.machineLabel ?? "",
           machineIcon: data.machineIcon ?? "",
           machineLabelPinned: !!data.machineLabelPinned,
+          machinePlatformOs: data.platform?.os ?? "",
           version: data.version ?? "",
           loaded: true,
         });

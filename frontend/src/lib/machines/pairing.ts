@@ -21,6 +21,8 @@ interface Descriptor {
   label: string;
   version: string;
   capabilities?: Record<string, boolean>;
+  /** The machine's GOOS/GOARCH; absent from peers that predate the field. */
+  platform?: { os?: string; arch?: string };
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -154,6 +156,7 @@ export async function pairMachine(address: string, token: string): Promise<Machi
     sessionId: paired.sessionId,
     identityKey: paired.identityKey,
     addedAt: new Date().toISOString(),
+    platformOs: descriptor.platform?.os ?? "",
   });
 }
 

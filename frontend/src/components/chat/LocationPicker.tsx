@@ -25,7 +25,8 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { useTheme } from "~/hooks/useTheme";
 import { machineHue } from "~/lib/machine-colors";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { getMachineIcon } from "~/lib/machines/icons";
+import { platformGlyph, resolveMachineGlyph } from "~/lib/machines/platform";
 import { WORKTREE_LABEL } from "~/lib/session/location";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
@@ -61,6 +62,8 @@ export function LocationPicker({
   const statuses = useMachineStore((s) => s.statuses);
   const allIds = useMachineStore(useShallow((s) => Object.keys(s.machines)));
   const primaryLabel = useFeatureStore((s) => s.machineLabel);
+  const primaryIcon = useFeatureStore((s) => s.machineIcon);
+  const primaryPlatformOs = useFeatureStore((s) => s.machinePlatformOs);
   const { resolvedTheme } = useTheme();
 
   const target = members.find((m) => m.id === targetProjectId) ?? members[0];
@@ -70,8 +73,8 @@ export function LocationPicker({
     : primaryLabel || "This machine";
   const hue = machineHue(target?.machineId, allIds, resolvedTheme === "dark" ? "dark" : "light");
   const TargetGlyph = target?.machineId
-    ? (getMachineIcon(targetEntry?.icon ?? "") ?? DEFAULT_MACHINE_ICON)
-    : Monitor;
+    ? resolveMachineGlyph(targetEntry?.icon, targetEntry?.platformOs)
+    : (getMachineIcon(primaryIcon) ?? platformGlyph(primaryPlatformOs) ?? Monitor);
 
   const WorktreeGlyph = worktree ? GitBranch : FolderOpen;
   const worktreeLabel = worktree ? "new worktree" : projectBranch || WORKTREE_LABEL.main;
@@ -105,8 +108,8 @@ export function LocationPicker({
             // shorter menu. It just cannot be picked until it wakes.
             const offline = !!m.machineId && statuses[m.machineId] !== "connected";
             const Glyph = m.machineId
-              ? (getMachineIcon(entry?.icon ?? "") ?? DEFAULT_MACHINE_ICON)
-              : Monitor;
+              ? resolveMachineGlyph(entry?.icon, entry?.platformOs)
+              : (getMachineIcon(primaryIcon) ?? platformGlyph(primaryPlatformOs) ?? Monitor);
             return (
               <DropdownMenuItem
                 key={m.id}

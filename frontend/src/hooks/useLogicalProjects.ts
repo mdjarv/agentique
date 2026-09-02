@@ -25,6 +25,7 @@ export function useLogicalProjects(): LogicalProjectVM[] {
       facts[machineId] = {
         label: entry.label,
         icon: entry.icon,
+        platformOs: entry.platformOs,
         status: statuses[machineId] ?? "disconnected",
       };
     }

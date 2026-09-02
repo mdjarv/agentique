@@ -130,6 +130,8 @@ export interface ThreadRowVM {
   remoteMachineLabel?: string;
   /** Icon id for that machine — this host's presentation of it. */
   remoteMachineIcon?: string;
+  /** That machine's own OS (GOOS) — its platform mark when no icon is set. */
+  remoteMachinePlatform?: string;
   /** That machine is unreachable right now: the row is a cached snapshot. */
   remoteMachineOffline?: boolean;
   /** A proven fault on that machine — away is silent, this is not. */
@@ -167,6 +169,7 @@ export interface DraftRowVM {
   more: boolean;
   remoteMachineLabel?: string;
   remoteMachineIcon?: string;
+  remoteMachinePlatform?: string;
   /** That machine is unreachable — sending will fail until it is back. */
   remoteMachineOffline?: boolean;
 }

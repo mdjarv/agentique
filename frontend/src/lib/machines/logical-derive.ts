@@ -24,6 +24,8 @@ export interface MachineFacts {
   label: string;
   /** Lucide icon id chosen for the machine on this host; "" falls back. */
   icon?: string;
+  /** The machine's own OS (GOOS), for the platform mark when no icon is set. */
+  platformOs?: string;
   status: MachineStatus;
 }
 
@@ -34,6 +36,8 @@ export interface LogicalMemberVM {
   /** "" for the primary — callers name it themselves ("This machine"). */
   machineLabel: string;
   machineIcon?: string;
+  /** The machine's own OS (GOOS); absent when unknown. */
+  machinePlatform?: string;
   offline: boolean;
   path: string;
   /** The member's own slug — routing to it needs the qualified one. */
@@ -79,6 +83,7 @@ export function deriveLogicalProjects(
         machineId: m.machineId,
         machineLabel: facts?.label ?? (m.machineId ? "Unknown machine" : ""),
         machineIcon: facts?.icon || undefined,
+        machinePlatform: facts?.platformOs || undefined,
         // The primary serves this page: it is reachable by definition.
         offline: !!m.machineId && facts?.status !== "connected",
         path: m.path,

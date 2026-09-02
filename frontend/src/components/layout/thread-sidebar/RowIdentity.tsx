@@ -7,7 +7,7 @@
  */
 import { ChipComet } from "~/components/layout/session/LiveMarks";
 import { useProjectIcon } from "~/hooks/useProjectIcon";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { PARKED_GLYPH, PARKED_TITLE } from "~/lib/session/rest-state";
 import { cn } from "~/lib/utils";
 
@@ -121,6 +121,8 @@ export interface MachineTagProps {
   /** Absent for a local row — the tag then renders nothing. */
   label?: string;
   icon?: string;
+  /** The machine's own OS (GOOS) — its mark when no icon was picked. */
+  platform?: string;
   offline?: boolean;
   /** A proven fault on that machine — away is silent, this is not. */
   fault?: string;
@@ -129,11 +131,12 @@ export interface MachineTagProps {
 /**
  * The machine a remote row belongs to: its face and its name. Presentation is
  * this host's (docs/multi-machine.md) — the face is a recognition aid, so an
- * unset icon falls back to the generic server glyph rather than nothing.
+ * unset icon falls back to the machine's platform mark, then the generic
+ * server glyph, rather than nothing.
  */
-export function MachineTag({ label, icon, offline, fault }: MachineTagProps) {
+export function MachineTag({ label, icon, platform, offline, fault }: MachineTagProps) {
   if (!label) return null;
-  const Icon = getMachineIcon(icon ?? "") ?? DEFAULT_MACHINE_ICON;
+  const Icon = resolveMachineGlyph(icon, platform);
   return (
     <span
       title={fault ?? (offline ? `${label} is offline — showing its last known state` : undefined)}

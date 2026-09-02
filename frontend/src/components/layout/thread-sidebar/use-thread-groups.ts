@@ -210,6 +210,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         canArchive: canArchive(meta),
         remoteMachineLabel,
         remoteMachineIcon: remoteMachine?.icon || undefined,
+        remoteMachinePlatform: remoteMachine?.platformOs || undefined,
         remoteMachineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : undefined,

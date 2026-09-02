@@ -103,6 +103,7 @@ function SessionMachineTag({ vm }: { vm: ThreadRowVM }) {
     <MachineTag
       label={vm.remoteMachineLabel}
       icon={vm.remoteMachineIcon}
+      platform={vm.remoteMachinePlatform}
       offline={vm.remoteMachineOffline}
       fault={vm.remoteMachineFault}
     />

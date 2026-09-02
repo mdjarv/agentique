@@ -18,9 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useLaunchTargets } from "~/hooks/useLaunchTargets";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import type { LaunchTarget } from "~/lib/machines/launch-targets";
 import { matchesLaunchTarget } from "~/lib/machines/launch-targets";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { cn } from "~/lib/utils";
 
 export function ProjectLaunchPicker({
@@ -162,9 +162,10 @@ function TargetRow({
   // The machine only earns a line when there is a choice to make: a repo that
   // spans machines, or one that lives somewhere other than here.
   const showMachine = target.spansMachines || !!target.machineId;
-  const MachineIcon = target.machineId
-    ? (getMachineIcon(target.machineIcon ?? "") ?? DEFAULT_MACHINE_ICON)
-    : DEFAULT_MACHINE_ICON;
+  const MachineIcon = resolveMachineGlyph(
+    target.machineId ? target.machineIcon : "",
+    target.machinePlatform,
+  );
 
   return (
     <button

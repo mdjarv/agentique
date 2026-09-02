@@ -22,16 +22,24 @@ import {
   AlertDialogTitle,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { platformLabel, resolveMachineGlyph } from "~/lib/machines/platform";
 import { cn, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import type { MachineStatus } from "~/stores/machine-store";
 import { useMachineStore } from "~/stores/machine-store";
 
-/** Machine avatar: its icon, or the generic server glyph when unset. */
-function MachineFace({ iconId, className }: { iconId: string; className?: string }) {
-  const Icon = getMachineIcon(iconId) ?? DEFAULT_MACHINE_ICON;
+/** Machine avatar: its icon, else its platform mark, else the server glyph. */
+function MachineFace({
+  iconId,
+  platformOs,
+  className,
+}: {
+  iconId: string;
+  platformOs?: string;
+  className?: string;
+}) {
+  const Icon = resolveMachineGlyph(iconId, platformOs);
   return (
     <span
       className={cn(
@@ -145,6 +153,7 @@ export function MachinesSettings() {
 
   const hostLabel = useFeatureStore((s) => s.machineLabel);
   const hostIcon = useFeatureStore((s) => s.machineIcon);
+  const hostPlatformOs = useFeatureStore((s) => s.machinePlatformOs);
   const hostPinned = useFeatureStore((s) => s.machineLabelPinned);
   const saveHostPresentation = useFeatureStore((s) => s.saveHostPresentation);
 
@@ -170,9 +179,15 @@ export function MachinesSettings() {
     <div className="flex flex-col gap-7">
       <SettingsSection title="This machine" description="The server serving this page.">
         <MachineRow
-          face={<MachineFace iconId={hostIcon} />}
+          face={<MachineFace iconId={hostIcon} platformOs={hostPlatformOs} />}
           name={hostLabel || "This machine"}
-          detail={`${projectCount(undefined)} projects · this device`}
+          detail={[
+            platformLabel(hostPlatformOs),
+            `${projectCount(undefined)} projects`,
+            "this device",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           status="connected"
           onEdit={() => setEditing("self")}
         />
@@ -199,9 +214,10 @@ export function MachinesSettings() {
           {entries.map((m) => (
             <MachineRow
               key={m.machineId}
-              face={<MachineFace iconId={m.icon ?? ""} />}
+              face={<MachineFace iconId={m.icon ?? ""} platformOs={m.platformOs} />}
               name={m.label || m.machineId}
               detail={[
+                platformLabel(m.platformOs),
                 m.baseUrl,
                 `${projectCount(m.machineId)} projects`,
                 // Away is the everyday state of a laptop, so the row says how

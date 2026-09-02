@@ -72,6 +72,9 @@ export async function machineFetch(
   if (identity.descriptor?.version) {
     useMachineStore.getState().setVersion(machineId, identity.descriptor.version);
   }
+  if (identity.descriptor?.platform?.os) {
+    useMachineStore.getState().setPlatform(machineId, identity.descriptor.platform.os);
+  }
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${entry.token}`);
   return fetch(entry.baseUrl + path, { ...init, headers });

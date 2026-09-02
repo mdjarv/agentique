@@ -30,7 +30,8 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useTheme } from "~/hooks/useTheme";
 import { machineHue } from "~/lib/machine-colors";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { getMachineIcon } from "~/lib/machines/icons";
+import { platformGlyph, resolveMachineGlyph } from "~/lib/machines/platform";
 import {
   machineTitle,
   WORKTREE_GLYPH,
@@ -91,14 +92,18 @@ export const SessionLocation = memo(function SessionLocation({
   const isMobile = useIsMobile();
   const { resolvedTheme } = useTheme();
   const primaryLabel = useFeatureStore((s) => s.machineLabel);
+  const primaryIcon = useFeatureStore((s) => s.machineIcon);
+  const primaryPlatformOs = useFeatureStore((s) => s.machinePlatformOs);
   const allIds = useAllMachineIds();
 
   const hue = machineHue(machine?.machineId, allIds, resolvedTheme === "dark" ? "dark" : "light");
   const zone = worktreeZone({ worktreeBranch, branchMissing, projectBranch });
   const WorktreeGlyph = WORKTREE_GLYPH[zone.kind];
+  // A user-picked icon wins; otherwise the machine's own OS marks it. The
+  // primary keeps Monitor as its floor — "this machine" is not a Server.
   const MachineGlyph = machine
-    ? (getMachineIcon(machine.icon ?? "") ?? DEFAULT_MACHINE_ICON)
-    : Monitor;
+    ? resolveMachineGlyph(machine.icon, machine.platformOs)
+    : (getMachineIcon(primaryIcon) ?? platformGlyph(primaryPlatformOs) ?? Monitor);
 
   const machineLabel = machine?.label ?? primaryLabel ?? "This machine";
   const hostTitle = machineTitle(machineLabel, {

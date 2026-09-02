@@ -31,6 +31,11 @@ export interface MachineEntry {
   /** Icon id (lucide) — this host's presentation of that machine, never the
    *  machine's own opinion. Empty falls back to the generic server glyph. */
   icon?: string;
+  /** The machine's own OS (GOOS: "linux" | "windows" | "darwin"), captured
+   *  from its pairing descriptor and refreshed on connect. A fact, not
+   *  presentation — never user-editable. Absent means unknown (an older row),
+   *  which draws no platform mark. */
+  platformOs?: string;
 }
 
 export type MachineStatus = ConnectionState;
@@ -63,6 +68,9 @@ interface MachineState {
   setFault: (machineId: string, fault: MachineFault | null) => void;
   /** Record the version a machine's descriptor reported. */
   setVersion: (machineId: string, version: string) => void;
+  /** Record the OS a machine's descriptor reported. Self-heals rows paired
+   *  before the catalog stored it; an empty answer never erases a known one. */
+  setPlatform: (machineId: string, platformOs: string) => void;
   /** Reconcile the catalog from the primary's server-side copy (server
    *  wins). A failed fetch keeps the local cache — offline still works. */
   syncFromServer: () => Promise<void>;
@@ -89,6 +97,7 @@ export const useMachineStore = create<MachineState>()(
             identityKey: entry.identityKey,
             addedAt: entry.addedAt,
             icon: entry.icon ?? "",
+            platformOs: entry.platformOs ?? "",
           }),
         });
         if (!res.ok) throw new Error(`machine catalog save failed (${res.status})`);
@@ -156,6 +165,15 @@ export const useMachineStore = create<MachineState>()(
           // descriptor from an older build simply says nothing about it.
           if (!version || s.versions[machineId] === version) return s;
           return { versions: { ...s.versions, [machineId]: version } };
+        }),
+
+      setPlatform: (machineId, platformOs) =>
+        set((s) => {
+          const entry = s.machines[machineId];
+          if (!entry || !platformOs || entry.platformOs === platformOs) return s;
+          return {
+            machines: { ...s.machines, [machineId]: { ...entry, platformOs } },
+          };
         }),
 
       setStatus: (machineId, status) =>

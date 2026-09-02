@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
 import type { UpdateCLIStatus, UpdateStatus } from "~/lib/generated-types";
+import { platformLabel } from "~/lib/machines/platform";
 import {
   autoUpdateSummary,
   checkedAgo,
@@ -173,9 +174,14 @@ export function AboutSettings() {
                   key={entry.machineId}
                   label={entry.label || entry.machineId.slice(0, 8)}
                   description={
-                    away
-                      ? `away${seen ? ` · last seen ${relativeTime(new Date(seen).toISOString())}` : ""}`
-                      : undefined
+                    [
+                      platformLabel(entry.platformOs),
+                      away
+                        ? `away${seen ? ` · last seen ${relativeTime(new Date(seen).toISOString())}` : ""}`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
                   }
                   control={
                     <span className={cn(away && "opacity-60")}>

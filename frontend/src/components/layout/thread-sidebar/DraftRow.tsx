@@ -69,6 +69,7 @@ export const DraftRow = memo(function DraftRow({
           <MachineTag
             label={vm.remoteMachineLabel}
             icon={vm.remoteMachineIcon}
+            platform={vm.remoteMachinePlatform}
             offline={vm.remoteMachineOffline}
           />
         </span>

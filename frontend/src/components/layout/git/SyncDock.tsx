@@ -28,7 +28,7 @@ import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { fetchSiblings, fetchSweep, STALE_AFTER_MS } from "~/lib/git/sync-sweep";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { pullProject, pushProject } from "~/lib/project-actions";
 import { getProjectColor } from "~/lib/project-colors";
 import { cn, getErrorMessage } from "~/lib/utils";
@@ -81,6 +81,7 @@ function useSyncRows(): SyncRowVM[] {
         status: gitStatus[project.id],
         machineLabel: project.machineId ? machines[project.machineId]?.label : undefined,
         machineIcon: project.machineId ? machines[project.machineId]?.icon : undefined,
+        machinePlatform: project.machineId ? machines[project.machineId]?.platformOs : undefined,
         machineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : false,
@@ -521,9 +522,10 @@ export function SyncDock() {
   );
 }
 
-/** The machine's face beside its name — generic glyph when it has no icon. */
-function MachineIcon({ iconId }: { iconId: string }) {
-  const Icon = getMachineIcon(iconId) ?? DEFAULT_MACHINE_ICON;
+/** The machine's face beside its name — platform mark, then generic glyph,
+ *  when it has no icon of its own. */
+function MachineIcon({ iconId, platform }: { iconId: string; platform?: string }) {
+  const Icon = resolveMachineGlyph(iconId, platform);
   return <Icon className="size-2.5 shrink-0" />;
 }
 
@@ -601,7 +603,7 @@ function SyncRow({
             row.machineFault ? "text-destructive" : "text-muted-foreground-faint",
           )}
         >
-          <MachineIcon iconId={row.machineIcon ?? ""} />
+          <MachineIcon iconId={row.machineIcon ?? ""} platform={row.machinePlatform} />
           {row.machineLabel}
         </span>
       )}

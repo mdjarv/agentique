@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Monitor, Plus, Server, TriangleAlert } from "lucide-react";
+import { FolderOpen, FolderPlus, Monitor, Plus, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
 import { Button } from "~/components/ui/button";
@@ -18,6 +18,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { reloadMachineProjects } from "~/hooks/useMachineConnections";
 import { createProject, type PathValidation, validatePath } from "~/lib/api";
+import { getMachineIcon } from "~/lib/machines/icons";
+import { platformGlyph, resolveMachineGlyph } from "~/lib/machines/platform";
 import { remoteSlug } from "~/lib/machines/slug";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -122,6 +124,9 @@ export function NewProjectDialog({
   const machines = useMachineStore((s) => s.machines);
   const statuses = useMachineStore((s) => s.statuses);
   const primaryLabel = useFeatureStore((s) => s.machineLabel);
+  const primaryIcon = useFeatureStore((s) => s.machineIcon);
+  const primaryPlatformOs = useFeatureStore((s) => s.machinePlatformOs);
+  const PrimaryGlyph = getMachineIcon(primaryIcon) ?? platformGlyph(primaryPlatformOs) ?? Monitor;
   const machineEntries = Object.values(machines).sort((a, b) => a.label.localeCompare(b.label));
 
   const handleMachineChange = (id: string) => {
@@ -262,19 +267,22 @@ export function NewProjectDialog({
                 <MachineOption
                   selected={machineId === ""}
                   onSelect={() => handleMachineChange("")}
-                  icon={<Monitor className="size-3" />}
+                  icon={<PrimaryGlyph className="size-3" />}
                   label={primaryLabel || "This machine"}
                 />
-                {machineEntries.map((m) => (
-                  <MachineOption
-                    key={m.machineId}
-                    selected={machineId === m.machineId}
-                    onSelect={() => handleMachineChange(m.machineId)}
-                    icon={<Server className="size-3" />}
-                    label={m.label}
-                    disabled={statuses[m.machineId] !== "connected"}
-                  />
-                ))}
+                {machineEntries.map((m) => {
+                  const Glyph = resolveMachineGlyph(m.icon, m.platformOs);
+                  return (
+                    <MachineOption
+                      key={m.machineId}
+                      selected={machineId === m.machineId}
+                      onSelect={() => handleMachineChange(m.machineId)}
+                      icon={<Glyph className="size-3" />}
+                      label={m.label}
+                      disabled={statuses[m.machineId] !== "connected"}
+                    />
+                  );
+                })}
               </div>
             </div>
           )}

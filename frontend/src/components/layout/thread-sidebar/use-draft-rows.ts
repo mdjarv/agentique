@@ -70,6 +70,7 @@ export function useDraftRows(searchQuery: string): DraftRowVM[] {
         more: draftHasMore(text),
         remoteMachineLabel: remoteMachine?.label,
         remoteMachineIcon: remoteMachine?.icon || undefined,
+        remoteMachinePlatform: remoteMachine?.platformOs || undefined,
         remoteMachineOffline: project.machineId
           ? machineStatuses[project.machineId] !== "connected"
           : undefined,

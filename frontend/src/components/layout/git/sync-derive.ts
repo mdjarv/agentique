@@ -37,6 +37,8 @@ export interface SyncRowVM {
   machineLabel?: string;
   /** That machine's icon id — this host's presentation of it. */
   machineIcon?: string;
+  /** That machine's own OS (GOOS) — its mark when no icon is set. */
+  machinePlatform?: string;
   /** That machine is unreachable: the row is real, its buttons are not. */
   machineOffline?: boolean;
   /** A proven fault on that machine, if any — the tag says so in rose. */
@@ -79,6 +81,7 @@ export interface SyncRowInput {
   /** Resolved once by the caller — the VM stays free of store lookups. */
   machineLabel?: string;
   machineIcon?: string;
+  machinePlatform?: string;
   machineOffline?: boolean;
   machineFault?: string;
   colorBg: string;
@@ -108,6 +111,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
     status,
     machineLabel,
     machineIcon,
+    machinePlatform,
     machineOffline,
     machineFault,
     colorBg,
@@ -125,6 +129,7 @@ export function deriveSyncRows(inputs: SyncRowInput[]): SyncRowVM[] {
       iconId: project.icon || undefined,
       machineLabel,
       machineIcon,
+      machinePlatform,
       machineOffline,
       machineFault,
       ahead: status.aheadRemote,

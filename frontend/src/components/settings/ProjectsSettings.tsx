@@ -22,9 +22,9 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useLogicalProjects } from "~/hooks/useLogicalProjects";
 import { useTheme } from "~/hooks/useTheme";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import type { LogicalMemberVM } from "~/lib/machines/logical-derive";
 import { compareLogicalProjects, matchesLogicalProject } from "~/lib/machines/logical-derive";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { getProjectColor } from "~/lib/project-colors";
 import { useAppStore } from "~/stores/app-store";
 
@@ -34,7 +34,7 @@ function truncatePath(path: string): string {
 
 /** One machine's checkout of the repo — the physical thing a click targets. */
 function MemberLine({ member, onLaunch }: { member: LogicalMemberVM; onLaunch: () => void }) {
-  const Icon = getMachineIcon(member.machineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
+  const Icon = resolveMachineGlyph(member.machineIcon, member.machinePlatform);
   return (
     <button
       type="button"

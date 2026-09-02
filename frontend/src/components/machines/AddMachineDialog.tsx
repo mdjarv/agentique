@@ -12,6 +12,7 @@ import {
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { pairMachine } from "~/lib/machines/pairing";
+import { platformGlyph } from "~/lib/machines/platform";
 import { cn } from "~/lib/utils";
 import { useMachineStore } from "~/stores/machine-store";
 
@@ -28,6 +29,8 @@ interface DiscoveredPeer {
   url: string;
   version: string;
   pairing: boolean;
+  /** The peer's GOOS from its descriptor; absent from older servers. */
+  platformOs?: string;
 }
 
 export function AddMachineDialog({
@@ -131,30 +134,36 @@ export function AddMachineDialog({
               {discovering && suggestions.length === 0 && (
                 <p className="text-xs text-muted-foreground">Scanning…</p>
               )}
-              {suggestions.map((p) => (
-                <button
-                  key={p.machineId}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setAddress(p.url);
-                    setError(null);
-                  }}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer",
-                    address === p.url
-                      ? "border-primary/50 bg-primary/10"
-                      : "border-border/60 hover:bg-muted/40",
-                  )}
-                >
-                  <Server className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="font-medium">{p.label}</span>
-                  <span className="truncate text-muted-foreground">{p.url}</span>
-                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground-faint">
-                    {p.pairing ? "needs token" : "no auth"}
-                  </span>
-                </button>
-              ))}
+              {suggestions.map((p) => {
+                // The OS is the most useful thing to know about an unfamiliar
+                // hostname; the generic server glyph stands in when the peer
+                // does not say.
+                const PeerGlyph = platformGlyph(p.platformOs) ?? Server;
+                return (
+                  <button
+                    key={p.machineId}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setAddress(p.url);
+                      setError(null);
+                    }}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors cursor-pointer",
+                      address === p.url
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-border/60 hover:bg-muted/40",
+                    )}
+                  >
+                    <PeerGlyph className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium">{p.label}</span>
+                    <span className="truncate text-muted-foreground">{p.url}</span>
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground-faint">
+                      {p.pairing ? "needs token" : "no auth"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
           <div className="flex flex-col gap-1.5">

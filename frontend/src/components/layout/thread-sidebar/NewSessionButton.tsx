@@ -27,9 +27,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useLogicalProjects } from "~/hooks/useLogicalProjects";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import type { LogicalProjectVM } from "~/lib/machines/logical-derive";
 import { compareLogicalProjects, matchesLogicalProject } from "~/lib/machines/logical-derive";
+import { resolveMachineGlyph } from "~/lib/machines/platform";
 import { setProjectFavorite } from "~/lib/project-actions";
 import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
@@ -166,7 +166,7 @@ function MemberGlyphs({ row }: { row: LogicalProjectVM }) {
   return (
     <span className="flex shrink-0 items-center gap-0.5">
       {row.remoteMembers.map((member) => {
-        const Icon = getMachineIcon(member.machineIcon ?? "") ?? DEFAULT_MACHINE_ICON;
+        const Icon = resolveMachineGlyph(member.machineIcon, member.machinePlatform);
         return (
           <Icon
             key={member.projectId}
