@@ -377,10 +377,27 @@ runs off an approval the CLI raises when the agent exits plan mode itself — an
 `caps.planMode` plus the template field stay, so a template can still start a
 session in plan mode.
 
-On mobile the model and the mode stay **outside** the tools tray, as a reading
-rather than controls: which brain is answering and whether it will stop to ask
-are the two facts worth checking before sending, and a phone that hides both
-behind a tap answers neither.
+**On mobile the composer is one flush row, and everything that is not the next
+message is behind the `+`.** No card, no outer padding, no second row: the tray
+toggle, the field and Send share a line, and the model, the effort and the
+permission mode live inside the tray with attach and templates. That reverses
+what this file used to say — that the two of them stay outside the tray,
+because a phone hiding both "answers neither" — and the reversal is the
+decision, not an oversight. The row cost 48px on a screen with 427, the mode is
+almost always Full Auto, and neither is read on the way to sending a message;
+they are settings, and settings are what a tray is for.
+
+Nothing took their place on the header's metadata line either. That line
+reports (`sublineSubject`: live work, then a parked loop, then the resting
+state) and its right-hand side carries the branch cluster; a metadata line that
+also carried controls stopped being one. The desktop is unchanged — it has the
+width, and the toolbar stays.
+
+`ComposerTextarea` grows an `inline` layout for this rather than a second
+component: one composer, two arrangements. Its textarea is `display: block` on
+both, because a textarea is inline-block by default and the line box its parent
+opens adds ~6px of leading under it — which is what put the placeholder half a
+line above the `+` beside it.
 
 ### The New-session panel remembers model and effort
 
@@ -859,10 +876,17 @@ and rebase are not two options for one job: merge applies when the branch is
 *ahead*, rebase when it is *behind*. Being behind with nothing committed yet is
 ordinary, so rebase can never live inside merge's dropdown — there would be no
 merge control to open. `lib/session/branch-sync.ts` is the one closed union that
-decides, read by the desktop header, the mobile strip and the dock's
+decides, read by the desktop header, the mobile header and the dock's
 `GitStatusBar`; before it, each computed its own eligibility and they disagreed
 (the header counted `merging` as busy, the Changes bar did not, so it offered a
 rebase while one was already running).
+
+On mobile it rides the header's metadata line (`SessionFinishAction dense`),
+beside the branch facts it acts on — the location pill and the commits-ahead
+count. It had a band of its own under the header, 37px and mobile-only, for a
+control the desktop keeps *in* its header; on the line it costs 8. A verb about
+the branch belongs with the branch, and a third bar on a 427px screen belongs
+nowhere.
 
 Colour says what a body click does, on both layouts: **orange acts, green opens
 a menu.** On a diverged branch the control is a split — Rebase on the body,

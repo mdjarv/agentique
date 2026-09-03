@@ -3,13 +3,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
-import { EffortMeter } from "~/components/chat/composer/BrainControl";
-import { PermissionMark } from "~/components/chat/composer/PermissionMark";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
 import { RenameSessionDialog } from "~/components/chat/dialogs/RenameSessionDialog";
 import { SessionActionMenu } from "~/components/chat/SessionActionMenu";
+import { SessionFinishAction } from "~/components/chat/SessionFinishAction";
 import { SessionIdentity } from "~/components/chat/SessionIdentity";
 import { SessionLocation } from "~/components/chat/SessionLocation";
 import { hasLiveWork, SessionWorkLine } from "~/components/chat/SessionWorkLine";
@@ -34,15 +33,13 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useNow } from "~/hooks/useNow";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import type { EffortLevel } from "~/lib/composer-constants";
 import { machineHue, machineWash } from "~/lib/machine-colors";
-import { sessionModelLabel } from "~/lib/model-catalog";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
 import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { sublineSubject } from "~/lib/session/subline";
 import { getErrorMessage, sessionShortId } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
-import type { AutoApproveMode, SessionMetadata } from "~/stores/chat-store";
+import type { SessionMetadata } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useScheduleStore } from "~/stores/schedule-store";
 
@@ -232,6 +229,10 @@ export function SessionHeader({
               hasPendingApproval={hasPendingInput}
               agentsInFlight={agentsInFlight}
               projectBranch={projectGitStatus?.branch}
+              git={git}
+              projectGitStatus={projectGitStatus}
+              mainBranch={mainBranch}
+              onSendMessage={onSendMessage}
             />
           </div>
         ) : (
@@ -437,32 +438,43 @@ function ParkedScheduleChip({ sessionId, state }: { sessionId: string; state: st
 }
 
 /**
- * The dim line under the name on mobile, which reports **the most specific
- * thing true right now** and nothing else.
+ * The line under the name on mobile: what the session is doing on the left,
+ * and everything about its branch on the right.
  *
- * Ranked, because one line cannot hold three subjects and the ranking is the
- * design: live work first (`formatPulse`, the same narration the sidebar row
- * uses), then a state actually worth a word — stopped, failed, waiting, or a
- * parked loop with its next fire — and, when the session is merely idle, the
- * brain: which model answers and whether it stops to ask.
+ * The left is ranked (`sublineSubject`) because one slot cannot hold three
+ * subjects: live narration first, then a parked loop with its next fire, then
+ * the resting state word.
  *
- * That last rung is what pays for the composer's tools row being gone.
- * `CLAUDE.md` argues a phone hiding both model and mode "answers neither", and
- * it is right — but the row it was arguing for cost 48px on the tightest
- * screen in the app, while this line was sitting there saying "Idle". Idle is
- * exactly when the reading is worth having and exactly when the line is free,
- * so the fact survives at zero cost and the *controls* live in the `+` tray.
+ * The right is the branch cluster — where the code lives, how far ahead it is,
+ * and **the one verb the branch needs**. That verb used to be a band of its
+ * own below the header (37px, mobile-only) for a control the desktop keeps in
+ * its header; putting it beside the facts it acts on costs the line 8px
+ * instead and removes a whole bar. It is the same `BranchSyncControl` and the
+ * same `branchSync` rule, so the two layouts cannot disagree about which verb
+ * applies.
+ *
+ * What is deliberately not here: the model and the permission mode. They are
+ * settings, and settings live behind the composer's `+` tray — a metadata line
+ * carrying controls stops being a metadata line.
  */
 function MobileSubline({
   meta,
   hasPendingApproval,
   agentsInFlight,
   projectBranch,
+  git,
+  projectGitStatus,
+  mainBranch,
+  onSendMessage,
 }: {
   meta: SessionMetadata;
   hasPendingApproval: boolean;
   agentsInFlight: number;
   projectBranch?: string;
+  git?: ReturnType<typeof useGitActions>;
+  projectGitStatus?: ProjectGitStatus;
+  mainBranch?: string;
+  onSendMessage?: (prompt: string) => void;
 }) {
   const badgeState = resolveSessionState({ state: meta.state, hasPendingApproval });
   const label = resolveStatusLabel({ state: meta.state, badgeState, connected: meta.connected });
@@ -478,7 +490,6 @@ function MobileSubline({
   const subject = sublineSubject({
     live: hasLiveWork({ state: meta.state, agentsInFlight }),
     parked: !!parked,
-    badgeState,
   });
   return (
     // `leading-none`: at 10-11px the default line-height is half again the
@@ -493,7 +504,6 @@ function MobileSubline({
           className="min-w-0 flex-1"
         />
       )}
-      {subject === "brain" && <BrainReading meta={meta} />}
       {subject === "parked" && parked && (
         <span className="truncate">
           next {untilText(parked.nextRunAt, now)} &middot; {parked.name}
@@ -520,29 +530,14 @@ function MobileSubline({
           {ahead}
         </span>
       )}
-    </span>
-  );
-}
-
-/**
- * Which brain answers, and whether it stops to ask — a reading, never controls.
- * The model name plus the effort meter is the same pair `BrainControl` draws in
- * the composer, at the size a 16px line can hold; the permission glyph beside
- * it is `PermissionMark`'s read-only form.
- */
-function BrainReading({ meta }: { meta: SessionMetadata }) {
-  const label = sessionModelLabel(meta.model, meta.resolvedModel);
-  const effort = (meta.effort as EffortLevel) ?? "";
-  const mode = meta.autoApproveMode as AutoApproveMode | undefined;
-  if (!label && !mode) return null;
-  return (
-    // Shrink-0: when the line is full the *pill* gives ground, not this. A
-    // machine name and a branch are still readable as a glyph and a hue; a
-    // model name clipped to "Opu…" reports nothing at all.
-    <span className="flex shrink-0 items-center gap-1.5">
-      {label && <span className="truncate max-w-[14ch]">{label}</span>}
-      <EffortMeter effort={effort} />
-      {mode && <PermissionMark mode={mode} dense />}
+      <SessionFinishAction
+        meta={meta}
+        git={git}
+        projectGitStatus={projectGitStatus}
+        mainBranch={mainBranch}
+        onSendMessage={onSendMessage}
+        dense
+      />
     </span>
   );
 }

@@ -309,7 +309,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         type="button"
         onClick={() => setShowTools((v) => !v)}
         className={cn(
-          "h-9 w-9 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0",
+          "h-10 w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0",
           showTools
             ? "bg-agent/15 text-agent"
             : "text-muted-foreground hover:text-foreground hover:bg-muted/80",

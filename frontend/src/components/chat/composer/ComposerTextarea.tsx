@@ -230,8 +230,14 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
         placeholder={placeholder}
         enterKeyHint={isMobile ? "enter" : "send"}
         className={cn(
-          "w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto",
-          inline ? "px-1 py-2" : "px-3 pt-3 pb-1",
+          // `block`: a textarea is inline-block by default, so its parent opens
+          // a line box and adds ~6px of leading under it. That is what put the
+          // placeholder half a line above the `+` beside it.
+          "block w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto",
+          // 20px line + 10px either side = 40, the height of the controls it
+          // sits between, so one line of text is centred against them and extra
+          // lines grow downward from the same baseline.
+          inline ? "px-1 py-2.5" : "px-3 pt-3 pb-1",
         )}
         rows={1}
         style={{ maxHeight: inline ? "140px" : "200px" }}

@@ -22,7 +22,6 @@ import { SessionDock } from "~/components/chat/dock/SessionDock";
 import { WorkView } from "~/components/chat/dock/WorkView";
 import { type ComposerHandle, MessageComposer } from "~/components/chat/MessageComposer";
 import { MessageList } from "~/components/chat/MessageList";
-import { finishActionKind, SessionFinishAction } from "~/components/chat/SessionFinishAction";
 import { SessionHeader } from "~/components/chat/SessionHeader";
 import { SessionMachineContext } from "~/components/chat/SessionMachineContext";
 import { StatusPage } from "~/components/layout/PageHeader";
@@ -541,7 +540,6 @@ export function ChatPanel({
   const wasEvicted = sessionState === "stopped" && !!meta.evictedAt;
   // The mobile finish action shares the strip below the header; compute it here
   // so the strip renders even when there is nothing else in it.
-  const finishKind = isMobile ? finishActionKind(meta, git) : null;
   const ahead = isWorktree ? (meta?.commitsAhead ?? 0) : (projectGitStatus?.aheadRemote ?? 0);
   const behind = isWorktree ? (meta?.commitsBehind ?? 0) : (projectGitStatus?.behindRemote ?? 0);
 
@@ -708,20 +706,6 @@ export function ChatPanel({
           mainBranch={mainBranch}
           onSendMessage={handleSend}
         />
-
-        {/* Mobile-only strip for branch completion. Pin, archive, and the
-            dock's own control live in the header on every layout. */}
-        {isMobile && finishKind && (
-          <div className="shrink-0 flex items-center justify-end gap-2 px-2 py-1 border-b text-xs">
-            <SessionFinishAction
-              meta={meta}
-              git={git}
-              projectGitStatus={projectGitStatus}
-              mainBranch={mainBranch}
-              onSendMessage={handleSend}
-            />
-          </div>
-        )}
 
         {/* The chat is the page; the dock sits beside it. */}
         <div className="flex-1 flex min-h-0 min-w-0">
