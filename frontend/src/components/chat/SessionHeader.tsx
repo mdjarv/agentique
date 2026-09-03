@@ -202,36 +202,38 @@ export function SessionHeader({
             </div>
           </>
         ) : isMobile ? (
-          // Mobile: the full name owns the header (up to two lines) with a dim
-          // subline that narrates work while there is any and reports the brain
-          // when there is not. Tapping opens the detail sheet; the branch finish
-          // action lives on the strip below (see ChatPanel).
-          <>
-            <SessionIdentity
-              meta={meta}
-              sessionRef={sessionRef}
-              onRename={actions.rename}
-              onIconChange={actions.handleIconChange}
-              stacked
-              subline={
-                <MobileSubline
-                  meta={meta}
-                  hasPendingApproval={hasPendingInput}
-                  agentsInFlight={agentsInFlight}
-                  projectBranch={projectGitStatus?.branch}
-                />
-              }
-            />
-            <div className="ml-auto flex items-center gap-1 shrink-0">
-              {/* One navigation model, two presentations: the same control, and
-                  on this layout it opens the dock as a sheet. Without it the
-                  sheet is unreachable — only a `?dock=` deep link could open
-                  it. */}
-              {dockToggle}
-              <ConnectionIndicator />
-              {actionMenu}
+          // Mobile: two rows. The name and the controls share the first; the
+          // second is the metadata line, and it gets the *whole* band rather
+          // than what is left beside the action cluster — which is what the
+          // live narration was short of. It also sits outside the identity
+          // button, so the location pill's own popover is not a button nested
+          // in one.
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-1">
+              <SessionIdentity
+                meta={meta}
+                sessionRef={sessionRef}
+                onRename={actions.rename}
+                onIconChange={actions.handleIconChange}
+                stacked
+              />
+              <div className="ml-auto flex items-center gap-1 shrink-0">
+                {/* One navigation model, two presentations: the same control,
+                    and on this layout it opens the dock as a sheet. Without it
+                    the sheet is unreachable — only a `?dock=` deep link could
+                    open it. */}
+                {dockToggle}
+                <ConnectionIndicator />
+                {actionMenu}
+              </div>
             </div>
-          </>
+            <MobileSubline
+              meta={meta}
+              hasPendingApproval={hasPendingInput}
+              agentsInFlight={agentsInFlight}
+              projectBranch={projectGitStatus?.branch}
+            />
+          </div>
         ) : (
           <>
             {/* Identity zone: name + detail popover / inline rename */}
@@ -479,7 +481,9 @@ function MobileSubline({
     badgeState,
   });
   return (
-    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+    // `leading-none`: at 10-11px the default line-height is half again the
+    // glyphs, and this row is paid for out of the transcript.
+    <span className="flex min-w-0 items-center gap-1 text-[11px] leading-none text-muted-foreground">
       <SessionBadge state={badgeState} size="sm" bare />
       {subject === "work" && (
         <SessionWorkLine
@@ -532,8 +536,11 @@ function BrainReading({ meta }: { meta: SessionMetadata }) {
   const mode = meta.autoApproveMode as AutoApproveMode | undefined;
   if (!label && !mode) return null;
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      {label && <span className="truncate">{label}</span>}
+    // Shrink-0: when the line is full the *pill* gives ground, not this. A
+    // machine name and a branch are still readable as a glyph and a hue; a
+    // model name clipped to "Opu…" reports nothing at all.
+    <span className="flex shrink-0 items-center gap-1.5">
+      {label && <span className="truncate max-w-[14ch]">{label}</span>}
       <EffortMeter effort={effort} />
       {mode && <PermissionMark mode={mode} dense />}
     </span>

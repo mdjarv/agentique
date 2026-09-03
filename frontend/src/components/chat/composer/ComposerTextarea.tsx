@@ -217,7 +217,12 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
     const field = (
       <textarea
         ref={textareaRef}
-        autoFocus
+        // Not on the phone. Mobile browsers give the field focus without
+        // raising the keyboard, so an autofocus there condenses the header
+        // (`SessionHeader.condensed`) for a session nobody is typing in yet —
+        // and it is the wrong gesture anyway: arriving at a session is reading
+        // it, not answering it.
+        autoFocus={!isMobile}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}

@@ -1,5 +1,5 @@
 import { Check, Copy, Pencil } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconPicker } from "~/components/chat/IconPicker";
 import { ProviderBadge } from "~/components/chat/ProviderBadge";
 import { Button } from "~/components/ui/button";
@@ -19,12 +19,16 @@ interface SessionIdentityProps {
   onRename: (name: string) => void;
   onIconChange: (icon: string | undefined) => void;
   /**
-   * Stacked layout: the name wraps to two lines and a metadata `subline` sits
-   * beneath it. Used on mobile, where the name gets the whole header width.
+   * Mobile layout: the name is the whole control, on one line, and the header
+   * puts its metadata line *below* this button rather than inside it.
+   *
+   * Inside is where it used to be, and that nested `SessionLocation`'s own
+   * popover trigger — a button inside a button, which React warns about and
+   * browsers resolve by guessing. Outside, the line also gets the full band
+   * width instead of what is left beside the action cluster, which is what the
+   * live narration needed.
    */
   stacked?: boolean;
-  /** Optional metadata line rendered under the name in stacked layout. */
-  subline?: ReactNode;
 }
 
 /**
@@ -39,7 +43,6 @@ export function SessionIdentity({
   onRename,
   onIconChange,
   stacked = false,
-  subline,
 }: SessionIdentityProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(meta.name);
@@ -102,24 +105,19 @@ export function SessionIdentity({
           className={cn(
             "flex min-w-0 rounded-md hover:bg-accent transition-colors cursor-pointer",
             stacked
-              ? "flex-1 items-start gap-2 px-1 py-0.5 text-left"
+              ? "flex-1 items-center gap-2 px-1 py-0.5 text-left"
               : "items-center gap-1.5 px-1.5 py-0.5",
           )}
         >
-          <SessionIcon
-            className={cn("text-agent shrink-0", stacked ? "size-4 mt-0.5" : "size-3.5")}
-          />
+          <SessionIcon className={cn("text-agent shrink-0", stacked ? "size-4" : "size-3.5")} />
           {stacked ? (
-            <span className="flex flex-col min-w-0 gap-0.5">
-              <span
-                className={cn(
-                  "line-clamp-2 font-medium text-sm leading-tight break-words",
-                  !meta.name && "italic text-muted-foreground",
-                )}
-              >
-                {meta.name || "Untitled"}
-              </span>
-              {subline}
+            <span
+              className={cn(
+                "truncate font-medium text-sm leading-tight",
+                !meta.name && "italic text-muted-foreground",
+              )}
+            >
+              {meta.name || "Untitled"}
             </span>
           ) : (
             <>
