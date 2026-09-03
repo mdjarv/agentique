@@ -3,6 +3,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { BranchSyncControl } from "~/components/chat/BranchSyncControl";
+import { EffortMeter } from "~/components/chat/composer/BrainControl";
+import { PermissionMark } from "~/components/chat/composer/PermissionMark";
 import { CreateChannelDialog } from "~/components/chat/dialogs/CreateChannelDialog";
 import { DeleteSessionDialog } from "~/components/chat/dialogs/DeleteSessionDialog";
 import { JoinChannelDialog } from "~/components/chat/dialogs/JoinChannelDialog";
@@ -32,12 +34,15 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useNow } from "~/hooks/useNow";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
+import type { EffortLevel } from "~/lib/composer-constants";
 import { machineHue, machineWash } from "~/lib/machine-colors";
+import { sessionModelLabel } from "~/lib/model-catalog";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
 import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
+import { sublineSubject } from "~/lib/session/subline";
 import { getErrorMessage, sessionShortId } from "~/lib/utils";
 import { type ProjectGitStatus, useAppStore } from "~/stores/app-store";
-import type { SessionMetadata } from "~/stores/chat-store";
+import type { AutoApproveMode, SessionMetadata } from "~/stores/chat-store";
 import { useMachineStore } from "~/stores/machine-store";
 import { useScheduleStore } from "~/stores/schedule-store";
 
@@ -69,6 +74,16 @@ interface SessionHeaderProps {
    * answer to conflicts and not something the header can do itself.
    */
   onSendMessage?: (prompt: string) => void;
+  /**
+   * The phone's composer has focus, so the band condenses to name + state.
+   *
+   * On *focus*, never on scroll: with the keyboard down there are 824px and the
+   * header is 6% of them, and a band that moves while you read moves the thing
+   * you are reading. With the keyboard up there are 427px, which is the state
+   * the 18px is worth having in — and the keyboard's own animation is what
+   * covers the change. Ignored on desktop.
+   */
+  condensed?: boolean;
 }
 
 type ActiveDialog = "none" | "delete" | "create-channel" | "join-channel" | "rename";
@@ -83,9 +98,11 @@ export function SessionHeader({
   projectGitStatus,
   mainBranch,
   onSendMessage,
+  condensed = false,
 }: SessionHeaderProps) {
   const ws = useWebSocket();
   const isMobile = useIsMobile();
+  const isCondensed = isMobile && condensed;
   const isRunning = meta.state === "running";
   const isWorktree = !!meta.worktreeBranch;
   const isBusy = isRunning;
@@ -133,6 +150,15 @@ export function SessionHeader({
       isBusy={isBusy}
       hasChannel={channel.hasChannel}
       cleaning={actions.cleaning}
+      // Pin and archive are header buttons on the desktop and menu rows on the
+      // phone. Same controls on both layouts, at the depth the width allows:
+      // they were 64px of a 393px band for two gestures a phone session makes
+      // about once, and the sidebar row already offers both.
+      placement={
+        isMobile ? { pinned: !!meta.pinned, archived: !!meta.archivedAt, canArchive } : undefined
+      }
+      onTogglePin={() => togglePin(ws, meta)}
+      onToggleArchive={() => toggleArchive(ws, meta)}
       onStop={actions.handleStop}
       onRestart={actions.handleRestart}
       onResetConversation={actions.handleResetConversation}
@@ -154,12 +180,32 @@ export function SessionHeader({
 
   return (
     <>
-      <PageHeader accentColor={accentColor} wash={wash}>
-        {isMobile ? (
+      <PageHeader accentColor={accentColor} wash={wash} dense={isCondensed}>
+        {isCondensed ? (
+          // Typing. The band keeps what a half-written message needs — which
+          // session this lands in, and whether it is busy — and drops the rest
+          // for eighteen pixels of transcript.
+          <>
+            <SessionBadge
+              state={resolveSessionState({
+                state: meta.state,
+                hasPendingApproval: hasPendingInput,
+              })}
+              size="sm"
+              bare
+            />
+            <span className="truncate text-[13px] font-medium">{meta.name || "Untitled"}</span>
+            <div className="ml-auto flex items-center gap-0.5 shrink-0">
+              {dockToggle}
+              <ConnectionIndicator />
+              {actionMenu}
+            </div>
+          </>
+        ) : isMobile ? (
           // Mobile: the full name owns the header (up to two lines) with a dim
-          // status/branch/ahead subline. Tapping opens the detail sheet. The
-          // branch finish action lives on the strip below (see ChatPanel), and
-          // the read-only effort/branch chips move into the sheet.
+          // subline that narrates work while there is any and reports the brain
+          // when there is not. Tapping opens the detail sheet; the branch finish
+          // action lives on the strip below (see ChatPanel).
           <>
             <SessionIdentity
               meta={meta}
@@ -182,7 +228,6 @@ export function SessionHeader({
                   sheet is unreachable — only a `?dock=` deep link could open
                   it. */}
               {dockToggle}
-              {placementActions}
               <ConnectionIndicator />
               {actionMenu}
             </div>
@@ -284,6 +329,27 @@ export function SessionHeader({
   );
 }
 
+/**
+ * The two filing gestures, as functions rather than only as buttons: the
+ * desktop header draws them, the phone's ⋯ menu lists them, and both go through
+ * the same call so a pin cannot mean two things.
+ */
+function togglePin(ws: ReturnType<typeof useWebSocket>, meta: SessionMetadata) {
+  setSessionPinned(ws, meta.id, !meta.pinned, meta.pinned ? 0 : meta.pinOrder + 1).catch((err) =>
+    toast.error(getErrorMessage(err, "Failed to update pin")),
+  );
+}
+
+function toggleArchive(ws: ReturnType<typeof useWebSocket>, meta: SessionMetadata) {
+  const archived = !!meta.archivedAt;
+  const action = archived ? unarchiveSession : archiveSession;
+  action(ws, meta.id).catch((err) =>
+    toast.error(
+      getErrorMessage(err, archived ? "Failed to unarchive session" : "Failed to archive session"),
+    ),
+  );
+}
+
 function SessionPlacementActions({
   meta,
   canArchive,
@@ -297,31 +363,13 @@ function SessionPlacementActions({
   const archiveLabel = archived ? "Unarchive session" : "Archive session";
   const PinIcon = meta.pinned ? PinOff : Pin;
 
-  const togglePin = () => {
-    setSessionPinned(ws, meta.id, !meta.pinned, meta.pinned ? 0 : meta.pinOrder + 1).catch((err) =>
-      toast.error(getErrorMessage(err, "Failed to update pin")),
-    );
-  };
-
-  const toggleArchive = () => {
-    const action = archived ? unarchiveSession : archiveSession;
-    action(ws, meta.id).catch((err) =>
-      toast.error(
-        getErrorMessage(
-          err,
-          archived ? "Failed to unarchive session" : "Failed to archive session",
-        ),
-      ),
-    );
-  };
-
   return (
     <fieldset className="flex items-center gap-0.5" aria-label="Session placement">
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        onClick={togglePin}
+        onClick={() => togglePin(ws, meta)}
         aria-label={pinLabel}
         aria-pressed={meta.pinned}
         title={pinLabel}
@@ -335,7 +383,7 @@ function SessionPlacementActions({
         type="button"
         variant="ghost"
         size="icon-sm"
-        onClick={toggleArchive}
+        onClick={() => toggleArchive(ws, meta)}
         disabled={!archived && !canArchive}
         aria-label={
           !archived && !canArchive
@@ -386,9 +434,23 @@ function ParkedScheduleChip({ sessionId, state }: { sessionId: string; state: st
   );
 }
 
-// The dim metadata line under the name on mobile: a status dot + label, the
-// branch, and the commits-ahead count — the essentials that were scattered
-// across chips before, now glanceable without a tap.
+/**
+ * The dim line under the name on mobile, which reports **the most specific
+ * thing true right now** and nothing else.
+ *
+ * Ranked, because one line cannot hold three subjects and the ranking is the
+ * design: live work first (`formatPulse`, the same narration the sidebar row
+ * uses), then a state actually worth a word — stopped, failed, waiting, or a
+ * parked loop with its next fire — and, when the session is merely idle, the
+ * brain: which model answers and whether it stops to ask.
+ *
+ * That last rung is what pays for the composer's tools row being gone.
+ * `CLAUDE.md` argues a phone hiding both model and mode "answers neither", and
+ * it is right — but the row it was arguing for cost 48px on the tightest
+ * screen in the app, while this line was sitting there saying "Idle". Idle is
+ * exactly when the reading is worth having and exactly when the line is free,
+ * so the fact survives at zero cost and the *controls* live in the `+` tray.
+ */
 function MobileSubline({
   meta,
   hasPendingApproval,
@@ -411,25 +473,31 @@ function MobileSubline({
   const nextSchedule = useNextSchedule(meta.id);
   const now = useNow();
   const parked = meta.state === "stopped" ? nextSchedule : null;
-  // While there is work to narrate, the narration wins the line: "editing
-  // derive.ts · 12 tool calls" is what the operator came to know, and the
-  // branch is one tap away in the detail sheet.
-  const live = !parked && hasLiveWork({ state: meta.state, agentsInFlight });
+  const subject = sublineSubject({
+    live: hasLiveWork({ state: meta.state, agentsInFlight }),
+    parked: !!parked,
+    badgeState,
+  });
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
       <SessionBadge state={badgeState} size="sm" bare />
-      {live ? (
+      {subject === "work" && (
         <SessionWorkLine
           sessionId={meta.id}
           state={meta.state}
           agentsInFlight={agentsInFlight}
           className="min-w-0 flex-1"
         />
-      ) : (
+      )}
+      {subject === "brain" && <BrainReading meta={meta} />}
+      {subject === "parked" && parked && (
         <span className="truncate">
-          {parked ? `next ${untilText(parked.nextRunAt, now)} · ${parked.name}` : label}
+          next {untilText(parked.nextRunAt, now)} &middot; {parked.name}
         </span>
       )}
+      {subject === "state" && <span className="truncate">{label}</span>}
+      <span className="flex-1" />
+
       {/* The same element the desktop header carries, at the smaller size —
           one location, one reading, whichever layout you are on. */}
       <SessionLocation
@@ -448,12 +516,26 @@ function MobileSubline({
           {ahead}
         </span>
       )}
-      {ahead > 0 && (
-        <span className="flex items-center gap-0.5 shrink-0 text-success">
-          <ArrowUp className="size-2.5" />
-          {ahead}
-        </span>
-      )}
+    </span>
+  );
+}
+
+/**
+ * Which brain answers, and whether it stops to ask — a reading, never controls.
+ * The model name plus the effort meter is the same pair `BrainControl` draws in
+ * the composer, at the size a 16px line can hold; the permission glyph beside
+ * it is `PermissionMark`'s read-only form.
+ */
+function BrainReading({ meta }: { meta: SessionMetadata }) {
+  const label = sessionModelLabel(meta.model, meta.resolvedModel);
+  const effort = (meta.effort as EffortLevel) ?? "";
+  const mode = meta.autoApproveMode as AutoApproveMode | undefined;
+  if (!label && !mode) return null;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {label && <span className="truncate">{label}</span>}
+      <EffortMeter effort={effort} />
+      {mode && <PermissionMark mode={mode} dense />}
     </span>
   );
 }

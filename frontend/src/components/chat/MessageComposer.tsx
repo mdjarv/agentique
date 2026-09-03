@@ -16,10 +16,8 @@ import type { ModelId, ProviderId } from "~/lib/session/actions";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AttachmentStrip } from "./composer/AttachmentStrip";
-import { BrainControl } from "./composer/BrainControl";
 import { ComposerTextarea, type ComposerTextareaHandle } from "./composer/ComposerTextarea";
 import { ComposerToolbar } from "./composer/ComposerToolbar";
-import { PermissionMark } from "./composer/PermissionMark";
 import { useComposerSend } from "./composer/useComposerSend";
 import { useComposerSpeech } from "./composer/useComposerSpeech";
 import { ImageLightbox } from "./ImageLightbox";
@@ -64,11 +62,19 @@ interface MessageComposerProps {
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
   /**
-   * Mobile "focus" layout: collapse the toolbar behind a `+` tools tray so the
-   * bar is just input + send, and the rarely-changed mode/model controls stay
-   * out of the way. No-op on desktop and on the new-session form (opt-in).
+   * Mobile "focus" layout: one flush row — a `+` tools tray, the field, and
+   * send — with everything else behind the tray. No-op on desktop and on the
+   * new-session form (opt-in).
    */
   focusMode?: boolean;
+  /**
+   * The context meter, drawn as the shell's top edge in the focus layout. A
+   * node rather than the usage itself: the composer is about the next message
+   * and has no business reading a session's token counts.
+   */
+  topEdge?: React.ReactNode;
+  /** Focus entered or left the composer. See `ComposerTextarea`. */
+  onFocusWithinChange?: (focused: boolean) => void;
   /**
    * Opens a live voice call for this session. Absent hides the control, which
    * is what an unconfigured [voice] backend looks like from here.
@@ -111,6 +117,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onEmptySubmit,
       templatePicker,
       focusMode,
+      topEdge,
+      onFocusWithinChange,
       onStartLive,
       stashedText,
       stashDepth,
@@ -221,9 +229,19 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       />
     );
 
+    // The phone drops dictation: the keyboard two rows below the composer has
+    // its own mic, and duplicating a platform control cost a 40px target on the
+    // one layout that has none to spare. Ctrl+Shift+M still works where there
+    // is a keyboard to press it on.
+    const showMic = speech.isSupported && !useFocusLayout;
+    // A phone icon beside a half-written message is a mis-tap in front of Send,
+    // so the call steps aside once there is something to send. It comes back
+    // when the field is empty, which is when a call is what you wanted anyway.
+    const showLive = !!onStartLive && !(useFocusLayout && hasContent);
+
     const rightActions = (
       <div className="flex items-center gap-1">
-        {speech.isSupported && (
+        {showMic && (
           <button
             type="button"
             {...speech.micHandlers}
@@ -244,7 +262,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
             )}
           </button>
         )}
-        {onStartLive && (
+        {showLive && (
           <button
             type="button"
             onClick={onStartLive}
@@ -282,55 +300,102 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       </div>
     );
 
-    // Focus layout (mobile session): the bar is a `+` tools toggle, a summary,
-    // and the send cluster; attach, templates and dictate live in the
-    // collapsible tray the `+` reveals.
-    //
-    // The summary stays *outside* the tray on purpose. Which model is answering
-    // and whether it will stop to ask are the two facts worth checking before
-    // sending, and a phone that hides both behind a tap cannot answer either.
-    // They are a reading here, not controls — the tray is where they change.
-    const summary =
-      model || autoApproveMode !== undefined ? (
-        <div className="flex items-center gap-1 min-w-0">
-          <BrainControl model={model} modelDisplayName={modelDisplayName} effort={effort} />
-          {autoApproveMode !== undefined && <PermissionMark mode={autoApproveMode} />}
-        </div>
-      ) : null;
-
-    const bottomBar = useFocusLayout ? (
-      <div className="flex flex-col gap-2 px-2 pb-2">
-        {showTools && (
-          <div className="rounded-xl border border-border/60 bg-muted/20 px-1.5 py-1">
-            {toolbar}
-          </div>
+    // The `+` toggle: the only thing left of the field in the focus layout.
+    // Attach, templates, the brain and the permission mode are all behind it —
+    // the tray is where a setting is *changed*; where it is *read* is the
+    // header's subline, which is idle exactly when the reading is worth having.
+    const trayToggle = (
+      <button
+        type="button"
+        onClick={() => setShowTools((v) => !v)}
+        className={cn(
+          "h-9 w-9 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0",
+          showTools
+            ? "bg-agent/15 text-agent"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
         )}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowTools((v) => !v)}
-            className={cn(
-              "h-10 w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer shrink-0",
-              showTools
-                ? "bg-agent/15 text-agent"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
-            )}
-            aria-label={showTools ? "Hide tools" : "Show tools"}
-            aria-expanded={showTools}
-          >
-            <Plus className={cn("h-5 w-5 transition-transform", showTools && "rotate-45")} />
-          </button>
-          {!showTools && summary}
-          <div className="flex-1" />
-          {rightActions}
-        </div>
-      </div>
-    ) : (
+        aria-label={showTools ? "Hide tools" : "Show tools"}
+        aria-expanded={showTools}
+      >
+        <Plus className={cn("h-5 w-5 transition-transform", showTools && "rotate-45")} />
+      </button>
+    );
+
+    const tray =
+      useFocusLayout && showTools ? (
+        <div className="border-b border-border/50 bg-muted/20 px-1.5 py-1">{toolbar}</div>
+      ) : undefined;
+
+    const bottomBar = useFocusLayout ? null : (
       <div className="flex items-center justify-between px-2 pb-2">
         {toolbar}
         {rightActions}
       </div>
     );
+
+    const textarea = (
+      <ComposerTextarea
+        ref={inputRef}
+        projectId={projectId}
+        initialText={initialText}
+        placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
+        disabled={!!disabled || send.submitting}
+        busy={send.submitting}
+        isDragging={isDragging}
+        dropHandlers={{
+          onDrop: handleDrop,
+          onDragOver: handleDragOver,
+          onDragLeave: handleDragLeave,
+        }}
+        onPaste={handlePaste}
+        stashBanner={stashBanner}
+        bottomBar={bottomBar}
+        inline={useFocusLayout}
+        topEdge={useFocusLayout ? topEdge : undefined}
+        tray={tray}
+        leading={useFocusLayout ? trayToggle : undefined}
+        trailing={useFocusLayout ? rightActions : undefined}
+        onFocusWithinChange={onFocusWithinChange}
+        onContentChange={handleContentChange}
+        onSubmit={handleEnter}
+        onStash={onStash}
+        onUnstash={onUnstash}
+        onToggleSpeech={speech.isSupported ? speech.toggle : undefined}
+        speechSupported={speech.isSupported}
+        onTextPersist={onTextPersist}
+      />
+    );
+
+    const fileField = (
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPTED_TYPES}
+        multiple
+        className="hidden"
+        onChange={handleFileInput}
+      />
+    );
+
+    // Flush on the phone — no card, no outer padding, only the bottom inset the
+    // hardware demands.
+    if (useFocusLayout) {
+      return (
+        <div className="shrink-0">
+          <div className="px-2">
+            <AttachmentStrip
+              attachments={attachments}
+              onRemove={removeAttachment}
+              onPreview={setLightboxSrc}
+            />
+          </div>
+          {textarea}
+          <div className="h-[env(safe-area-inset-bottom)]" />
+          {fileField}
+          <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+        </div>
+      );
+    }
 
     return (
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
@@ -339,41 +404,8 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
           onRemove={removeAttachment}
           onPreview={setLightboxSrc}
         />
-
-        <ComposerTextarea
-          ref={inputRef}
-          projectId={projectId}
-          initialText={initialText}
-          placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
-          disabled={!!disabled || send.submitting}
-          busy={send.submitting}
-          isDragging={isDragging}
-          dropHandlers={{
-            onDrop: handleDrop,
-            onDragOver: handleDragOver,
-            onDragLeave: handleDragLeave,
-          }}
-          onPaste={handlePaste}
-          stashBanner={stashBanner}
-          bottomBar={bottomBar}
-          onContentChange={handleContentChange}
-          onSubmit={handleEnter}
-          onStash={onStash}
-          onUnstash={onUnstash}
-          onToggleSpeech={speech.isSupported ? speech.toggle : undefined}
-          speechSupported={speech.isSupported}
-          onTextPersist={onTextPersist}
-        />
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPTED_TYPES}
-          multiple
-          className="hidden"
-          onChange={handleFileInput}
-        />
-
+        {textarea}
+        {fileField}
         <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       </div>
     );

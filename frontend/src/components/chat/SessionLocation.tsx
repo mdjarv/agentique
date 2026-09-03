@@ -150,22 +150,37 @@ export const SessionLocation = memo(function SessionLocation({
     </span>
   );
 
+  // On the phone a *linked* worktree drops its branch and keeps its glyph. The
+  // branch there is `session-<the session's own id>` — derived from the session
+  // whose name is printed in full one line above — so it was 16ch of a 393px
+  // band saying what the row already said. The kind still reads, because the
+  // kind was always the glyph and the colour. The main-worktree case keeps its
+  // words: that one names the *project's* branch, in amber, and it is the case
+  // worth reading.
+  const treeLabelled = !compact || zone.kind === "main" || zone.tone === "fault";
+
   const treeZone = (
     <span
       className={cn(
         "inline-flex items-center gap-1 min-w-0 font-mono border-l border-border/40",
         size,
-        pad,
+        treeLabelled ? pad : compact ? "px-1 py-0.5" : pad,
         ZONE_TONE[zone.tone],
       )}
+      title={treeLabelled ? undefined : zone.title}
     >
       <WorktreeGlyph className="size-2.5 shrink-0" />
-      <span className="truncate max-w-[16ch]">{zone.label}</span>
+      {treeLabelled && <span className="truncate max-w-[16ch]">{zone.label}</span>}
     </span>
   );
 
   const shell = cn(
-    "inline-flex items-stretch shrink-0 min-w-0 rounded-md border border-border/40 bg-muted/30 overflow-hidden",
+    "inline-flex items-stretch min-w-0 rounded-md border border-border/40 bg-muted/30 overflow-hidden",
+    // Compact is the phone's subline, where the pill shares 393px with a live
+    // narration and has to be the thing that gives ground: `shrink-0` there
+    // overflowed the identity button and painted the branch under the header's
+    // own buttons. The desktop header has the room and keeps its full width.
+    compact ? "shrink" : "shrink-0",
     className,
   );
 

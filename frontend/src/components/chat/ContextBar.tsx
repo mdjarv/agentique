@@ -1,89 +1,50 @@
 import { AlertTriangle } from "lucide-react";
 import { Progress } from "~/components/ui/progress";
 import { formatTokens } from "~/lib/format";
+import { contextPercent, contextTier } from "~/lib/session/context-tier";
 import { cn } from "~/lib/utils";
 import type { ContextUsage } from "~/stores/chat-store";
 
 interface ContextBarProps {
   usage?: ContextUsage | null;
   compacting?: boolean;
-  /** Slim variant for mobile — thinner bar, tighter padding, smaller label. */
-  compact?: boolean;
 }
 
-interface Tier {
-  label: string;
-  bar: string;
-  track: string;
-  text: string;
-}
-
-function getTier(pct: number): Tier {
-  if (pct >= 95) {
-    return {
-      label: "Critical",
-      bar: "[&>[data-slot=progress-indicator]]:bg-red-500",
-      track: "bg-red-500/15",
-      text: "text-red-500",
-    };
-  }
-  if (pct >= 80) {
-    return {
-      label: "High Usage",
-      bar: "[&>[data-slot=progress-indicator]]:bg-orange-500",
-      track: "bg-orange-500/15",
-      text: "text-orange-400",
-    };
-  }
-  if (pct >= 60) {
-    return {
-      label: "",
-      bar: "[&>[data-slot=progress-indicator]]:bg-amber-500",
-      track: "bg-amber-500/10",
-      text: "text-muted-foreground",
-    };
-  }
-  return {
-    label: "",
-    bar: "[&>[data-slot=progress-indicator]]:bg-emerald-500",
-    track: "bg-emerald-500/10",
-    text: "text-muted-foreground",
-  };
-}
-
-export function ContextBar({ usage, compacting, compact }: ContextBarProps) {
-  const pad = compact ? "px-3 py-0.5" : "px-4 py-1";
-  const barH = compact ? "h-1" : "h-1.5";
-  const txt = compact ? "text-[10px]" : "text-[11px]";
-
+/**
+ * The desktop reading: a full row with the bar, the percentage and the token
+ * count. The phone does not get this — there the meter is the composer's top
+ * edge (`ContextEdge`), because a row of its own was 17px spent on a number
+ * nobody acts on below 80%.
+ *
+ * Both read `lib/session/context-tier`, so the two surfaces cannot disagree
+ * about what a percentage looks like.
+ */
+export function ContextBar({ usage, compacting }: ContextBarProps) {
   if (compacting) {
     return (
-      <div className={cn("flex items-center gap-2 shrink-0", pad)}>
-        <div className={cn("flex-1 rounded-full overflow-hidden compact-stripes", barH)} />
-        <span className={cn("text-primary shrink-0", txt)}>Compacting...</span>
+      <div className="flex items-center gap-2 shrink-0 px-4 py-1">
+        <div className="flex-1 h-1.5 rounded-full overflow-hidden compact-stripes" />
+        <span className="text-primary shrink-0 text-[11px]">Compacting...</span>
       </div>
     );
   }
 
   if (!usage) return null;
 
-  // usedTokens is whichever signal spoke last — a live measurement after a
-  // compaction, the turn/stream numbers otherwise. It is absent only for usage
-  // restored from history predating the field.
+  const pct = contextPercent(usage);
+  const tier = contextTier(pct);
   const used = usage.usedTokens ?? usage.inputTokens + usage.outputTokens;
-  const pct = Math.min(Math.round((used / usage.contextWindow) * 100), 100);
-  const tier = getTier(pct);
 
   return (
-    <div className={cn("flex items-center gap-2 shrink-0", pad)}>
+    <div className="flex items-center gap-2 shrink-0 px-4 py-1">
       {tier.label && (
-        <span className={cn("inline-flex items-center gap-1 shrink-0", txt, tier.text)}>
+        <span className={cn("inline-flex items-center gap-1 shrink-0 text-[11px]", tier.text)}>
           <AlertTriangle className="size-3" />
           {tier.label}
         </span>
       )}
-      <Progress value={pct} className={cn("flex-1", barH, tier.track, tier.bar)} />
-      <span className={cn("tabular-nums shrink-0", txt, tier.text)}>
+      <Progress value={pct} className={cn("flex-1 h-1.5", tier.track, tier.indicator)} />
+      <span className={cn("tabular-nums shrink-0 text-[11px]", tier.text)}>
         {pct}%
         <span className="text-muted-foreground-faint ml-1">
           {formatTokens(used)}/{formatTokens(usage.contextWindow)}

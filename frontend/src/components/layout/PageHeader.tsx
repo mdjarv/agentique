@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { cn } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
 interface PageHeaderProps {
@@ -15,15 +16,23 @@ interface PageHeaderProps {
    * plain header keeps meaning "here". See `lib/machine-colors.ts`.
    */
   wash?: React.CSSProperties;
+  /**
+   * The condensed band: name and state only, at 32px. Used while the phone's
+   * composer has focus — see `SessionHeader`.
+   */
+  dense?: boolean;
 }
 
-export function PageHeader({ children, accentColor, wash }: PageHeaderProps) {
+export function PageHeader({ children, accentColor, wash, dense }: PageHeaderProps) {
   const isMobile = useIsMobile();
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   return (
     <header
-      className="border-b bg-sidebar px-4 flex items-center gap-2 text-sm shrink-0 min-h-12 py-1"
+      className={cn(
+        "border-b bg-sidebar px-4 flex items-center gap-2 text-sm shrink-0",
+        dense ? "min-h-8 py-0" : "min-h-12 py-1",
+      )}
       style={{
         ...(accentColor ? { borderBottomColor: `${accentColor}40` } : undefined),
         ...wash,
@@ -33,10 +42,13 @@ export function PageHeader({ children, accentColor, wash }: PageHeaderProps) {
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
-          className="h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors -ml-2 shrink-0"
+          className={cn(
+            "flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors -ml-2 shrink-0",
+            dense ? "h-7 w-7" : "h-8 w-8",
+          )}
           aria-label="Open sidebar"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className={dense ? "h-4 w-4" : "h-5 w-5"} />
         </button>
       )}
       {children}

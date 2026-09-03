@@ -33,6 +33,31 @@ interface ComposerTextareaProps {
   stashBanner?: ReactNode;
   /** Bottom bar rendered below the textarea. Pass a stable element so typing skips it. */
   bottomBar: ReactNode;
+  /**
+   * One-row layout: the field and its controls share a line and the shell goes
+   * flush to the pane's edges. `leading`/`trailing` are the controls; the
+   * stacked layout's `bottomBar` is not rendered. Mobile only — see
+   * `MessageComposer`.
+   */
+  inline?: boolean;
+  /**
+   * Rendered above everything, outside the padding, at the shell's top edge —
+   * the context meter. Full-bleed by construction, so it is the border rather
+   * than something sitting on it.
+   */
+  topEdge?: ReactNode;
+  /** The collapsible tools tray, above the input row and below `topEdge`. */
+  tray?: ReactNode;
+  /** Inline layout: controls left of the field. */
+  leading?: ReactNode;
+  /** Inline layout: controls right of the field (send lives here). */
+  trailing?: ReactNode;
+  /**
+   * Focus entered or left the whole composer — not just the textarea, so
+   * tapping a button inside it does not read as leaving. Drives the header's
+   * condensed state.
+   */
+  onFocusWithinChange?: (focused: boolean) => void;
   /** Fires only when trimmed-emptiness flips, so the shell re-renders on edges, not per keystroke. */
   onContentChange: (hasContent: boolean) => void;
   /** Enter-key behavior (empty-submit-or-send), decided by the shell which knows attachments. */
@@ -64,6 +89,12 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
       onPaste,
       stashBanner,
       bottomBar,
+      inline = false,
+      topEdge,
+      tray,
+      leading,
+      trailing,
+      onFocusWithinChange,
       onContentChange,
       onSubmit,
       onStash,
@@ -169,6 +200,41 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
       }
     };
 
+    // focusin/focusout, so a tap on a button inside the shell is not a blur.
+    // `relatedTarget` is null when focus leaves the document entirely, which
+    // counts as leaving.
+    const focusHandlers = onFocusWithinChange
+      ? {
+          onFocus: () => onFocusWithinChange(true),
+          onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+              onFocusWithinChange(false);
+            }
+          },
+        }
+      : {};
+
+    const field = (
+      <textarea
+        ref={textareaRef}
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onPaste={onPaste}
+        placeholder={placeholder}
+        enterKeyHint={isMobile ? "enter" : "send"}
+        className={cn(
+          "w-full resize-none bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto",
+          inline ? "px-1 py-2" : "px-3 pt-3 pb-1",
+        )}
+        rows={1}
+        style={{ maxHeight: inline ? "140px" : "200px" }}
+        disabled={disabled}
+        aria-busy={busy}
+      />
+    );
+
     return (
       <div className="relative">
         {autocomplete.isOpen && autocomplete.triggerType && (
@@ -181,32 +247,36 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
         )}
         <div
           className={cn(
-            "rounded-xl border bg-agent/5 transition-all",
+            "bg-agent/5 transition-all",
+            // Flush to the pane on the phone: the card's border and its 12px of
+            // outer padding were 26px of a screen that has 427.
+            inline ? "border-t" : "rounded-xl border",
             isDragging
               ? "border-agent ring-2 ring-agent/30"
-              : "focus-within:border-agent/50 focus-within:ring-1 focus-within:ring-agent/30",
+              : inline
+                ? "border-agent/25 focus-within:border-agent/50"
+                : "focus-within:border-agent/50 focus-within:ring-1 focus-within:ring-agent/30",
           )}
           onDrop={dropHandlers.onDrop}
           onDragOver={dropHandlers.onDragOver}
           onDragLeave={dropHandlers.onDragLeave}
+          {...focusHandlers}
         >
+          {topEdge}
+          {tray}
           {stashBanner}
-          <textarea
-            ref={textareaRef}
-            autoFocus
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={onPaste}
-            placeholder={placeholder}
-            enterKeyHint={isMobile ? "enter" : "send"}
-            className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder:text-muted-foreground focus:outline-none overflow-y-auto"
-            rows={1}
-            style={{ maxHeight: "200px" }}
-            disabled={disabled}
-            aria-busy={busy}
-          />
-          {bottomBar}
+          {inline ? (
+            <div className="flex items-end gap-1.5 px-2 py-1">
+              {leading}
+              <div className="min-w-0 flex-1">{field}</div>
+              {trailing}
+            </div>
+          ) : (
+            <>
+              {field}
+              {bottomBar}
+            </>
+          )}
         </div>
       </div>
     );

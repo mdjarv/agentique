@@ -1,4 +1,6 @@
 import {
+  Archive,
+  ArchiveRestore,
   Check,
   Copy,
   Eraser,
@@ -7,6 +9,8 @@ import {
   MessageSquareX,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   RotateCcw,
   Square,
   Trash2,
@@ -46,6 +50,14 @@ interface SessionActionMenuProps {
   onJoinChannel: () => void;
   /** Open the delete-session dialog. */
   onDelete: () => void;
+  /**
+   * Pin and archive as menu rows, for the layout with no room to draw them.
+   * Absent means the surface draws its own buttons (desktop) and the rows are
+   * left out — the same control, never twice on one screen.
+   */
+  placement?: { pinned: boolean; archived: boolean; canArchive: boolean };
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
 }
 
 /**
@@ -71,6 +83,9 @@ export function SessionActionMenu({
   onCreateChannel,
   onJoinChannel,
   onDelete,
+  placement,
+  onTogglePin,
+  onToggleArchive,
 }: SessionActionMenuProps) {
   const { copied: refCopied, copy: copyRef } = useCopyToClipboard();
 
@@ -82,6 +97,31 @@ export function SessionActionMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {placement && (
+          <>
+            <DropdownMenuItem onClick={onTogglePin} className="text-xs gap-2">
+              {placement.pinned ? (
+                <PinOff className="h-3.5 w-3.5" />
+              ) : (
+                <Pin className="h-3.5 w-3.5" />
+              )}
+              {placement.pinned ? "Unpin session" : "Pin session"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onToggleArchive}
+              disabled={!placement.archived && !placement.canArchive}
+              className="text-xs gap-2"
+            >
+              {placement.archived ? (
+                <ArchiveRestore className="h-3.5 w-3.5" />
+              ) : (
+                <Archive className="h-3.5 w-3.5" />
+              )}
+              {placement.archived ? "Unarchive session" : "Archive session"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {canStop && (
           <DropdownMenuItem onClick={onStop} className="text-xs gap-2">
             <Square className="h-3.5 w-3.5" />

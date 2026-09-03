@@ -58,9 +58,16 @@ const MODE_GROUND: Record<AutoApproveMode, string> = {
 export const PermissionMark = memo(function PermissionMark({
   mode,
   onChange,
+  dense = false,
 }: {
   mode: AutoApproveMode;
   onChange?: (value: AutoApproveMode) => void;
+  /**
+   * The header's subline, where the line is 16px and everything on it is
+   * 10–11px. The disc survives at this size — it is what the mark means — but
+   * the composer's 16px glyph would set the line's height on its own.
+   */
+  dense?: boolean;
 }) {
   const Glyph = MODE_GLYPH[mode];
   const title = `${PERMISSION_VERBS[mode]} — ${PERMISSION_DESCRIPTIONS[mode]}`;
@@ -68,11 +75,16 @@ export const PermissionMark = memo(function PermissionMark({
   if (!onChange) {
     return (
       <span
-        className={cn("flex items-center p-1 shrink-0", PERMISSION_COLORS[mode], MODE_GROUND[mode])}
+        className={cn(
+          "flex items-center shrink-0",
+          dense ? "p-0.5" : "p-1",
+          PERMISSION_COLORS[mode],
+          MODE_GROUND[mode],
+        )}
         title={title}
         aria-label={title}
       >
-        <Glyph className="size-4" />
+        <Glyph className={dense ? "size-3" : "size-4"} />
       </span>
     );
   }

@@ -12,6 +12,7 @@ import { SpawnWorkerApprovalBanner } from "~/components/chat/banners/SpawnWorker
 import { ContextBar } from "~/components/chat/ContextBar";
 import { CrewStrip } from "~/components/chat/CrewStrip";
 import { ChangesView } from "~/components/chat/changes/ChangesView";
+import { ContextEdge } from "~/components/chat/composer/ContextEdge";
 import { CommitDialog } from "~/components/chat/dialogs/CommitDialog";
 import { CreatePRDialog } from "~/components/chat/dialogs/CreatePRDialog";
 import { DockResizeHandle } from "~/components/chat/dock/DockResizeHandle";
@@ -209,6 +210,11 @@ export function ChatPanel({
   const isDirty = meta?.hasUncommitted || meta?.hasDirtyWorktree;
   const hasRemoteChanges =
     (projectGitStatus?.aheadRemote ?? 0) > 0 || (projectGitStatus?.behindRemote ?? 0) > 0;
+
+  // Typing on the phone condenses the header — see `SessionHeader.condensed`.
+  // It tracks focus *within* the composer, so tapping the tools tray does not
+  // read as leaving it.
+  const [composerFocused, setComposerFocused] = useState(false);
 
   const [activeDialog, setActiveDialog] = useState<"none" | "pr" | "commit">("none");
   const [pendingTemplate, setPendingTemplate] = useState<{
@@ -692,6 +698,7 @@ export function ChatPanel({
       >
         <SessionHeader
           meta={meta}
+          condensed={composerFocused}
           hasPendingInput={!!pendingApproval || !!pendingQuestion}
           dockToggle={dockToggle}
           agentsInFlight={agentFlight.inFlight.length}
@@ -749,8 +756,12 @@ export function ChatPanel({
                 <ScheduleApprovalBanner key={sc.id} schedule={sc} />
               ))}
 
-              {(contextUsage || compacting) && (
-                <ContextBar usage={contextUsage} compacting={compacting} compact={isMobile} />
+              {/* The row is the desktop's reading. On the phone the meter is
+                  the composer's own top edge (`ContextEdge`, passed below):
+                  a row of its own was 17px reporting a number nobody acts on
+                  until it escalates. */}
+              {!isMobile && (contextUsage || compacting) && (
+                <ContextBar usage={contextUsage} compacting={compacting} />
               )}
               {/* Suppressed while parked: the schedule will resume this session.
                   Suppressed after an eviction: nothing interrupted it. */}
@@ -782,6 +793,12 @@ export function ChatPanel({
                 }
                 attachmentsSupported={attachmentsSupported}
                 focusMode
+                topEdge={
+                  contextUsage || compacting ? (
+                    <ContextEdge usage={contextUsage} compacting={compacting} />
+                  ) : undefined
+                }
+                onFocusWithinChange={setComposerFocused}
                 placeholder={
                   machineAway
                     ? machineFault
