@@ -27,8 +27,9 @@ const (
 	compressionTrigger int64 = 104857
 	compressionTarget  int64 = 52428
 
-	// geminiEventBuffer is how many outbound events may queue before frames are
-	// dropped. Same reasoning as the echo engine: the listener is real time.
+	// geminiEventBuffer is how many outbound events may queue before audio
+	// frames are dropped. Same reasoning as the echo engine: the listener is
+	// real time. Control events are never dropped — see emit.
 	geminiEventBuffer = 64
 )
 
@@ -288,12 +289,25 @@ func (e *geminiEngine) Close() error {
 	return err
 }
 
-// emit queues an event, dropping it if the consumer has fallen behind.
+// emit queues an event. Audio is the one kind that may be dropped when the
+// consumer has fallen behind: the listener is real time, and late audio is
+// worse than a gap. Every other kind is load-bearing — an unanswered
+// ToolCallEvent leaves the model paused forever, a lost TurnCompleteEvent
+// never flushes the client's queue, a lost fatal ErrorEvent is a call that
+// died without saying so — so control events wait for the consumer, bounded
+// by the engine's own lifetime rather than by a timer.
 func (e *geminiEngine) emit(ev Event) {
+	if _, droppable := ev.(AudioEvent); droppable {
+		select {
+		case e.events <- ev:
+		case <-e.ctx.Done():
+		default:
+		}
+		return
+	}
 	select {
 	case e.events <- ev:
 	case <-e.ctx.Done():
-	default:
 	}
 }
 
