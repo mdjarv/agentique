@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // handshakeDialer gives up rather than waiting forever, so an upgrade that is
@@ -290,4 +292,153 @@ type closeCountingEngine struct {
 func (e *closeCountingEngine) Close() error {
 	e.once.Do(func() { close(e.closed) })
 	return e.Engine.Close()
+}
+
+// trackingRecorder is a SessionTracker that records what the handler gave it.
+type trackingRecorder struct {
+	mu        sync.Mutex
+	refuse    error
+	closeCall func()
+	untracked bool
+}
+
+func (f *trackingRecorder) TrackWebSocket(_ *store.GetAuthSessionRow, closeConn func()) (func(), error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.refuse != nil {
+		return nil, f.refuse
+	}
+	f.closeCall = closeConn
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.untracked = true
+	}, nil
+}
+
+func (f *trackingRecorder) revoke() {
+	f.mu.Lock()
+	closeCall := f.closeCall
+	f.mu.Unlock()
+	if closeCall != nil {
+		closeCall()
+	}
+}
+
+func (f *trackingRecorder) wasUntracked() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.untracked
+}
+
+// Revoking the auth session that opened a call hangs the call up. The voice
+// socket is an authenticated WebSocket with a dispatcher behind it; before it
+// registered with the tracker, revocation and expiry closed /ws subscriptions
+// while a live microphone — and run_prompt — kept running on the dead
+// credential (docs/multi-machine.md: established sockets close on revocation).
+func TestRevokedAuthSessionHangsUpTheCall(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	tracker := &trackingRecorder{}
+	h.SetSessionTracker(tracker)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	tracker.revoke()
+
+	// The client is told, on the call's own exactly-once teardown — a raw
+	// socket close alone would race the call's writer and end without a word.
+	if closed := readControl(t, ws); closed.Type != msgClosed {
+		t.Fatalf("control frame after revocation = %q, want %q", closed.Type, msgClosed)
+	}
+
+	// And the close is enforced server-side rather than left to the client.
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for {
+		if _, _, err := ws.ReadMessage(); err != nil {
+			break
+		}
+	}
+
+	// And the registration is released once the call is gone.
+	deadline := time.Now().Add(5 * time.Second)
+	for !tracker.wasUntracked() {
+		if time.Now().After(deadline) {
+			t.Fatal("the tracker registration was never released after the call ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A session the tracker refuses — expired, or revoked during setup — never
+// gets a call. Reported on the socket, because the upgrade already happened.
+func TestUntrackableAuthSessionIsRefused(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	h.SetSessionTracker(&trackingRecorder{refuse: errors.New("auth session expired")})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v — refusal happens after the upgrade, on the socket", err)
+	}
+	defer ws.Close()
+
+	msg := readControl(t, ws)
+	if msg.Type != msgError {
+		t.Fatalf("control frame = %q, want %q", msg.Type, msgError)
+	}
+	if strings.Contains(msg.Message, "expired") {
+		t.Errorf("the tracker's detail reached the browser: %q — it belongs in the log", msg.Message)
+	}
+
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Error("the socket stayed open after the refusal")
+	}
+}
+
+// A call that ends normally releases its tracker registration, or the auth
+// service accumulates an entry per finished call for the session's lifetime.
+func TestFinishedCallReleasesItsTracking(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	tracker := &trackingRecorder{}
+	h.SetSessionTracker(tracker)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	_ = ws.Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !tracker.wasUntracked() {
+		if time.Now().After(deadline) {
+			t.Fatal("hanging up did not release the tracker registration")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
