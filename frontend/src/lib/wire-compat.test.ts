@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { GitSnapshotSchema } from "~/lib/generated-schemas";
+import {
+  GitSnapshotSchema,
+  PushSessionEventSchema,
+  PushTurnStartedSchema,
+} from "~/lib/generated-schemas";
 import {
   isUnknownOpError,
   LEGACY_OP,
@@ -220,5 +224,38 @@ describe("session.state accepts a payload from a peer that predates the rename",
     const cleared = { ...fromOldPeer, unseenCompletedAt: "" };
     expect(GitSnapshotSchema.safeParse(cleared).success).toBe(true);
     expect(readUnseenCompletedAt(cleared)).toBe("");
+  });
+});
+
+// The same required-field regression, one struct over: seq/epoch/turnIndex
+// were required in the generated schemas, so every session.event and
+// session.turn-started push from a paired machine on a pre-seq release failed
+// validation — the WHOLE payload silently dropped, its transcript frozen.
+// Wire fields stay optional; absent seq reads as unsequenced (0).
+describe("event pushes accept payloads from a peer that predates sequencing", () => {
+  it("validates a session.event without seq/epoch", () => {
+    const parsed = PushSessionEventSchema.safeParse({
+      sessionId: "s1",
+      event: { type: "text", content: "hello" },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("validates a session.turn-started without turnIndex", () => {
+    const parsed = PushTurnStartedSchema.safeParse({
+      sessionId: "s1",
+      prompt: "do the thing",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still validates a current peer's stamped payload", () => {
+    const parsed = PushSessionEventSchema.safeParse({
+      sessionId: "s1",
+      event: { type: "text", content: "hello" },
+      seq: 4,
+      epoch: 2,
+    });
+    expect(parsed.success).toBe(true);
   });
 });
