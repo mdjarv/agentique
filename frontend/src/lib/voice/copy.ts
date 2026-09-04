@@ -21,6 +21,7 @@ const REASON_WORDS: Record<string, string> = {
   idle: "Hung up after silence",
   timeout: "Hung up after silence",
   "engine-closed": "The voice engine closed the call",
+  "engine-error": "The voice engine failed",
   server_shutdown: "The server restarted",
 };
 

@@ -61,6 +61,25 @@ func TestEmitNeverDropsAToolCallBehindAFullBuffer(t *testing.T) {
 	<-delivered
 }
 
+// The receive loop's exit closes the event stream, whatever the exit path, so
+// a consumer blocked on it ends with the engine instead of waiting forever on
+// a corpse. Close afterwards must stay safe — the close moved out of it.
+func TestReceiveLoopExitClosesTheEventStream(t *testing.T) {
+	e := bareGeminiEngine(1)
+	e.start() // no session: the loop exits at once, which must close events
+	select {
+	case _, ok := <-e.events:
+		if ok {
+			t.Fatal("expected a closed channel, got an event")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("events stayed open after the receive loop exited")
+	}
+	if err := e.Close(); err != nil {
+		t.Fatalf("Close after loop exit: %v", err)
+	}
+}
+
 // A blocked control emit is bounded by the engine's lifetime: a consumer that
 // died must not wedge the receive loop forever.
 func TestEmitControlUnblocksWhenTheEngineCloses(t *testing.T) {

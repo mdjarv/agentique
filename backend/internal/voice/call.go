@@ -1008,7 +1008,16 @@ func (c *call) forward(ev Event) error {
 		c.log.Warn("voice engine error", "error", e.Err, "fatal", e.Fatal)
 		// The message is deliberately generic: the detail goes to the log, not
 		// to a browser that cannot act on it.
-		return c.sendControl(serverMessage{Type: msgError, Message: "the voice engine reported a problem"})
+		err := c.sendControl(serverMessage{Type: msgError, Message: "the voice engine reported a problem"})
+		if e.Fatal {
+			// A fatal error is an engine that cannot continue, and a call whose
+			// engine is gone must not sit on the idle ceiling with the mic
+			// streaming into a corpse. The error frame goes first — it is what
+			// stops the client's ringback — then the one closed frame; the
+			// pump's ended() check behind this return is what stops it.
+			c.endCall("engine-error")
+		}
+		return err
 
 	default:
 		c.log.Warn("voice unknown engine event", "type", ev)

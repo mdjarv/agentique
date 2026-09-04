@@ -123,12 +123,22 @@ func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string
 	}
 	e.session = session
 
+	e.start()
+	return e, nil
+}
+
+// start runs the receive loop and owns the event channel's close. The close
+// rides this goroutine's exit rather than Close, because every exit — a fatal
+// error included — must end the consumer's read: an emitted fatal ErrorEvent
+// followed by an open channel left the call pumping microphone audio into a
+// dead engine until the idle ceiling.
+func (e *geminiEngine) start() {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
+		defer close(e.events)
 		e.receiveLoop()
 	}()
-	return e, nil
 }
 
 // liveConfig builds the session configuration.
@@ -272,7 +282,8 @@ func (e *geminiEngine) noteSpeech() {
 	e.lastSpeechMu.Unlock()
 }
 
-// Close implements [Engine]. Idempotent.
+// Close implements [Engine]. Idempotent. The event channel is closed by the
+// receive goroutine's exit (see start), which the cancel here forces.
 func (e *geminiEngine) Close() error {
 	var err error
 	e.closeOnce.Do(func() {
@@ -284,7 +295,6 @@ func (e *geminiEngine) Close() error {
 		}
 		e.sendMu.Unlock()
 		e.wg.Wait()
-		close(e.events)
 	})
 	return err
 }
