@@ -167,7 +167,10 @@ func toReclaimResponse(res janitor.Result, skipped []janitor.Skipped) ReclaimRes
 // HandleDeleteWorktree removes a single orphaned worktree directory. The path is
 // validated to live strictly inside the worktrees root, at least two levels deep
 // (a <bucket>/<session-dir>), so it can never target the root, a bucket, or any
-// path outside the data directory.
+// path outside the data directory. Orphan-hood is re-derived server-side against
+// the sessions table: the usage snapshot the client acted on can be a minute
+// stale, and a session provisioned since then owns this path — removing it would
+// pull the tree out from under a running CLI.
 func (h *Handler) HandleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("path")
 	if raw == "" {
@@ -179,12 +182,41 @@ func (h *Handler) HandleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 		httperror.RespondError(w, err)
 		return
 	}
+	owned, err := h.worktreeOwned(r.Context(), target)
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("verify worktree is orphaned", err))
+		return
+	}
+	if owned {
+		httperror.RespondError(w, httperror.Forbidden("that worktree belongs to a session — reclaim or delete the session instead"))
+		return
+	}
 	if err := os.RemoveAll(target); err != nil {
 		httperror.RespondError(w, httperror.Internal("remove worktree", err))
 		return
 	}
 	h.invalidate()
 	httperror.JSON(w, http.StatusOK, map[string]string{"removed": target})
+}
+
+// worktreeOwned reports whether any session row references the path. Paths are
+// compared cleaned in Go rather than by SQL equality, because rows may store
+// the path in an uncleaned form. No DB view means orphan-hood cannot be proven,
+// which reads as owned: the guard fails closed.
+func (h *Handler) worktreeOwned(ctx context.Context, target string) (bool, error) {
+	if h.Queries == nil {
+		return true, nil
+	}
+	sessions, err := h.Queries.ListAllSessions(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range sessions {
+		if s.WorktreePath.Valid && s.WorktreePath.String != "" && filepath.Clean(s.WorktreePath.String) == target {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // HandleTrimBackups removes the oldest periodic database backups, keeping the
