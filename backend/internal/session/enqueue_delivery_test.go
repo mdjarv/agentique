@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/allbin/agentkit/runtime"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
@@ -20,10 +22,29 @@ import (
 // advertises none, so the two together cover both running branches.
 type midTurnCLISession struct {
 	*testutil.MockCLISession
+
+	mu       sync.Mutex
+	sendHook func(prompt string) error // optional; overrides SendMessage
 }
 
 func (c *midTurnCLISession) Capabilities() runtime.Capabilities {
 	return runtime.Capabilities{Provider: "mock", MidTurnSendMessage: true}
+}
+
+func (c *midTurnCLISession) SendMessage(ctx context.Context, prompt string, atts ...runtime.Attachment) error {
+	c.mu.Lock()
+	hook := c.sendHook
+	c.mu.Unlock()
+	if hook != nil {
+		return hook(prompt)
+	}
+	return c.MockCLISession.SendMessage(ctx, prompt, atts...)
+}
+
+func (c *midTurnCLISession) setSendHook(hook func(prompt string) error) {
+	c.mu.Lock()
+	c.sendHook = hook
+	c.mu.Unlock()
 }
 
 type midTurnConnector struct {
@@ -111,4 +132,54 @@ func (s *EnqueueDeliverySuite) TestRunningWithNativeMidTurnInjects() {
 	s.Require().NoError(err)
 	s.Equal(DeliveryMidTurn, delivery)
 	s.Empty(sess.pendingMessages, "a natively injected message is not buffered")
+}
+
+// The turn can complete between EnqueueMessage's in-flight check and the
+// runtime SendMessage, which then refuses with its state error. That race
+// must fall through to a fresh turn (the codex branch always did), not
+// surface "send message failed" for a message sent to an idle session.
+func (s *EnqueueDeliverySuite) TestMidTurnSendRacingCompletionFallsThroughToTurn() {
+	conn := &midTurnConnector{rc: s.Connector}
+	s.useConnector(conn)
+	sess := s.newSession()
+	s.Require().NoError(sess.Query(context.Background(), "work", nil))
+
+	conn.mu.Lock()
+	cli := conn.last
+	conn.mu.Unlock()
+	cli.setSendHook(func(string) error {
+		// Simulate the race: the turn completes underneath the send, and the
+		// send comes back with the runtime's state refusal only after the
+		// runtime has settled the turn (the order the real race produces).
+		s.Require().NoError(cli.Inject(testutil.ResultEvent(0)))
+		s.Require().Eventually(func() bool { return !sess.TurnInFlight() },
+			2*time.Second, 5*time.Millisecond, "turn never settled after completion")
+		return errors.New("runtime: cannot SendMessage in state idle")
+	})
+
+	delivery, err := s.svc.EnqueueMessage(context.Background(), sess.ID, "follow-up", nil)
+	s.Require().NoError(err)
+	s.Equal(DeliveryTurn, delivery)
+	s.Contains(cli.Queries(), "follow-up", "the message opens a fresh turn")
+}
+
+// A send refusal while the turn is still in flight is a real failure —
+// falling through would hand a genuinely running session a duplicate fresh
+// turn, so the error surfaces instead.
+func (s *EnqueueDeliverySuite) TestMidTurnSendFailureWhileRunningSurfaces() {
+	conn := &midTurnConnector{rc: s.Connector}
+	s.useConnector(conn)
+	sess := s.newSession()
+	s.Require().NoError(sess.Query(context.Background(), "work", nil))
+
+	conn.mu.Lock()
+	cli := conn.last
+	conn.mu.Unlock()
+	cli.setSendHook(func(string) error {
+		return errors.New("transport broke")
+	})
+
+	_, err := s.svc.EnqueueMessage(context.Background(), sess.ID, "follow-up", nil)
+	s.Require().ErrorContains(err, "transport broke")
+	s.NotContains(cli.Queries(), "follow-up", "a failed mid-turn send must not open a duplicate turn")
 }

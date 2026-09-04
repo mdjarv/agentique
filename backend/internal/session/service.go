@@ -836,18 +836,28 @@ func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, 
 		return "", err
 	}
 
-	// Running: deliver mid-turn.
-	if sess.State() == StateRunning {
+	// Running: deliver mid-turn. Busy comes from the runtime's own turn
+	// lifecycle (TurnInFlight), never the State() mirror, which lags the
+	// runtime on both edges of a turn.
+	if sess.TurnInFlight() {
 		if sess.supportsNativeMidTurn() {
-			if err := sess.SendMessage(prompt, attachments); err != nil {
-				return "", fmt.Errorf("send message failed: %w", err)
+			sendErr := sess.SendMessage(prompt, attachments)
+			if sendErr == nil {
+				return DeliveryMidTurn, nil
 			}
-			return DeliveryMidTurn, nil
-		}
-		// No native mid-turn channel — buffer and replay on the next idle. A
-		// false return means the turn completed between the state check and the
-		// enqueue; fall through to send it as a fresh turn.
-		if sess.QueuePendingMessage(prompt, attachments) {
+			// The turn can complete between the check and the send, and the
+			// runtime then refuses with its state error. Only that race falls
+			// through to a fresh turn — judged by re-asking the runtime, not
+			// by matching the error text. A refusal while the turn is still
+			// in flight is a real failure (transport, dead CLI), and a fresh
+			// turn for it would be refused as busy anyway.
+			if sess.TurnInFlight() {
+				return "", fmt.Errorf("send message failed: %w", sendErr)
+			}
+		} else if sess.QueuePendingMessage(prompt, attachments) {
+			// No native mid-turn channel — buffer and replay on the next
+			// idle. A false return means the turn completed between the
+			// check and the enqueue; fall through to send it as a fresh turn.
 			return DeliveryQueued, nil
 		}
 	}
