@@ -295,6 +295,15 @@ func planScratchpads(in Inputs, sp spared, spareMangled map[string]bool, mangled
 			p.Skipped = append(p.Skipped, Skipped{KindScratchpad, dir, owner, "belongs to a live/kept worktree"})
 			continue
 		}
+		// spareMangled is built from the worktrees found on disk, and that walk
+		// can miss a live one (an unreadable project dir is skipped silently; a
+		// session provisioned between the two ReadDirs has a scratchpad before
+		// its worktree is seen). Session liveness spares independently, the same
+		// check planChrome makes.
+		if sess, known := sp.byID[owner]; known && sp.live(sess) {
+			p.Skipped = append(p.Skipped, Skipped{KindScratchpad, dir, owner, spareReason(sess, in.CurrentID)})
+			continue
+		}
 		p.Reap = append(p.Reap, Item{Kind: KindScratchpad, Path: dir, SessionID: owner, SessionName: sp.byID[owner].Name})
 	}
 }
