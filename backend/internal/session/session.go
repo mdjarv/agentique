@@ -541,6 +541,14 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			// the session's events. See unseen.go.
 			go s.markUnseenCompletion(outcome.TurnIndex)
 		},
+		OnTurnAborted: func(outcome TurnOutcome) {
+			// A fatal error closed the turn without a TurnCompletedEvent.
+			// Resolve turn subscribers (scheduler, discussion) with the
+			// failure — and nothing else: an aborted turn never completed,
+			// so it sets no unseen mark (see unseen.go) and OnTurnComplete
+			// keeps meaning "a completion arrived".
+			s.turnReg.Deliver(outcome)
+		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
 			// is the only place that classifies them. Mirror to StateFailed.

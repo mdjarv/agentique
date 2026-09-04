@@ -56,8 +56,16 @@ type PipelineConfig struct {
 	// turn identity, status, final text (provider-independent, see
 	// TurnOutcome.FinalText), and the classified error kind. Dispatched from
 	// the event-loop goroutine; implementations must not block.
-	OnTurnComplete  func(TurnOutcome)
-	OnFatalError    func(err error)
+	OnTurnComplete func(TurnOutcome)
+	// OnTurnAborted fires when an open turn is closed without a
+	// TurnCompletedEvent — a fatal provider error, or the watchdog declaring
+	// the CLI dead — with the synthesized failure outcome. It resolves turn
+	// subscribers (the scheduler's waitForOutcome has no timeout) and nothing
+	// else: an aborted turn never completed, so it is not OnTurnComplete's
+	// news (no unseen mark — see unseen.go). Dispatched from the event-loop
+	// goroutine; implementations must not block.
+	OnTurnAborted func(TurnOutcome)
+	OnFatalError  func(err error)
 	OnSendMessage   func(toolUseID, targetName, content, msgType string)
 	OnActivityEvent func(wireEvent any) // called for result/error events (activity feed)
 	// OnContextStale fires when the per-turn context-window number stops
@@ -152,6 +160,7 @@ type EventPipeline struct {
 	onExitPlanMode    func(json.RawMessage)
 	onWriteToolResult func()
 	onTurnComplete    func(TurnOutcome)
+	onTurnAborted     func(TurnOutcome)
 	onFatalError      func(error)
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
@@ -175,6 +184,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onExitPlanMode:    cfg.OnExitPlanMode,
 		onWriteToolResult: cfg.OnWriteToolResult,
 		onTurnComplete:    cfg.OnTurnComplete,
+		onTurnAborted:     cfg.OnTurnAborted,
 		onFatalError:      cfg.OnFatalError,
 		onSendMessage:     cfg.OnSendMessage,
 		onActivityEvent:   cfg.OnActivityEvent,
@@ -471,6 +481,44 @@ func (p *EventPipeline) CloseTurn() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.closeTurnLocked()
+}
+
+// AbortTurn closes an open turn that will never see its TurnCompletedEvent —
+// a fatal provider error, or the watchdog declaring the CLI dead — and
+// returns the synthesized failure outcome for turn subscribers. Reports false
+// when no turn was open (the completion already drained, or a racing abort
+// path got there first), which makes concurrent abort paths idempotent.
+func (p *EventPipeline) AbortTurn(reason string) (TurnOutcome, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.abortTurnLocked(reason)
+}
+
+// abortTurnLocked is AbortTurn under an already-held p.mu. The outcome
+// carries the per-turn accumulators (error kind, rate-limit reset) so the
+// scheduler's transient/real split still works; FinalText falls back to the
+// abort reason when the model said nothing, so a failed run's row is never
+// blank. Duration is unknowable here (the provider reports it only on
+// completion) and stays zero.
+func (p *EventPipeline) abortTurnLocked(reason string) (TurnOutcome, bool) {
+	if !p.turnOpen {
+		return TurnOutcome{}, false
+	}
+	outcome := TurnOutcome{
+		TurnIndex:         p.turnIndex,
+		Status:            runtime.TurnStatusFailed,
+		FinalText:         p.turnFinalText,
+		ErrorKind:         p.turnErrorKind,
+		RateLimitResetsAt: p.turnRateLimitedAt,
+	}
+	if outcome.FinalText == "" {
+		outcome.FinalText = reason
+	}
+	p.turnFinalText = ""
+	p.turnErrorKind = ""
+	p.turnRateLimitedAt = 0
+	p.closeTurnLocked()
+	return outcome, true
 }
 
 // closeTurnLocked marks the current turn's completion as processed and
@@ -813,21 +861,29 @@ func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {
 	}
 
 	if errEv, ok := event.(runtime.ErrorEvent); ok {
-		p.mu.Lock()
-		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, classifyErrorKind(errEv))
-		if errEv.Fatal {
-			// A fatal error means no TurnCompletedEvent will ever arrive for
-			// this turn — release waiters instead of forcing their timeout.
-			p.closeTurnLocked()
-		}
-		p.mu.Unlock()
-		lvl := slog.LevelWarn
-		if errEv.Fatal {
-			lvl = slog.LevelError
-		}
 		errMsg := ""
 		if errEv.Err != nil {
 			errMsg = errEv.Err.Error()
+		}
+		p.mu.Lock()
+		p.turnErrorKind = strongerErrorKind(p.turnErrorKind, classifyErrorKind(errEv))
+		var outcome TurnOutcome
+		aborted := false
+		if errEv.Fatal {
+			// A fatal error means no TurnCompletedEvent will ever arrive for
+			// this turn — release WaitTurnClosed waiters instead of forcing
+			// their timeout, and synthesize the failure outcome so turn
+			// subscribers (the scheduler, a discussion round) resolve rather
+			// than waiting forever.
+			outcome, aborted = p.abortTurnLocked(errMsg)
+		}
+		p.mu.Unlock()
+		if aborted && p.onTurnAborted != nil {
+			p.onTurnAborted(outcome)
+		}
+		lvl := slog.LevelWarn
+		if errEv.Fatal {
+			lvl = slog.LevelError
 		}
 		slog.Log(context.Background(), lvl, "provider API error",
 			"session_id", p.sessionID,
