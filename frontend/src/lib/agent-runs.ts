@@ -144,13 +144,23 @@ const DONE_STATUSES = new Set(["completed", "success"]);
 /** Shut down on purpose — an outcome, but never an incident. */
 const STOPPED_STATUSES = new Set(["stopped", "killed", "cancelled", "canceled", "aborted"]);
 
-function runState(tasks: readonly TaskEvent[], hasResult: boolean): AgentRunState {
-  const status = tasks.findLast((t) => t.taskSubtype === "task_notification")?.taskStatus;
+function runState(
+  tasks: readonly TaskEvent[],
+  hasResult: boolean,
+  asyncLaunched: boolean,
+): AgentRunState {
+  // Any task event may carry the terminal status: `task_updated` reports it
+  // (completed/killed/failed) and can land without a notification behind it.
+  const status = tasks.findLast((t) => t.taskStatus !== undefined)?.taskStatus;
   if (status !== undefined && DONE_STATUSES.has(status)) return "done";
   if (status !== undefined && STOPPED_STATUSES.has(status)) return "stopped";
   if (status !== undefined && status !== "in_progress") return "failed";
-  // A tool result without a notification still means the spawn returned — the
-  // parent agent cannot continue until it does.
+  // A background agent's spawn returns immediately with a launch receipt, so
+  // its tool_result is not the return — the run ends only when the task stream
+  // says so. `agent_result: async_launched` is what marks that spawn.
+  if (asyncLaunched) return "running";
+  // A synchronous spawn's tool result means the run returned — the parent
+  // agent cannot continue until it does.
   return hasResult ? "done" : "running";
 }
 
@@ -236,10 +246,15 @@ export function collectAgentRuns(
 
   // Resolve the join once, into the roster's own key.
   const agentReportByToolUse = new Map<string, string>();
+  // Spawns whose tool_result was a launch receipt, not the agent's return:
+  // an `agent_result` with status async_launched marks the run as backgrounded.
+  const asyncByToolUse = new Set<string>();
   for (const [agentId, ev] of agentResultsByAgentId) {
     const toolUseId = toolUseIdByTaskId.get(agentId);
+    if (!toolUseId) continue;
+    if (ev.status === "async_launched") asyncByToolUse.add(toolUseId);
     const text = resultText(ev);
-    if (toolUseId && text) agentReportByToolUse.set(toolUseId, text);
+    if (text) agentReportByToolUse.set(toolUseId, text);
   }
 
   const runs: AgentRun[] = [];
@@ -250,7 +265,8 @@ export function collectAgentRuns(
     const input = readInput(spawn?.use.toolInput);
     const started = tasks.find((t) => t.taskSubtype === "task_started");
     const result = results.get(toolUseId);
-    const state = runState(tasks, result !== undefined);
+    const asyncLaunched = asyncByToolUse.has(toolUseId);
+    const state = runState(tasks, result !== undefined, asyncLaunched);
     const summary = latestString(tasks, (t) => t.taskSummary);
 
     const title =
@@ -262,8 +278,12 @@ export function collectAgentRuns(
     // Prefer the agent_result's copy of the report: the tool_result is
     // truncated for DB storage past maxToolResultDBSize, so on a long report it
     // is the same text with its middle cut out. The roster promises the whole
-    // report, so it reads the copy that still is one.
-    const report = agentReportByToolUse.get(toolUseId) ?? resultText(result);
+    // report, so it reads the copy that still is one. A backgrounded run has
+    // neither — its agent_result is the empty launch marker and its tool_result
+    // is the launch receipt — so its report is the terminal notification's
+    // summary, which is where the CLI delivers it.
+    const report =
+      agentReportByToolUse.get(toolUseId) ?? (asyncLaunched ? summary : resultText(result));
     const flatTitle = flattenPreview(title);
     const preview = summary ? flattenPreview(summary) : report ? flattenPreview(report) : undefined;
     runs.push({

@@ -102,10 +102,69 @@ describe("collectAgentRuns — agent_result join", () => {
   });
 
   it("does not report an empty agent_result as the return value", () => {
-    // A background launch: real event, real agentId, no content yet.
+    // A background launch: real event, real agentId, no content yet. The
+    // spawn's tool_result is the launch receipt, which is never the report —
+    // a backgrounded run's report is the terminal notification's summary.
     const launched = { ...agentResult(""), status: "async_launched" } as ChatEvent;
-    const run = onlyRun([...spawnEvents, toolResult("launched in the background"), launched]);
+    const run = onlyRun([
+      ...spawnEvents.slice(0, 2),
+      toolResult("Async agent launched successfully. (internal metadata)"),
+      launched,
+      {
+        id: "e3",
+        type: "task",
+        taskSubtype: "task_notification",
+        taskId: AGENT_ID,
+        toolUseId: SPAWN,
+        taskStatus: "completed",
+        taskSummary: "The real report.",
+      } as ChatEvent,
+    ]);
 
-    expect(run.report).toBe("launched in the background");
+    expect(run.state).toBe("done");
+    expect(run.report).toBe("The real report.");
+  });
+});
+
+describe("collectAgentRuns — background launches", () => {
+  const launched = { ...agentResult(""), status: "async_launched" } as ChatEvent;
+
+  it("keeps a backgrounded run in flight past its launch-receipt tool_result", () => {
+    // The spawn returns immediately for a background agent; only the task
+    // stream ends the run. Without this, every surface read "0 in flight"
+    // for the whole time the agents were out.
+    const run = onlyRun([
+      ...spawnEvents.slice(0, 2),
+      toolResult("Async agent launched successfully."),
+      launched,
+    ]);
+
+    expect(run.state).toBe("running");
+    expect(run.report).toBeUndefined();
+  });
+
+  it("settles a backgrounded run on a terminal task_updated without a notification", () => {
+    const run = onlyRun([
+      ...spawnEvents.slice(0, 2),
+      toolResult("Async agent launched successfully."),
+      launched,
+      {
+        id: "e4",
+        type: "task",
+        taskSubtype: "task_updated",
+        taskId: AGENT_ID,
+        toolUseId: SPAWN,
+        taskStatus: "killed",
+      } as ChatEvent,
+    ]);
+
+    expect(run.state).toBe("stopped");
+  });
+
+  it("still settles a synchronous run on its tool_result alone", () => {
+    const run = onlyRun([...spawnEvents.slice(0, 2), toolResult("the whole report")]);
+
+    expect(run.state).toBe("done");
+    expect(run.report).toBe("the whole report");
   });
 });

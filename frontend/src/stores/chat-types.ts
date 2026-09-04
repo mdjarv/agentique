@@ -180,7 +180,7 @@ export interface TaskEvent extends BaseChatEvent {
    * `collectAgentRuns`.
    */
   taskId?: string;
-  taskSubtype?: "task_started" | "task_progress" | "task_notification";
+  taskSubtype?: "task_started" | "task_progress" | "task_updated" | "task_notification";
   taskDescription?: string;
   taskType?: string;
   taskSummary?: string;
