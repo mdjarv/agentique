@@ -49,11 +49,16 @@ async function diagnose(machineId: string): Promise<void> {
   // The machine may have reconnected while the probe was in flight; a live
   // socket outranks anything the probe concluded.
   if (useMachineStore.getState().statuses[machineId] === "connected") return;
-  useMachineStore.getState().setFault(machineId, fault);
+  // A null probe proves nothing — unreachable and transient look identical —
+  // so it must not erase a proven diagnosis while the machine merely sleeps.
+  // credential-rejected in particular clears only on proof of the opposite:
+  // an authenticated connect (admit) or a re-pair, both handled in this hook.
+  if (fault) useMachineStore.getState().setFault(machineId, fault);
 
+  const recorded = useMachineStore.getState().faults[machineId];
   const client = peekMachineClient(machineId);
   client?.setMaxReconnectDelay(
-    fault?.kind === "credential-rejected" ? FAULTED_RETRY_MS : NORMAL_RETRY_MS,
+    recorded?.kind === "credential-rejected" ? FAULTED_RETRY_MS : NORMAL_RETRY_MS,
   );
 }
 
