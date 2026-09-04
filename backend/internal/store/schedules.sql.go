@@ -662,7 +662,7 @@ func (q *Queries) ListUnfinishedScheduleRuns(ctx context.Context) ([]ScheduleRun
 const markScheduleRunFired = `-- name: MarkScheduleRunFired :exec
 UPDATE schedule_runs
 SET status = 'running', fired_at = ?, turn_index = ?, attempts = ?
-WHERE id = ?
+WHERE id = ? AND status = 'firing'
 `
 
 type MarkScheduleRunFiredParams struct {
@@ -720,7 +720,7 @@ func (q *Queries) PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsPa
 }
 
 const requeueScheduleRun = `-- name: RequeueScheduleRun :exec
-UPDATE schedule_runs SET status = 'queued', attempts = ?, next_attempt_at = ? WHERE id = ?
+UPDATE schedule_runs SET status = 'queued', attempts = ?, next_attempt_at = ? WHERE id = ? AND status = 'firing'
 `
 
 type RequeueScheduleRunParams struct {

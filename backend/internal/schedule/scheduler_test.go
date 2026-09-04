@@ -793,6 +793,49 @@ func TestSweep_ReclaimsStuckFiringRun(t *testing.T) {
 	waitFor(t, "reclaimed to queued", func() bool { return f.runByStatus(RunQueued) != nil })
 }
 
+func TestRequeue_NeverResurrectsTerminalRun(t *testing.T) {
+	f := newFixture(t, Options{})
+	sched := f.createSchedule(t, ModeRecurring, "0 * * * *", "2026-07-31T00:00:00Z")
+	ctx := context.Background()
+
+	// A run the sweep observed as firing, resolved to a terminal error by its
+	// outcome waiter before the reclaim's requeue landed.
+	if _, err := f.q.CreateScheduleRun(ctx, store.CreateScheduleRunParams{
+		ID: newID(), ScheduleID: sched.ID, SessionID: "s1",
+		ScheduledFor: "2026-07-30T11:00:00Z", CreatedAt: formatTime(f.clock()), Status: RunQueued,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := f.runByStatus(RunQueued)
+	if _, err := f.q.ClaimScheduleRun(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.q.ResolveScheduleRun(ctx, store.ResolveScheduleRunParams{
+		Status: RunError, FinishedAt: formatTime(f.clock()), Error: "boom", ID: r.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The stale requeue must be a no-op: flipping error back to queued would
+	// redeliver the run and double-count it toward auto-pause.
+	if err := f.q.RequeueScheduleRun(ctx, store.RequeueScheduleRunParams{Attempts: r.Attempts, ID: r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.runByStatus(RunError); got == nil {
+		t.Fatal("terminal run was resurrected to queued by a stale requeue")
+	}
+
+	// A late mark-fired must not flip it to running either.
+	if err := f.q.MarkScheduleRunFired(ctx, store.MarkScheduleRunFiredParams{
+		FiredAt: formatTime(f.clock()), TurnIndex: 1, Attempts: 1, ID: r.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.runByStatus(RunError); got == nil {
+		t.Fatal("terminal run was marked running by a stale mark-fired")
+	}
+}
+
 func TestAPI_LengthCapsAndPendingProposalCap(t *testing.T) {
 	f := newFixture(t, Options{})
 	ctx := context.Background()
