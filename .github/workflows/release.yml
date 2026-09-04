@@ -47,7 +47,7 @@ jobs:
           GOPRIVATE: github.com/allbin/*
 
       - name: Build frontend
-        run: cd frontend && npm ci && npm run build
+        run: cd frontend && npm ci --no-audit --no-fund && npm run build
 
       - name: Embed frontend into backend
         run: |

@@ -59,8 +59,14 @@ stop:
 # Build
 build: frontend-build backend-build
 
+# `--no-audit` because an install is not an audit. `npm ci` otherwise POSTs the
+# whole tree to registry.npmjs.org/-/npm/v1/security/advisories/bulk, and when
+# that endpoint is degraded it hangs through npm's retries — five minutes of
+# `just upgrade` for a 13-second install, with the tarballs already in cache.
+# CI keeps an explicit `npm audit` step (ci.yml), which is where the advisory
+# gate belongs: it can fail loudly there instead of taxing every local build.
 frontend-build:
-    cd frontend && npm ci && npm run build
+    cd frontend && npm ci --no-audit --no-fund && npm run build
 
 backend-build: frontend-build
     #!/usr/bin/env bash

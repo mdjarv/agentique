@@ -74,7 +74,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: cd frontend && npm ci
+        run: cd frontend && npm ci --no-audit --no-fund
 
       - name: npm audit
         run: cd frontend && npm audit
@@ -115,7 +115,7 @@ jobs:
           GOPRIVATE: github.com/allbin/*
 
       - name: Install frontend dependencies
-        run: cd frontend && npm ci
+        run: cd frontend && npm ci --no-audit --no-fund
 
       - name: Regenerate types
         run: cd backend && go run ./cmd/typegen --out ../frontend/src/lib
