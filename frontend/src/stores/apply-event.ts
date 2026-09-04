@@ -174,34 +174,21 @@ export function applyServerEvent(
       // buffer) — the message would then render twice once its turn starts.
       patch.streamingEvents = [...session.streamingEvents, appended];
     } else if (lastTurn.complete) {
-      // Late-arriving event for an already-complete turn (rare).
+      // Late-arriving event for an already-complete turn. Background subagents
+      // outlive the turn that spawned them by design, so their task_progress
+      // ticks land here for as long as the agent runs — the upsert applies the
+      // same as in the streaming branch, or a long-lived agent appends
+      // hundreds of redundant events to the finished turn and re-renders it
+      // on every tick.
       const turns = [...baseTurns];
       turns[turns.length - 1] = {
         ...lastTurn,
-        events: [...lastTurn.events, appended],
+        events: appendOrUpsertTaskProgress(lastTurn.events, appended),
       };
       patch.turns = turns;
     } else {
       // Streaming: append to buffer, keep turns stable.
-      const buf = session.streamingEvents;
-      if (event.type === "task" && event.taskSubtype === "task_progress" && event.toolUseId) {
-        // Upsert: replace previous progress for same toolUseId.
-        const idx = buf.findIndex(
-          (e) =>
-            e.type === "task" &&
-            e.taskSubtype === "task_progress" &&
-            e.toolUseId === event.toolUseId,
-        );
-        if (idx >= 0) {
-          const next = [...buf];
-          next[idx] = appended;
-          patch.streamingEvents = next;
-        } else {
-          patch.streamingEvents = [...buf, appended];
-        }
-      } else {
-        patch.streamingEvents = [...buf, appended];
-      }
+      patch.streamingEvents = appendOrUpsertTaskProgress(session.streamingEvents, appended);
     }
   }
 
@@ -209,6 +196,27 @@ export function applyServerEvent(
 }
 
 // --- Helpers ---
+
+/**
+ * Appends `appended`, except that a `task_progress` tick replaces the previous
+ * tick for the same toolUseId — progress is a gauge, not a log, and one agent
+ * emits a tick every few seconds for as long as it runs.
+ */
+function appendOrUpsertTaskProgress(events: ChatEvent[], appended: ChatEvent): ChatEvent[] {
+  if (
+    !(appended.type === "task" && appended.taskSubtype === "task_progress" && appended.toolUseId)
+  ) {
+    return [...events, appended];
+  }
+  const idx = events.findIndex(
+    (e) =>
+      e.type === "task" && e.taskSubtype === "task_progress" && e.toolUseId === appended.toolUseId,
+  );
+  if (idx < 0) return [...events, appended];
+  const next = [...events];
+  next[idx] = appended;
+  return next;
+}
 
 function isQueuedMessage(e: ChatEvent): boolean {
   return e.type === "user_message" && e.deliveryStatus === "queued";
