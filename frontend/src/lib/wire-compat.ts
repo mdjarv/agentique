@@ -45,7 +45,15 @@ export function readArchivedAt(wire: ArchivableWire | undefined): string | undef
 
 /**
  * When a session finished a turn nobody has looked at yet, as the peer that
- * owns it says — or `undefined` when it did not say.
+ * owns it says. Three answers, and the difference between the last two is the
+ * whole point:
+ *
+ *  - a timestamp — the peer says something is unread;
+ *  - `""` — the peer STATED the mark is cleared (a current peer always states
+ *    it, empty included; that explicit empty is how a read receipt on one
+ *    client clears the badge on every other);
+ *  - `undefined` — the payload does not speak the field at all, which a peer
+ *    from before the field looks like, and which must never clear anything.
  *
  * The mark used to be client-only, so it lived in one tab and died with it. It
  * is server state now, which makes it cross-tab and cross-machine — but only
@@ -59,9 +67,14 @@ export function readArchivedAt(wire: ArchivableWire | undefined): string | undef
  */
 export function readUnseenCompletedAt(row: unknown): string | undefined {
   if (typeof row !== "object" || row === null) return undefined;
+  if (!("unseenCompletedAt" in row)) return undefined;
   const value = (row as { unseenCompletedAt?: unknown }).unseenCompletedAt;
+  // An explicit null reads as a stated clear too: no release omits the key and
+  // sends null in its place, so a present-but-empty value of either spelling
+  // can only come from a peer that speaks the field.
+  if (value === "" || value === null) return "";
   if (typeof value !== "string") return undefined;
-  return value || undefined;
+  return value;
 }
 
 /**

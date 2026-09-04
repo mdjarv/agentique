@@ -67,6 +67,44 @@ func TestGitSnapshotOmitsTheMarkerWhenOpen(t *testing.T) {
 	}
 }
 
+// The unseen-completion mark is the opposite of the archive marker: it is
+// ALWAYS stated, "" when cleared. Absence is reserved for peers that predate
+// the field, so the client can refuse to let old-peer silence wipe a badge —
+// which means a read receipt can only clear the badge on other clients if the
+// broadcast says "cleared" in so many words.
+func TestGitSnapshotAlwaysStatesUnseenCompletedAt(t *testing.T) {
+	cleared := fieldsOf(t, GitSnapshot{SessionID: "s1"})
+	v, present := cleared["unseenCompletedAt"]
+	if !present {
+		t.Fatal("a cleared mark must be stated as \"\", not omitted — omission means \"peer predates the field\" and leaves stale badges on other clients")
+	}
+	if v != "" {
+		t.Errorf("cleared mark: got %v, want \"\"", v)
+	}
+
+	marked := fieldsOf(t, GitSnapshot{SessionID: "s1", UnseenCompletedAt: "2026-08-26T09:00:00Z"})
+	if marked["unseenCompletedAt"] != "2026-08-26T09:00:00Z" {
+		t.Errorf("marked: got %v", marked["unseenCompletedAt"])
+	}
+}
+
+func TestSessionInfoAlwaysStatesUnseenCompletedAt(t *testing.T) {
+	cleared := fieldsOf(t, SessionInfo{ID: "s1"})
+	v, present := cleared["unseenCompletedAt"]
+	if !present {
+		t.Fatal("a list row must state a cleared mark as \"\", not omit it")
+	}
+	if v != "" {
+		t.Errorf("cleared mark: got %v, want \"\"", v)
+	}
+
+	at := "2026-08-26T09:00:00Z"
+	marked := fieldsOf(t, SessionInfo{ID: "s1", UnseenCompletedAt: &at})
+	if marked["unseenCompletedAt"] != at {
+		t.Errorf("marked: got %v", marked["unseenCompletedAt"])
+	}
+}
+
 func TestSessionInfoCarriesLegacyArchivedAlias(t *testing.T) {
 	got := fieldsOf(t, SessionInfo{ID: "s1", ArchivedAt: "2026-08-24T06:00:00Z"})
 

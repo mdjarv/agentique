@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { readUnseenCompletedAt } from "~/lib/wire-compat";
 import {
   _clearPendingStateUpdates,
   _resetUnseenWireLearning,
@@ -545,6 +546,56 @@ describe("chat-store", () => {
       expect(unseen()).toBe(true);
 
       useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: null });
+      expect(unseen()).toBe(true);
+    });
+
+    // The read receipt regression: the phone marks a session seen, and the
+    // owning machine broadcasts a snapshot that STATES the mark as "" (a
+    // current peer always states it). That explicit statement clears the
+    // laptop's badge even when this client has never heard the vocabulary —
+    // only a peer that speaks the field can state an empty mark, so waiting
+    // for prior proof would keep a badge the server just said is gone.
+    it("clears the mark on an explicit stated-empty, vocabulary unheard", () => {
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
+      expect(unseen()).toBe(true);
+
+      useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: "" });
+      expect(unseen()).toBe(false);
+    });
+
+    // And stating "" is speaking the field: a later full row that merely omits
+    // the mark now reads as cleared, the same lesson a timestamp teaches.
+    it("learns the vocabulary from a stated-empty mark", () => {
+      useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: "" });
+
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
+      expect(unseen()).toBe(true);
+
+      useChatStore.getState().setSessionState("sess-1", "idle", { unseenCompletedAt: null });
+      expect(unseen()).toBe(false);
+    });
+
+    // The RPC-reply path (lib/session/actions.ts) coerces an absent field to
+    // null before it reaches the store: `readUnseenCompletedAt(reply) ?? null`.
+    // From an OLD peer that coercion is the only shape absence can take, and
+    // it must stay gated on the vocabulary — explicit "" clears
+    // unconditionally, coerced null never does on its own. A refresh-git or
+    // resume reply from a pre-field machine must not eat a real unread mark.
+    it("keeps the mark on an old peer's refresh-git reply (absent coerced to null)", () => {
+      useChatStore
+        .getState()
+        .handleServerEvent("sess-1", makeResultEvent({ stopReason: "end_turn" }));
+      expect(unseen()).toBe(true);
+
+      // What actions.ts produces for a reply whose payload lacks the field.
+      const fromOldPeerReply = readUnseenCompletedAt({ mergeStatus: "clean" }) ?? null;
+      useChatStore
+        .getState()
+        .setSessionState("sess-1", "idle", { unseenCompletedAt: fromOldPeerReply, gitVersion: 2 });
       expect(unseen()).toBe(true);
     });
 
