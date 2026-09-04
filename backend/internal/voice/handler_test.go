@@ -291,3 +291,62 @@ func (e *closeCountingEngine) Close() error {
 	e.once.Do(func() { close(e.closed) })
 	return e.Engine.Close()
 }
+
+// corpseEngine emits one fatal error and then nothing, its event stream left
+// open — modelling a receive loop that died without closing it.
+type corpseEngine struct{ events chan Event }
+
+func newCorpseEngine() *corpseEngine {
+	c := &corpseEngine{events: make(chan Event, 1)}
+	c.events <- ErrorEvent{Err: errors.New("engine gone"), Fatal: true}
+	return c
+}
+
+func (c *corpseEngine) Send(context.Context, []byte) error { return nil }
+func (c *corpseEngine) Events() <-chan Event               { return c.events }
+func (c *corpseEngine) SampleRate() int                    { return InputSampleRate }
+func (c *corpseEngine) Close() error                       { return nil }
+
+// A fatal engine error ends the call. Before this, it produced one error frame
+// and the call then sat on the idle ceiling — up to thirty minutes of the
+// operator streaming microphone audio into a corpse.
+func TestFatalEngineErrorEndsTheCall(t *testing.T) {
+	h, err := NewHandler(Options{Backend: BackendEcho})
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	h.newEngine = func(context.Context, string, Persona) (Engine, error) {
+		return newCorpseEngine(), nil
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ws, _, err := handshakeDialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer ws.Close()
+
+	if ready := readControl(t, ws); ready.Type != msgReady {
+		t.Fatalf("first control frame = %q, want %q", ready.Type, msgReady)
+	}
+
+	// The error is said first — it is what stops the client's ringback — and
+	// the one closed frame follows it.
+	sawError := false
+	for {
+		msg := readControl(t, ws)
+		switch msg.Type {
+		case msgError:
+			sawError = true
+		case msgClosed:
+			if !sawError {
+				t.Error("closed arrived with no error frame before it — the failure was never said")
+			}
+			if msg.Reason != "engine-error" {
+				t.Errorf("close reason = %q, want engine-error", msg.Reason)
+			}
+			return
+		}
+	}
+}

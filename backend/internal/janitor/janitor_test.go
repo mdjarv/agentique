@@ -146,6 +146,38 @@ func TestCompute_OrphanScratchpadHasNoSessionID(t *testing.T) {
 	}
 }
 
+// TestCompute_ScratchpadOfUndiscoveredLiveWorktreeSpared guards against the
+// disk walk missing a live worktree (unreadable project dir, or a session
+// provisioned between the two ReadDirs): the scratchpad must be spared on the
+// session's own liveness, never only via the discovered-worktree set.
+func TestCompute_ScratchpadOfUndiscoveredLiveWorktreeSpared(t *testing.T) {
+	in := scenario()
+	// The live session's worktree vanishes from the disk snapshot; its
+	// scratchpad is still there.
+	dirs := in.WorktreeDirs[:0]
+	for _, d := range in.WorktreeDirs {
+		if filepath.Clean(d) != filepath.Clean(wt("session-live")) {
+			dirs = append(dirs, d)
+		}
+	}
+	in.WorktreeDirs = dirs
+
+	p := Compute(in, Options{IncludeFinished: true})
+	pad := filepath.Join(ScratchpadRoot(), mangle(wt("session-live")))
+	if hasReap(p, pad) {
+		t.Fatal("live session's scratchpad must be spared even when its worktree is missing from the disk snapshot")
+	}
+	found := false
+	for _, s := range p.Skipped {
+		if filepath.Clean(s.Path) == filepath.Clean(pad) && s.SessionID == "live" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("spared scratchpad should appear in Skipped attributed to its session")
+	}
+}
+
 func TestCompute_IncludeFinished_ReapsTerminalNotLive(t *testing.T) {
 	p := Compute(scenario(), Options{IncludeFinished: true})
 

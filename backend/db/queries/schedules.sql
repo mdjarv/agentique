@@ -94,12 +94,12 @@ WHERE schedule_id = ? AND status IN ('queued', 'firing', 'running');
 UPDATE schedule_runs SET status = 'firing' WHERE id = ? AND status = 'queued';
 
 -- name: RequeueScheduleRun :exec
-UPDATE schedule_runs SET status = 'queued', attempts = ?, next_attempt_at = ? WHERE id = ?;
+UPDATE schedule_runs SET status = 'queued', attempts = ?, next_attempt_at = ? WHERE id = ? AND status = 'firing';
 
 -- name: MarkScheduleRunFired :exec
 UPDATE schedule_runs
 SET status = 'running', fired_at = ?, turn_index = ?, attempts = ?
-WHERE id = ?;
+WHERE id = ? AND status = 'firing';
 
 -- name: ResolveScheduleRun :execrows
 UPDATE schedule_runs
