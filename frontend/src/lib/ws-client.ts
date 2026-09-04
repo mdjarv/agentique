@@ -224,6 +224,17 @@ export class WsClient {
     });
   }
 
+  /**
+   * The connection a request with this payload would actually ride. The base
+   * client is its own connection; the routing facade overrides this to name
+   * the per-machine client the request routes to. Exists so per-connection
+   * bookkeeping (ws-rpc's legacy-op memory) can key on the real peer rather
+   * than on the one facade handle every call site holds.
+   */
+  resolveClient(_payload: unknown): WsClient {
+    return this;
+  }
+
   async request<T = unknown>(type: string, payload: unknown = {}, timeoutMs = 30000): Promise<T> {
     await this.waitForConnection();
 

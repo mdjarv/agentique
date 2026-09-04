@@ -522,3 +522,24 @@ func TestRevokeSession(t *testing.T) {
 		t.Fatalf("sessions after revoke = %d, want 0", len(rows))
 	}
 }
+
+// The rollback used to delete by the RAW bearer where the query matches
+// token_hash — a silent no-op, so every failed rotation left the just-minted
+// credential alive and orphaned.
+func TestPairingRollbackRevokesTheMintedSession(t *testing.T) {
+	svc, queries := newTestService(t)
+	admin := createAdminUser(t, queries)
+	bearer, _, err := svc.createSessionWithID(context.Background(), admin.ID, "paired client", "bearer")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if _, err := svc.lookupSessionByHash(context.Background(), hashToken(bearer)); err != nil {
+		t.Fatalf("minted session not found before rollback: %v", err)
+	}
+
+	svc.rollbackPairedSession(context.Background(), bearer)
+
+	if _, err := svc.lookupSessionByHash(context.Background(), hashToken(bearer)); err == nil {
+		t.Fatal("rollback left the minted bearer session alive")
+	}
+}

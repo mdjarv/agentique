@@ -3,6 +3,7 @@ import { readArchivedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
 import type { SessionMetadata } from "~/stores/chat-store";
 import { useChatStore } from "~/stores/chat-store";
+import { settleAwayState } from "~/stores/chat-types";
 import { usePulseStore } from "~/stores/pulse-store";
 
 /**
@@ -106,7 +107,7 @@ export function saveMachineCache(machineId: string): void {
     sessions.push({
       ...data.meta,
       connected: false,
-      state: data.meta.state === "running" ? "idle" : data.meta.state,
+      state: settleAwayState(data.meta.state),
       pendingApproval: undefined,
       pendingQuestion: undefined,
     });

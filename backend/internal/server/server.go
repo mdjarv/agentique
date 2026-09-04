@@ -937,6 +937,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// it, and is shared with the MCP handler below so VoiceReport can reach it.
 	// It stays nil when voice is off, which is what omits the tool entirely.
 	var voiceRegistry *voice.Registry
+	// The live handler outlives this block so the auth service — constructed
+	// later — can be wired in as its session tracker.
+	var liveVoice *voice.Handler
 	if cfg.ExperimentalVoice {
 		voiceRegistry = voice.NewRegistry()
 		// Persona settings are read per call, so a change here takes effect on
@@ -970,6 +973,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			voiceRegistry = nil
 		} else {
 			mux.Handle("GET /api/voice/live", vh)
+			liveVoice = vh
 			// The runtime half of what a call hears: blocked, died, finished.
 			// A worker reports everything else itself, but it cannot report
 			// these — it is suspended, gone, or done.
@@ -1239,6 +1243,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		authSvc.RegisterUserRoutes(mux)
 		s.authSvc = authSvc
 		wsh.SessionTracker = authSvc
+		// The voice socket is an authenticated WebSocket like /ws: revoking or
+		// expiring an auth session must hang up its live calls, not just close
+		// its subscriptions.
+		if liveVoice != nil {
+			liveVoice.SetSessionTracker(authSvc)
+		}
 	} else {
 		// When auth is disabled, serve a static status endpoint.
 		mux.HandleFunc("GET /api/auth/status", func(w http.ResponseWriter, r *http.Request) {

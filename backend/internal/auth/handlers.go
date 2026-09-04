@@ -278,7 +278,10 @@ func (s *Service) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 			UsedBy:    sql.NullString{String: user.ID, Valid: true},
 			TokenHash: hashToken(inviteToken),
 		}); err != nil {
-			slog.Warn("failed to mark invite token as used", "token", inviteToken, "error", err)
+			// The digest, never the token: on this path the invite is still
+			// redeemable, and a log line is not where a live credential goes.
+			slog.Warn("failed to mark invite token as used",
+				"tokenHash", hashToken(inviteToken), "usedBy", user.ID, "error", err)
 		}
 	}
 

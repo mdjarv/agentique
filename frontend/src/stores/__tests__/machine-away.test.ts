@@ -50,6 +50,16 @@ describe("markSessionsAway", () => {
     expect(data?.pendingApproval).toBeNull();
   });
 
+  // "merging" is as live as "running" — git is working — so it can no more be
+  // true on an away machine. Left standing it animated the rail's live mark
+  // for an offline machine and made canArchive refuse.
+  it("settles a merging session too — merging is live-ness, not an outcome", () => {
+    seed([meta({ id: "s-5", state: "merging", connected: false })]);
+    useChatStore.getState().markSessionsAway(["s-5"]);
+    const data = useChatStore.getState().sessions["s-5"];
+    expect(data?.meta.state).toBe("idle");
+  });
+
   it("leaves terminal states alone — away doesn't rewrite an outcome", () => {
     seed([meta({ id: "s-2", state: "failed", connected: true })]);
     useChatStore.getState().markSessionsAway(["s-2"]);

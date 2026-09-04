@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
+	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // defaultMaxCalls bounds concurrent live calls. Low on purpose: each one holds
@@ -91,8 +94,22 @@ type Options struct {
 // /api/ prefix and the exact string "/ws"; a socket mounted at /ws/voice would
 // fall through as an SPA asset and stream a live microphone to a paid API with
 // no credential at all.
+// SessionTracker owns the lifetime of authenticated WebSockets, implemented by
+// the auth service. It mirrors ws.SessionTracker for the same reason that one
+// exists: revoking or expiring an auth session must close the sockets it
+// opened (docs/multi-machine.md), and a voice call — with run_prompt and
+// create_session behind it — is exactly such a socket.
+type SessionTracker interface {
+	TrackWebSocket(*store.GetAuthSessionRow, func()) (func(), error)
+}
+
 type Handler struct {
 	opts Options
+
+	// tracker binds each upgrade to the auth session that opened it. Wired by
+	// the server once the auth service exists (it is constructed after this
+	// handler); nil — auth disabled — tracks nothing.
+	tracker SessionTracker
 
 	// newEngine builds one call's engine. A field rather than a plain method so
 	// a test can make engine creation fail or block *after* the upgrade, which
@@ -134,6 +151,10 @@ func NewHandler(opts Options) (*Handler, error) {
 
 // Backend reports which speech transport this handler will use.
 func (h *Handler) Backend() Backend { return h.opts.Backend }
+
+// SetSessionTracker registers the auth session tracker. Called during server
+// construction, before the route serves anything.
+func (h *Handler) SetSessionTracker(t SessionTracker) { h.tracker = t }
 
 func (h *Handler) upgrader() websocket.Upgrader {
 	return websocket.Upgrader{
@@ -184,6 +205,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log := slog.With("subsystem", "voice", "backend", h.opts.Backend)
 	log.Info("voice call opened", "remote", r.RemoteAddr, "session", initialFocus)
 
+	// Bind the socket to the auth session that opened it, before anything
+	// slow: revoking or expiring that session then hangs the call up, rather
+	// than leaving a live microphone — and a dispatcher — running on a dead
+	// credential. Registration happens here so an unauthorized socket is
+	// refused before the engine dial; the call it guards is attached below,
+	// once it exists.
+	var tracked *trackedClose
+	if h.tracker != nil {
+		tracked = &trackedClose{ws: ws}
+		untrack, err := h.tracker.TrackWebSocket(auth.UserFromContext(r.Context()), tracked.close)
+		if err != nil {
+			// Fixed message on the socket, detail in the log — the 500 rule.
+			log.Warn("voice auth session tracking failed", "error", err, "remote", r.RemoteAddr)
+			refuse(ws, "not authorized")
+			return
+		}
+		defer untrack()
+	}
+
 	// A live speech session must outlive the request that opened it: the HTTP
 	// context is cancelled when ServeHTTP returns, which for a hijacked
 	// WebSocket is not what the call's lifetime is made of. The read loop
@@ -199,8 +239,44 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newCall(ws, engine, h.opts, initialFocus, log).run(callCtx)
+	c := newCall(ws, engine, h.opts, initialFocus, log)
+	if tracked != nil {
+		tracked.attach(c)
+	}
+	c.run(callCtx)
 	log.Info("voice call closed", "remote", r.RemoteAddr)
+}
+
+// trackedClose is what a revocation runs against a live voice socket.
+//
+// It composes with the call's own exactly-once teardown rather than replacing
+// it: `endCall` sends the `closed` frame through the synchronized control
+// path (a bare concurrent write would race the call's writer), and the socket
+// is then closed regardless, because revocation must not depend on the client
+// honouring the frame. Before the call exists — the engine is still dialling —
+// there is nothing to say goodbye to and closing the socket is the whole job.
+type trackedClose struct {
+	mu   sync.Mutex
+	ws   *websocket.Conn
+	call *call
+}
+
+// attach hands the created call in, so a later revocation ends it cleanly.
+func (t *trackedClose) attach(c *call) {
+	t.mu.Lock()
+	t.call = c
+	t.mu.Unlock()
+}
+
+// close is the connection-close callback registered with the tracker.
+func (t *trackedClose) close() {
+	t.mu.Lock()
+	c := t.call
+	t.mu.Unlock()
+	if c != nil {
+		c.endCall("revoked")
+	}
+	_ = t.ws.Close()
 }
 
 // openEngine gathers what the drafter is told and starts the speech engine.

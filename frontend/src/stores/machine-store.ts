@@ -143,7 +143,10 @@ export const useMachineStore = create<MachineState>()(
           delete faults[machineId];
           const versions = { ...s.versions };
           delete versions[machineId];
-          return { machines, statuses, faults, versions };
+          // lastSeenAt is persisted, so a missed prune here outlives the tab.
+          const lastSeenAt = { ...s.lastSeenAt };
+          delete lastSeenAt[machineId];
+          return { machines, statuses, faults, versions, lastSeenAt };
         });
       },
       setFault: (machineId, fault) =>
