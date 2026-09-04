@@ -31,14 +31,27 @@ import { useMachineStore } from "~/stores/machine-store";
  * Extends WsClient purely to satisfy the type at existing call sites; every
  * inherited behavior is overridden and the base instance never connects.
  */
+/** One live fan-in subscription: its type, its handler, and the unsubscriber
+ *  for every client it has been attached to — including clients created after
+ *  subscribe time, which the replay below keeps appending to. */
+interface FanInSubscription {
+  type: string;
+  handler: (payload: unknown) => void;
+  unsubs: Array<() => void>;
+}
+
 class RoutingWsClient extends WsClient {
-  private fanInHandlers = new Map<string, Set<(payload: unknown) => void>>();
+  private fanInSubs = new Set<FanInSubscription>();
 
   constructor() {
     super(""); // base never connects — connect() is overridden to a no-op
     onMachineClientCreated((_machineId, client) => {
-      for (const [type, handlers] of this.fanInHandlers) {
-        for (const handler of handlers) client.subscribe(type, handler);
+      // Track the replayed subscription on its own record, so unsubscribing
+      // detaches it from clients created after subscribe time too. Captured in
+      // a closure-local array, handlers replayed here leaked onto every
+      // later-paired machine for the tab's lifetime, stacking per remount.
+      for (const sub of this.fanInSubs) {
+        sub.unsubs.push(client.subscribe(sub.type, sub.handler));
       }
     });
   }
@@ -74,20 +87,21 @@ class RoutingWsClient extends WsClient {
   }
 
   override subscribe(type: string, handler: (payload: unknown) => void): () => void {
-    let handlers = this.fanInHandlers.get(type);
-    if (!handlers) {
-      handlers = new Set();
-      this.fanInHandlers.set(type, handlers);
-    }
-    handlers.add(handler);
-
-    const unsubs = [getPrimaryClient().subscribe(type, handler)];
+    const sub: FanInSubscription = {
+      type,
+      handler,
+      unsubs: [getPrimaryClient().subscribe(type, handler)],
+    };
     for (const client of machineClients().values()) {
-      unsubs.push(client.subscribe(type, handler));
+      sub.unsubs.push(client.subscribe(type, handler));
     }
+    this.fanInSubs.add(sub);
+
     return () => {
-      this.fanInHandlers.get(type)?.delete(handler);
-      for (const unsub of unsubs) unsub();
+      // Idempotent: a second call must not re-run unsubscribers that a
+      // later-created client's replay may have appended after the first.
+      if (!this.fanInSubs.delete(sub)) return;
+      for (const unsub of sub.unsubs) unsub();
     };
   }
 
