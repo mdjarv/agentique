@@ -147,9 +147,14 @@ export function applyEvent(
     // Turn complete: drain every streaming buffer for this session together
     // with the chat-store merge that handleServerEvent just performed. The
     // toolBlockIndex lives in the streaming-store (not a module Map) so it is
-    // reclaimed here and can't leak across turns.
+    // reclaimed here and can't leak across turns. Outputs and progress are in
+    // the drain too: their per-tool clears fire on tool_result, which an
+    // interrupted tool never gets, so without these an aborted tool's
+    // accumulated output lived until session delete or reconnect.
     streaming.clearText(sessionId);
     streaming.clearAllToolInputs(sessionId);
+    streaming.clearAllToolOutputs(sessionId);
+    streaming.clearAllToolProgress(sessionId);
     streaming.clearAllReasoning(sessionId);
     streaming.clearToolBlockIndex(sessionId);
   }
