@@ -51,6 +51,10 @@ func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
 	snap.UnseenCompletedAt = s.unseenCompletedAt
 	snap.EvictedAt = s.evictedAt
 	snap.GitOperation = s.git.gitOperation
+	// Read under the same lock that bumps the version, so the highest-version
+	// snapshot always carries the freshest count even when two broadcasts race.
+	agents := s.agentsInFlight
+	snap.AgentsInFlight = &agents
 	s.git.gitVersion++
 	snap.Version = s.git.gitVersion
 	s.mu.Unlock()

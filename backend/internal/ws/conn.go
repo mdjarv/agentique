@@ -23,6 +23,7 @@ const (
 	pongTimeout            = 60 * time.Second
 	pingInterval           = 30 * time.Second
 	sendBufSize            = 256
+	dispatchBufSize        = 256
 	defaultMaxMessageBytes = 32 << 20
 )
 
@@ -41,6 +42,7 @@ type conn struct {
 	scheduleSvc     *schedule.Scheduler     // nil when the scheduler is disabled
 	catalog         *providers.Catalog      // model catalog; nil = base aliases only
 	sendCh          chan any
+	dispatchCh      chan ClientMessage
 	maxMessageBytes int64
 	mu              sync.Mutex
 	closeOnce       sync.Once
@@ -72,6 +74,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		scheduleSvc:     scheduleSvc,
 		catalog:         catalog,
 		sendCh:          make(chan any, sendBufSize),
+		dispatchCh:      make(chan ClientMessage, dispatchBufSize),
 		maxMessageBytes: maxMessageBytes,
 	}
 	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
@@ -104,13 +107,17 @@ func (c *conn) run() {
 	}()
 
 	go c.writeLoop()
+	go c.dispatchLoop()
 	c.readLoop()
 }
 
 func (c *conn) close() {
 	c.closeOnce.Do(func() {
 		c.cancel()
-		_ = c.ws.Close()
+		// nil only for test conns constructed without a socket.
+		if c.ws != nil {
+			_ = c.ws.Close()
+		}
 	})
 }
 
@@ -134,11 +141,61 @@ func (c *conn) readLoop() {
 			lvl = logging.LevelTrace
 		}
 		slog.Log(context.Background(), lvl, "ws recv", "type", msg.Type, "id", msg.ID)
-		c.dispatch(msg)
+		if !c.enqueueDispatch(msg) {
+			return
+		}
 	}
 }
 
+// enqueueDispatch hands a message to the dispatch loop. The read loop must
+// never run a handler itself: while one is in flight nothing reads the
+// socket, so pongs sit unread and the read deadline (refreshed only inside
+// ReadJSON) goes stale — a handler slower than pongTimeout made the server
+// tear down its own healthy socket the moment the handler returned, and no
+// other RPC on the socket (a stop, an approval answer) was even read while
+// it ran.
+//
+// Reports false when the read loop should stop. A full queue closes the
+// connection rather than blocking (which would recreate the stale-deadline
+// fault) or dropping (an RPC that silently never answers wedges its caller)
+// — the same contract send() applies to a client that cannot keep up.
+func (c *conn) enqueueDispatch(msg ClientMessage) bool {
+	select {
+	case c.dispatchCh <- msg:
+		return true
+	case <-c.ctx.Done():
+		return false
+	default:
+		slog.Warn("ws dispatch queue full, closing connection", "type", msg.Type, "id", msg.ID)
+		c.close()
+		return false
+	}
+}
+
+// dispatchLoop executes handlers off the read loop, in arrival order. Serial
+// on purpose: handler execution order still matches arrival order, exactly
+// as it did when the read loop dispatched inline. Handlers known to block
+// for tens of seconds (the msggen family) additionally leave this loop via
+// handleRequestAsync so they cannot stall the RPCs queued behind them.
+func (c *conn) dispatchLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case msg := <-c.dispatchCh:
+			c.dispatch(msg)
+		}
+	}
+}
+
+// writeLoop owns all socket writes. Exiting on a write error must go through
+// c.close(): a bare return leaves the read loop blocked in ReadJSON on a conn
+// nobody will write to again — a zombie that keeps reading and executing RPCs
+// whose responses are dropped, until the read deadline expires up to
+// pongTimeout later. The deferred close also covers the ctx.Done exit, where
+// it is an idempotent no-op (whatever cancelled the ctx already closed).
 func (c *conn) writeLoop() {
+	defer c.close()
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for {
@@ -340,14 +397,18 @@ func (c *conn) drainSendBuffer() {
 }
 
 // send enqueues a message for writing. Non-blocking: if the buffer is full,
-// the connection is closed (the client can't keep up).
+// the connection is closed (the client can't keep up). Closed via c.close(),
+// not a bare cancel — the read loop never observes the ctx (it is blocked in
+// ReadJSON), so only closing the socket actually stops it; cancel alone left
+// a zombie conn reading and executing RPCs whose responses were dropped for
+// up to pongTimeout.
 func (c *conn) send(msg any) {
 	select {
 	case c.sendCh <- msg:
 	case <-c.ctx.Done():
 	default:
 		slog.Warn("ws send buffer full, closing connection")
-		c.cancel()
+		c.close()
 	}
 }
 

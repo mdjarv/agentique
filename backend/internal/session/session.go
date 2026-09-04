@@ -174,16 +174,24 @@ type Session struct {
 	// mirror can lag a write but never lead one. Guarded by mu. See unseen.go.
 	unseenCompletedAt string
 
-	// lastOriginTurn / lastOriginKind record which turn the most recent
-	// QueryOrigin belongs to, so the turn-end seam can ask "was the turn that
-	// just ended a schedule fire?" — the outcome itself does not carry it, and
-	// schedule attention is its own channel. Turn starts are serialized by
-	// queryMu and wait for the previous completion to drain, so a completion
-	// always describes the most recently started turn; the index is compared
-	// anyway, and a mismatch falls back to "user", the marking case.
-	// Guarded by mu.
-	lastOriginTurn int
-	lastOriginKind string
+	// turnOrigins records, per turn index, which QueryOrigin started it, so
+	// the turn-end seam can ask "was the turn that just ended a schedule
+	// fire?" — the outcome itself does not carry it, and schedule attention
+	// is its own channel. Keyed by index rather than a single latest-value
+	// pair on purpose: closeTurnLocked releases the next turn's start BEFORE
+	// onTurnComplete's goroutine reads the origin, so "latest" routinely
+	// named turn N+1 while the goroutine asked about turn N — the mismatch
+	// fell back to "user", the marking case, and a schedule fire bolded the
+	// row. Entries are consumed by markUnseenCompletion and pruned on record
+	// (a fatal abort skips the unseen seam and leaves its entry behind), so
+	// the map stays a handful of entries. Guarded by mu.
+	turnOrigins map[int]string
+
+	// agentsInFlight mirrors the pipeline's count of subagents currently out,
+	// so snapshots can carry it without asking the pipeline under its own
+	// lock. Updated by the OnAgentsInFlight hook; reset to zero when the CLI
+	// process ends (subagents are its children). Guarded by mu.
+	agentsInFlight int
 
 	// pendingMessages buffers user messages sent while a turn is running on a
 	// provider without native mid-turn injection (codex). Flushed as a fresh
@@ -529,6 +537,21 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnContextStale:    func() { s.meter.Refresh() },
+		OnAgentsInFlight: func(count int) {
+			// Liveness, not attention: no unseen mark, no schedule-origin
+			// gate — a background agent is out whoever asked for it. The
+			// broadcast rides session.state so a client that has not loaded
+			// this session's events still learns the count. Off the event
+			// loop, because the snapshot re-reads git status when idle.
+			s.mu.Lock()
+			changed := s.agentsInFlight != count
+			s.agentsInFlight = count
+			st := s.state
+			s.mu.Unlock()
+			if changed {
+				go s.broadcastState(st)
+			}
+		},
 		OnTurnComplete: func(outcome TurnOutcome) {
 			// Runtime drives Running→Idle from ResultEvent; agentique observes
 			// via the broadcast hook. The registry resolves whoever subscribed
@@ -540,6 +563,14 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 			// status, and the pump behind this callback is the one carrying
 			// the session's events. See unseen.go.
 			go s.markUnseenCompletion(outcome.TurnIndex)
+		},
+		OnTurnAborted: func(outcome TurnOutcome) {
+			// A fatal error closed the turn without a TurnCompletedEvent.
+			// Resolve turn subscribers (scheduler, discussion) with the
+			// failure — and nothing else: an aborted turn never completed,
+			// so it sets no unseen mark (see unseen.go) and OnTurnComplete
+			// keeps meaning "a completion arrived".
+			s.turnReg.Deliver(outcome)
 		},
 		OnFatalError: func(err error) {
 			// Runtime doesn't observe Fatal ErrorEvents — agentique's pipeline
@@ -1373,6 +1404,27 @@ func (s *Session) Close() {
 	// is gone, so nothing will ever complete it.
 	s.turnReg.Close()
 	s.pipeline.CloseTurn()
+}
+
+// AgentsInFlight reports the number of subagents currently out for this
+// session. Zero whenever the CLI process is gone — subagents are its
+// children, so a dead process means none are out.
+func (s *Session) AgentsInFlight() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.agentsInFlight
+}
+
+// resetAgentsInFlight zeroes both the pipeline's count and the mirror,
+// without a broadcast of its own — the state push announcing whatever ended
+// the CLI is what carries the zero.
+func (s *Session) resetAgentsInFlight() {
+	if s.pipeline != nil {
+		s.pipeline.ResetAgentTasks()
+	}
+	s.mu.Lock()
+	s.agentsInFlight = 0
+	s.mu.Unlock()
 }
 
 // TurnInFlight reports whether this session is running a turn right now.

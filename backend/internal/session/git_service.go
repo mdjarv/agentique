@@ -147,6 +147,8 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 		snap.ArchivedAt = archivedAt
 		snap.GitOperation = gitOp
 		snap.UnseenCompletedAt = live.UnseenCompletedAt()
+		agents := live.AgentsInFlight()
+		snap.AgentsInFlight = &agents
 		// No EvictedAt: a session with a live runtime has not been reclaimed.
 		// The mirror is only ever set in the moments between the sweep's claim
 		// and the stop that discards it, and that stop broadcasts for itself
@@ -157,6 +159,10 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 		snap.ArchivedAt = nullStr(dbSess.ArchivedAt)
 		snap.UnseenCompletedAt = nullStr(dbSess.UnseenCompletedAt)
 		snap.EvictedAt = nullStr(dbSess.EvictedAt)
+		// Not live means no CLI process, and subagents are its children:
+		// zero is a reading here, not a guess.
+		zero := 0
+		snap.AgentsInFlight = &zero
 	}
 
 	if !snap.WorktreeMerged {
@@ -851,7 +857,17 @@ type GitSnapshot struct {
 	// It rides the state push and not only the session list because the push is
 	// what announces the stop. A client that learned the reason one refresh
 	// later would have already drawn the banner this exists to suppress.
-	EvictedAt          string   `json:"evictedAt,omitempty"`
+	EvictedAt string `json:"evictedAt,omitempty"`
+	// AgentsInFlight is the number of subagents currently out, so a client
+	// can say "agents out" for a session whose event stream it never loaded
+	// (the sidebar, the deck). A pointer on purpose: zero is a real reading
+	// (present as 0), while an ABSENT field means "not reported" — a peer
+	// predating the field — never "none out". Liveness, not attention: the
+	// schedule-origin/user distinction that gates unseenCompletedAt does not
+	// apply here, since a background agent is out whoever asked for it. It
+	// resets to zero with the CLI process — subagents are its children — and
+	// the push announcing the stop carries that zero.
+	AgentsInFlight     *int     `json:"agentsInFlight,omitempty"`
 	CommitsAhead       int      `json:"commitsAhead"`
 	CommitsBehind      int      `json:"commitsBehind"`
 	BranchMissing      bool     `json:"branchMissing"`

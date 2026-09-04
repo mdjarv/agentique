@@ -131,6 +131,13 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	s.state = target
 	s.mu.Unlock()
 
+	if target == StateStopped || target == StateDone || target == StateFailed {
+		// Subagents are children of the CLI process: whatever ended it took
+		// them too — stop, eviction, crash alike. Reset before the broadcast
+		// below so the push announcing the stop is the one carrying the zero.
+		s.resetAgentsInFlight()
+	}
+
 	s.persistState(target)
 	if ev.To == runtime.StateDone {
 		// Deliberately NOT archived here. A clean CLI exit is a process fact, not
@@ -193,6 +200,16 @@ func handleWatchdogEvent(s *Session, ev runtime.WatchdogEvent) {
 
 	if fatal {
 		slog.Error("watchdog fatal", "session_id", s.ID, "kind", ev.Kind, "message", msg)
+		// A fatal watchdog verdict comes with a runtime StateFailed transition
+		// but no CLIEvent, so the pipeline's open turn would never close: the
+		// next turn start burns WaitTurnClosed's full timeout, and turn
+		// subscribers (the scheduler's waitForOutcome has no timeout) wait
+		// forever. Abort the turn and deliver the failure. Idempotent against
+		// the pipeline's own fatal-error abort — whichever runs second finds
+		// the turn already closed.
+		if outcome, ok := s.pipeline.AbortTurn(msg); ok {
+			s.turnReg.Deliver(outcome)
+		}
 	} else {
 		slog.Warn("watchdog warning", "session_id", s.ID, "kind", ev.Kind, "message", msg, "elapsed", ev.Elapsed)
 	}
