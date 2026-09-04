@@ -287,6 +287,20 @@ export interface Turn {
 
 export type SessionState = "idle" | "running" | "done" | "failed" | "stopped" | "merging";
 
+/**
+ * What a transient state settles to when the machine that owned it goes away.
+ *
+ * "running" and "merging" both claim something is happening right now — a CLI
+ * turn, a git merge — and neither can be true on a machine that stopped
+ * answering. Left standing they are phantom live-ness: the rail animates its
+ * live mark (isRunning counts merging) and Archive refuses, for a laptop that
+ * closed its lid an hour ago. Shared by the live-store freeze and the offline
+ * snapshot so the two sanitizers can never disagree.
+ */
+export function settleAwayState(state: SessionState): SessionState {
+  return state === "running" || state === "merging" ? "idle" : state;
+}
+
 export type SessionMetadata = Omit<SessionInfo, "state" | "mergeStatus"> & {
   state: SessionState;
   mergeStatus?: "clean" | "conflicts" | "unknown";

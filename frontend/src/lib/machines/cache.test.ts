@@ -94,6 +94,31 @@ describe("machine cache", () => {
     expect(useChatStore.getState().sessions["s-1"]?.meta.archivedAt).toBeUndefined();
   });
 
+  // The snapshot sanitizes live-ness on its way to localStorage: a cached
+  // "running" OR "merging" session on an unreachable machine would rehydrate
+  // as phantom live-ness on reload — the rail animating its live mark for a
+  // machine that is away, and Archive refusing. Neither state can be true on
+  // a machine that stopped answering.
+  it("settles live states out of the snapshot before persisting", () => {
+    useAppStore.setState({ projects: [project] });
+    useChatStore.getState().addSession(meta({ id: "s-run", state: "running", connected: true }));
+    useChatStore.getState().addSession(meta({ id: "s-merge", state: "merging", connected: true }));
+    useChatStore.getState().addSession(meta({ id: "s-done", state: "done", connected: false }));
+
+    saveMachineCache(MACHINE);
+    useChatStore.setState({ sessions: {} });
+    useAppStore.setState({ projects: [] });
+    hydrateMachineCache(MACHINE);
+
+    const sessions = useChatStore.getState().sessions;
+    expect(sessions["s-run"]?.meta.state).toBe("idle");
+    expect(sessions["s-run"]?.meta.connected).toBe(false);
+    expect(sessions["s-merge"]?.meta.state).toBe("idle");
+    expect(sessions["s-merge"]?.meta.connected).toBe(false);
+    // An outcome is a fact, not live-ness — the snapshot keeps it.
+    expect(sessions["s-done"]?.meta.state).toBe("done");
+  });
+
   // A cache written by a BUILD WE DO NOT KNOW cannot be interpreted safely —
   // rendering a guess is worse than showing nothing, since the live re-sync
   // repopulates the moment the machine connects.

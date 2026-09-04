@@ -14,6 +14,7 @@ import type {
   SessionState,
   Turn,
 } from "~/stores/chat-types";
+import { settleAwayState } from "~/stores/chat-types";
 import { useRateLimitStore } from "~/stores/rate-limit-store";
 
 // Re-export all types from chat-types so existing consumers don't break.
@@ -413,9 +414,10 @@ export const useChatStore = create<ChatState>((set) => ({
       for (const id of sessionIds) {
         const data = sessions[id];
         if (!data) continue;
+        const settledState = settleAwayState(data.meta.state);
         const wasLive =
           data.meta.connected ||
-          data.meta.state === "running" ||
+          settledState !== data.meta.state ||
           !!data.pendingApproval ||
           !!data.pendingQuestion;
         if (!wasLive) continue;
@@ -425,7 +427,7 @@ export const useChatStore = create<ChatState>((set) => ({
           meta: {
             ...data.meta,
             connected: false,
-            state: data.meta.state === "running" ? "idle" : data.meta.state,
+            state: settledState,
           },
           pendingApproval: null,
           pendingQuestion: null,
