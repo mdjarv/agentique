@@ -188,7 +188,14 @@ func (c *conn) dispatchLoop() {
 	}
 }
 
+// writeLoop owns all socket writes. Exiting on a write error must go through
+// c.close(): a bare return leaves the read loop blocked in ReadJSON on a conn
+// nobody will write to again — a zombie that keeps reading and executing RPCs
+// whose responses are dropped, until the read deadline expires up to
+// pongTimeout later. The deferred close also covers the ctx.Done exit, where
+// it is an idempotent no-op (whatever cancelled the ctx already closed).
 func (c *conn) writeLoop() {
+	defer c.close()
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	for {
@@ -390,14 +397,18 @@ func (c *conn) drainSendBuffer() {
 }
 
 // send enqueues a message for writing. Non-blocking: if the buffer is full,
-// the connection is closed (the client can't keep up).
+// the connection is closed (the client can't keep up). Closed via c.close(),
+// not a bare cancel — the read loop never observes the ctx (it is blocked in
+// ReadJSON), so only closing the socket actually stops it; cancel alone left
+// a zombie conn reading and executing RPCs whose responses were dropped for
+// up to pongTimeout.
 func (c *conn) send(msg any) {
 	select {
 	case c.sendCh <- msg:
 	case <-c.ctx.Done():
 	default:
 		slog.Warn("ws send buffer full, closing connection")
-		c.cancel()
+		c.close()
 	}
 }
 
