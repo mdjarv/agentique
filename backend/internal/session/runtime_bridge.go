@@ -131,6 +131,13 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	s.state = target
 	s.mu.Unlock()
 
+	if target == StateStopped || target == StateDone || target == StateFailed {
+		// Subagents are children of the CLI process: whatever ended it took
+		// them too — stop, eviction, crash alike. Reset before the broadcast
+		// below so the push announcing the stop is the one carrying the zero.
+		s.resetAgentsInFlight()
+	}
+
 	s.persistState(target)
 	if ev.To == runtime.StateDone {
 		// Deliberately NOT archived here. A clean CLI exit is a process fact, not

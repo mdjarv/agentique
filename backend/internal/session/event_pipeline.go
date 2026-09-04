@@ -73,6 +73,14 @@ type PipelineConfig struct {
 	// transcript. Dispatched from the event-loop goroutine, so it must not
 	// block — contextMeter.Refresh is the intended implementation.
 	OnContextStale func()
+	// OnAgentsInFlight fires with the new count whenever the number of
+	// subagents currently out changes: a task_started with taskType
+	// "local_agent" opens one, its terminal task event closes it. Liveness,
+	// not attention — the schedule-origin/user distinction that gates the
+	// unseen mark does not apply, since a background agent is out whoever
+	// asked for it. Dispatched from the event-loop goroutine; implementations
+	// must not block.
+	OnAgentsInFlight func(count int)
 }
 
 // pulseState holds in-memory activity counters for the session pulse broadcast.
@@ -133,6 +141,15 @@ type EventPipeline struct {
 	pulseTimer        *time.Timer     // debounce timer for pulse broadcast
 	pulseStopped      bool            // set on close; blocks re-arming the timer
 	taskStatus        map[string]bool // taskID → completed; survives turn boundaries
+	// agentTasks holds the taskIDs of subagents currently out. Judged once,
+	// at task_started, from the stamped taskType — older CLIs leave the field
+	// empty on later events, so a per-event rule would miscount (the same
+	// argument isSubagentRun makes client-side). Membership makes the
+	// terminal decrement idempotent: a task_progress AND a task_notification
+	// both report the terminal, and only the first still finds the id here.
+	// Survives turn boundaries on purpose — a background subagent outlives
+	// the turn that spawned it.
+	agentTasks map[string]struct{}
 
 	// Per-turn outcome accumulation (guarded by mu, reset in AdvanceTurn):
 	// the last top-level assistant text (codex leaves TurnCompletedEvent.Text
@@ -165,6 +182,7 @@ type EventPipeline struct {
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
 	onContextStale    func()
+	onAgentsInFlight  func(int)
 }
 
 // NewEventPipeline creates an event pipeline. Does not start any goroutines.
@@ -177,6 +195,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		turnIndex:         cfg.InitialTurnIndex,
 		toolCategories:    make(map[string]string),
 		taskStatus:        make(map[string]bool),
+		agentTasks:        make(map[string]struct{}),
 		onClaudeSessionID: cfg.OnClaudeSessionID,
 		onResolvedModel:   cfg.OnResolvedModel,
 		onCLIVersion:      cfg.OnCLIVersion,
@@ -189,6 +208,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onSendMessage:     cfg.OnSendMessage,
 		onActivityEvent:   cfg.OnActivityEvent,
 		onContextStale:    cfg.OnContextStale,
+		onAgentsInFlight:  cfg.OnAgentsInFlight,
 	}
 }
 
@@ -793,6 +813,22 @@ func (p *EventPipeline) trackTaskEvent(wireEvent any) {
 		}
 	}
 
+	// Subagents-in-flight: open on the stamped task_started, close on the
+	// first terminal report. Shell tasks and workflows ride the same stream
+	// and are excluded by the taskType judgement (see the agentTasks field).
+	agentCount, agentCountChanged := -1, false
+	if te.Subtype == "task_started" && te.TaskType == "local_agent" {
+		if _, out := p.agentTasks[te.TaskID]; !out {
+			p.agentTasks[te.TaskID] = struct{}{}
+			agentCount, agentCountChanged = len(p.agentTasks), true
+		}
+	} else if isTerminalTaskStatus(te.Status) {
+		if _, out := p.agentTasks[te.TaskID]; out {
+			delete(p.agentTasks, te.TaskID)
+			agentCount, agentCountChanged = len(p.agentTasks), true
+		}
+	}
+
 	// Recompute pulse todo counts.
 	total, completed := 0, 0
 	for _, done := range p.taskStatus {
@@ -805,7 +841,41 @@ func (p *EventPipeline) trackTaskEvent(wireEvent any) {
 	p.pulse.todoCompleted = completed
 	p.pulse.dirty = true
 	p.mu.Unlock()
+	if agentCountChanged && p.onAgentsInFlight != nil {
+		p.onAgentsInFlight(agentCount)
+	}
 	p.schedulePulseBroadcast()
+}
+
+// isTerminalTaskStatus reports whether a task status ends the run. The set
+// mirrors the client's classification (agent-runs.ts): completed/done/success
+// are outcomes, stopped/killed/cancelled/aborted are deliberate shutdowns,
+// failed/error are failures — all of them mean the subagent is no longer out.
+func isTerminalTaskStatus(status string) bool {
+	switch status {
+	case "completed", "done", "success",
+		"stopped", "killed", "cancelled", "canceled", "aborted",
+		"failed", "error":
+		return true
+	}
+	return false
+}
+
+// AgentsInFlight returns the number of subagents currently out.
+func (p *EventPipeline) AgentsInFlight() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.agentTasks)
+}
+
+// ResetAgentTasks forgets every counted subagent without firing the
+// in-flight callback. Called when the CLI process ends — subagents are
+// children of that process, so a dead CLI means none are out; the state
+// broadcast that announces the stop is what carries the zero.
+func (p *EventPipeline) ResetAgentTasks() {
+	p.mu.Lock()
+	p.agentTasks = make(map[string]struct{})
+	p.mu.Unlock()
 }
 
 func (p *EventPipeline) handleTerminalEvents(event runtime.CLIEvent) {

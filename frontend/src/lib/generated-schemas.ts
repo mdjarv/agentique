@@ -305,6 +305,7 @@ export const GitSnapshotSchema = z.object({
   archivedAt: z.string().optional(),
   unseenCompletedAt: z.string().optional(),
   evictedAt: z.string().optional(),
+  agentsInFlight: z.number().optional(),
   commitsAhead: z.number(),
   commitsBehind: z.number(),
   branchMissing: z.boolean(),

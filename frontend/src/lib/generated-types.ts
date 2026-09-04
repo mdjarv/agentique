@@ -303,6 +303,7 @@ export interface GitSnapshot {
   archivedAt?: string;
   unseenCompletedAt?: string;
   evictedAt?: string;
+  agentsInFlight?: number;
   commitsAhead: number;
   commitsBehind: number;
   branchMissing: boolean;
