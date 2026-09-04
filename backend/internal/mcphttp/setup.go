@@ -118,7 +118,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		InputSchema: akmcp.ObjectProp{
 			Properties: map[string]akmcp.Property{
 				"to": akmcp.StringProp{
-					Description: "Recipient: teammate name, or \"@spawn\" to create workers, or \"@dissolve\" to close the channel.",
+					Description: "Recipient: teammate name, \"@spawn\" to create workers, \"@release\" to file idle workers away (reversible — keeps their branches), or \"@dissolve\" to close the channel and delete its workers.",
 				},
 				"message": akmcp.StringProp{
 					Description: "Message content. For @spawn, a JSON string with channelName and workers array.",

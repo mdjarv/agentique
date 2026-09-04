@@ -112,6 +112,17 @@ type SpawnWorkerEntry struct {
 	Prompt string `json:"prompt"`
 }
 
+// ReleaseWorkersRequest is the parsed body from SendMessage({to:"@release",...}).
+//
+// It is the reversible counterpart to @dissolve: it archives the sender's own
+// idle workers (releasing their CLI processes and filing the rows away) but
+// keeps every worktree, branch and row, so nothing the workers committed is
+// lost. An empty Workers list releases every releasable worker in the channels
+// the sender leads; a non-empty list names the workers to release.
+type ReleaseWorkersRequest struct {
+	Workers []string `json:"workers,omitempty"`
+}
+
 // SpawnDecision is the result of authorizing a SendMessage({to:"@spawn",...}).
 type SpawnDecision int
 
@@ -242,6 +253,16 @@ func (s *Session) SetDissolveChannelCallback(cb func(senderID string) error) {
 	s.mu.Unlock()
 }
 
+// SetReleaseWorkersCallback sets the callback for handling @release — the
+// reversible teardown a lead uses to file its idle workers away without
+// destroying their worktrees or branches. The callback returns a human-readable
+// per-worker summary to speak back to the lead.
+func (s *Session) SetReleaseWorkersCallback(cb func(senderID string, req ReleaseWorkersRequest) (string, error)) {
+	s.mu.Lock()
+	s.channel.onReleaseWorkers = cb
+	s.mu.Unlock()
+}
+
 // parseSendMessageInput extracts the target and body from a SendMessage tool
 // call. It accepts both "content" (our preamble examples) and "message" (the
 // actual tool schema), and handles "message" being either a JSON string or a
@@ -352,6 +373,11 @@ func (s *Session) interceptSendMessage(input json.RawMessage) (*runtime.Decision
 	// Intercept @dissolve for channel dissolution.
 	if to == "@dissolve" {
 		return s.interceptDissolveChannel()
+	}
+
+	// Intercept @release for reversible worker teardown.
+	if to == "@release" {
+		return s.interceptReleaseWorkers(body)
 	}
 
 	// Regular messages: deny here (to prevent CLI from processing internally)
@@ -523,4 +549,48 @@ func (s *Session) interceptDissolveChannel() (*runtime.Decision, error) {
 		Allow:       false,
 		DenyMessage: "Channel dissolved successfully. All worker sessions have been stopped and cleaned up. You are no longer part of a channel.",
 	}, nil
+}
+
+// interceptReleaseWorkers handles SendMessage to "@release" — the reversible
+// teardown. It archives the sender's own idle workers (releasing their CLI
+// processes and filing the rows away) while keeping every worktree, branch and
+// row, so nothing they committed is lost. A busy worker is refused, never
+// interrupted, and named so the lead can wait. Unlike @dissolve it destroys
+// nothing and can be undone by unarchiving.
+//
+// An empty or absent body releases every releasable worker in the channels the
+// sender leads; a `{"workers":[...]}` body names the workers to release.
+func (s *Session) interceptReleaseWorkers(content string) (*runtime.Decision, error) {
+	var req ReleaseWorkersRequest
+	// An empty body is a request to release all of the lead's workers, not an
+	// error: SendMessage(to:"@release") with no message is the common gesture.
+	if trimmed := strings.TrimSpace(content); trimmed != "" && trimmed != "{}" {
+		if err := json.Unmarshal([]byte(trimmed), &req); err != nil {
+			return &runtime.Decision{
+				Allow:       false,
+				DenyMessage: fmt.Sprintf("Failed to parse release request: %v. Send no message to release every worker, or {\"workers\":[\"name\",...]} to name them.", err),
+			}, nil
+		}
+	}
+
+	s.mu.Lock()
+	cb := s.channel.onReleaseWorkers
+	s.mu.Unlock()
+
+	if cb == nil {
+		return &runtime.Decision{
+			Allow:       false,
+			DenyMessage: "Releasing workers is not available for this session.",
+		}, nil
+	}
+
+	summary, err := cb(s.ID, req)
+	if err != nil {
+		return &runtime.Decision{
+			Allow:       false,
+			DenyMessage: fmt.Sprintf("Release failed: %v", err),
+		}, nil
+	}
+
+	return &runtime.Decision{Allow: false, DenyMessage: summary}, nil
 }

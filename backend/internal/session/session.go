@@ -103,6 +103,7 @@ type sessionChannelState struct {
 	onSpawnWorkers        func(senderID string, req SpawnWorkersRequest) error
 	onAuthorizeSpawn      func(senderID string, req SpawnWorkersRequest) (SpawnDecision, string)
 	onDissolveChannel     func(senderID string) error
+	onReleaseWorkers      func(senderID string, req ReleaseWorkersRequest) (string, error)
 }
 
 // sessionPersonaState groups persona/team fields of a Session.

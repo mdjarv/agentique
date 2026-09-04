@@ -120,16 +120,16 @@ type SessionInfo struct {
 	// push. Pointer for the same reason as the snapshot's: present-and-zero is
 	// a reading, absent means "not reported" (an offline session, or an old
 	// peer). Liveness, not attention — it never sets the unread mark.
-	AgentsInFlight *int `json:"agentsInFlight,omitempty"`
-	AgentProfileID     string               `json:"agentProfileId,omitempty"`
-	AgentProfileName   string               `json:"agentProfileName,omitempty"`
-	AgentProfileAvatar string               `json:"agentProfileAvatar,omitempty"`
-	ParentSessionID    string               `json:"parentSessionId,omitempty"`
-	Pinned             bool                 `json:"pinned"`
-	PinOrder           int64                `json:"pinOrder"`
-	CreatedAt          string               `json:"createdAt"`
-	UpdatedAt          string               `json:"updatedAt"`
-	LastQueryAt        string               `json:"lastQueryAt,omitempty"`
+	AgentsInFlight     *int   `json:"agentsInFlight,omitempty"`
+	AgentProfileID     string `json:"agentProfileId,omitempty"`
+	AgentProfileName   string `json:"agentProfileName,omitempty"`
+	AgentProfileAvatar string `json:"agentProfileAvatar,omitempty"`
+	ParentSessionID    string `json:"parentSessionId,omitempty"`
+	Pinned             bool   `json:"pinned"`
+	PinOrder           int64  `json:"pinOrder"`
+	CreatedAt          string `json:"createdAt"`
+	UpdatedAt          string `json:"updatedAt"`
+	LastQueryAt        string `json:"lastQueryAt,omitempty"`
 }
 
 // MarshalJSON emits the deprecated `completedAt` alias alongside `archivedAt`,
@@ -1628,6 +1628,7 @@ func (s *Service) wirePostResumeCallbacks(
 		s.wireAgentMessageCallback(sess, cm.ChannelID)
 		if cm.Role == "lead" {
 			s.wireDissolveChannelCallback(sess, cm.ChannelID)
+			s.wireReleaseWorkersCallback(sess, cm.ChannelID)
 		}
 	}
 	s.wireSpawnWorkersCallback(sess, dbSess.ProjectID)

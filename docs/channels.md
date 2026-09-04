@@ -43,12 +43,29 @@ worker cannot spawn and has to ask its lead. Workers signal status with a `type`
 field on their messages (`plan`, `progress`, `done`) so the lead knows when
 everyone has actually finished rather than guessing from silence.
 
-Teardown goes through `DissolveChannel`, or `DissolveChannelKeepHistory` when the
-transcript is worth keeping. Deleting the lead recurses through
-`Service.DeleteSession`, which takes the descendants and their worktrees with it.
+Teardown has two verbs, and they are the same reversible/destructive split the
+storage subsystem draws. `@release` (`interceptReleaseWorkers` →
+`wireReleaseWorkersCallback`) is the **reversible** one: it archives the lead's
+own idle workers through `Service.ArchiveSession`, which releases each CLI and
+files the row away but keeps the branch, the worktree and the row — nothing a
+worker committed is lost, and unarchive brings it back. It refuses a worker whose
+turn is in flight (`ArchiveSession` already guards `TurnInFlight`), names it back
+to the lead, and skips a worker that also belongs to another channel, because
+archiving is per-session and global. Reach for it first. `@dissolve`
+(`DissolveChannel`, or `DissolveChannelKeepHistory` when the transcript is worth
+keeping) is the **destructive** one: it stops the workers, removes their
+worktrees and force-deletes their branches, and deletes the rows — reserved for
+when the lead has already captured what it needs. Deleting the lead recurses
+through `Service.DeleteSession`, which takes the descendants and their worktrees
+with it.
 
-This is code delegation and it solves a different problem from discussions. It
-stays as-is.
+Neither teardown verb is a containment boundary against a prompt-injected lead:
+workers share the lead's uid and worktree root, so a compromised lead can already
+reach a sibling worktree through `Bash` (the data dir is the documented open
+boundary). `@release` earns its place by being the *reversible* teardown an
+honest lead should reach for, not by fencing a hostile one out.
+
+This is code delegation and it solves a different problem from discussions.
 
 ## Discussions
 

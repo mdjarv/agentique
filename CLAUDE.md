@@ -687,6 +687,18 @@ events; new informational message types extend the existing skip list.
 **Additive principle.** Channel features leave session rendering, event-pipeline
 mutations and turn management alone for any session outside a channel.
 
+**Teardown is two verbs, reversible before destructive** — the same split
+`docs/storage.md` draws for disk. `@release` archives the lead's own idle workers
+through `ArchiveSession` (keeps branch, worktree and row; refuses a busy worker by
+`TurnInFlight`; skips a multi-channel one, since archiving is global); `@dissolve`
+removes worktrees and force-deletes branches. A lead's `@release` counts as an
+explicit archive gesture — the one exception to "the runtime never writes
+`archived_at`" is a person's gesture, and the lead is the operator's delegate here
+the same way `@spawn` already is. Neither verb is a containment boundary: workers
+share the lead's uid and worktree root, so a prompt-injected lead can already
+reach a sibling worktree through `Bash`. `@release` exists to be the *reversible*
+teardown, not to fence out a hostile lead.
+
 Web-only discussion personas are sessionless and claude-only. Drive them through
 `runtime.Manager` — a bare connector bypasses the permission pump and tools block
 forever. They post as the third `sender_type: "persona"` (skipped by the legacy

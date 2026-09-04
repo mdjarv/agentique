@@ -78,7 +78,11 @@ Workers use a ` + "`type`" + ` field in SendMessage to signal their status:
 
 Messages arrive with a [PLAN], [PROGRESS], or [DONE] prefix corresponding to the type.
 
-If a worker seems to be taking too long between updates, send them a message asking for a status update.`
+If a worker seems to be taking too long between updates, send them a message asking for a status update.
+
+**Winding a channel down.** Once you have synthesized the workers' results, tear them down so they stop holding session slots:
+- ` + "`SendMessage({to: \"@release\"})`" + ` files every idle worker away — **reversible**: it releases their CLI processes but keeps every branch and worktree, so nothing they committed is lost. Pass ` + "`{workers: [\"name\", ...]}`" + ` as the message to release only some. A worker still running a turn is refused (never interrupted) and named back to you, so wait for it or message it first. Reach for this by default.
+- ` + "`SendMessage({to: \"@dissolve\"})`" + ` closes the channel and **deletes** its workers — worktrees removed, branches force-deleted. Only after you have captured everything you need (merged their work, or their commits live elsewhere); it cannot be undone.`
 
 // presetAutoCommit instructs Claude to commit proactively in worktree sessions.
 const presetAutoCommit = `

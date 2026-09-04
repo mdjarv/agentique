@@ -64,8 +64,8 @@ type PipelineConfig struct {
 	// else: an aborted turn never completed, so it is not OnTurnComplete's
 	// news (no unseen mark — see unseen.go). Dispatched from the event-loop
 	// goroutine; implementations must not block.
-	OnTurnAborted func(TurnOutcome)
-	OnFatalError  func(err error)
+	OnTurnAborted   func(TurnOutcome)
+	OnFatalError    func(err error)
 	OnSendMessage   func(toolUseID, targetName, content, msgType string)
 	OnActivityEvent func(wireEvent any) // called for result/error events (activity feed)
 	// OnContextStale fires when the per-turn context-window number stops

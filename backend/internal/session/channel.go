@@ -284,6 +284,7 @@ func (s *Service) JoinChannel(ctx context.Context, sessionID, channelID, role st
 		s.wireAgentMessageCallback(live, channelID)
 		if role == "lead" {
 			s.wireDissolveChannelCallback(live, channelID)
+			s.wireReleaseWorkersCallback(live, channelID)
 		}
 	}
 
@@ -1305,6 +1306,118 @@ func (s *Service) wireDissolveChannelCallback(sess *Session, _ string) {
 			return fmt.Errorf("you lead %d channels — @dissolve is ambiguous; dissolve a specific channel from the Teams view instead", len(led))
 		}
 	})
+}
+
+// wireReleaseWorkersCallback sets up the @release interception callback on a
+// live lead session. @release is the reversible counterpart to @dissolve: it
+// archives the sender's own idle workers — releasing their CLI processes and
+// filing the rows away — while keeping every worktree, branch and row intact,
+// so nothing a worker committed is lost. A busy worker is refused (never
+// interrupted) and named. The lead's channels are resolved at call time, like
+// @dissolve, so a session leading several channels is handled unambiguously.
+func (s *Service) wireReleaseWorkersCallback(sess *Session, _ string) {
+	sess.SetReleaseWorkersCallback(func(senderID string, req ReleaseWorkersRequest) (string, error) {
+		ctx := context.Background()
+		channels, err := s.queries.ListSessionChannels(ctx, senderID)
+		if err != nil {
+			return "", fmt.Errorf("list channels: %w", err)
+		}
+		var led []string
+		for _, ch := range channels {
+			if ch.Role == "lead" {
+				led = append(led, ch.ChannelID)
+			}
+		}
+		if len(led) == 0 {
+			return "", fmt.Errorf("you do not lead any channel")
+		}
+
+		// Collect this lead's releasable workers across every channel it leads,
+		// de-duplicated by session id. A worker still in another channel is left
+		// alone: archiving is per-session and global, so filing it away here
+		// would pull it out of a channel this lead does not own.
+		type candidate struct {
+			id   string
+			name string
+		}
+		var candidates []candidate
+		seen := map[string]bool{senderID: true}
+		for _, channelID := range led {
+			members, merr := s.queries.ListChannelMemberSessions(ctx, channelID)
+			if merr != nil {
+				return "", fmt.Errorf("list members: %w", merr)
+			}
+			for _, m := range members {
+				if m.MemberRole == "lead" || seen[m.ID] {
+					continue
+				}
+				otherChannels, _ := s.queries.ListSessionChannels(ctx, m.ID)
+				if len(otherChannels) > 1 {
+					continue
+				}
+				seen[m.ID] = true
+				candidates = append(candidates, candidate{id: m.ID, name: m.Name})
+			}
+		}
+
+		// A named subset filters the candidates; report names that match none.
+		var unknown []string
+		if len(req.Workers) > 0 {
+			want := make(map[string]bool, len(req.Workers))
+			for _, n := range req.Workers {
+				want[n] = true
+			}
+			matched := make(map[string]bool)
+			filtered := candidates[:0:0]
+			for _, c := range candidates {
+				if want[c.name] {
+					filtered = append(filtered, c)
+					matched[c.name] = true
+				}
+			}
+			candidates = filtered
+			for _, n := range req.Workers {
+				if !matched[n] {
+					unknown = append(unknown, n)
+				}
+			}
+		}
+
+		var released, busy []string
+		for _, c := range candidates {
+			switch archErr := s.ArchiveSession(ctx, c.id); {
+			case archErr == nil:
+				released = append(released, c.name)
+			case errors.Is(archErr, ErrBusy):
+				busy = append(busy, c.name)
+			default:
+				slog.Warn("release: archive failed", "session_id", c.id, "error", archErr)
+				busy = append(busy, c.name+" (error)")
+			}
+		}
+
+		return formatReleaseSummary(released, busy, unknown), nil
+	})
+}
+
+// formatReleaseSummary renders the per-worker outcome of an @release call.
+func formatReleaseSummary(released, busy, unknown []string) string {
+	if len(released) == 0 && len(busy) == 0 && len(unknown) == 0 {
+		return "No workers to release — this channel has no idle workers you own."
+	}
+	var parts []string
+	if len(released) > 0 {
+		parts = append(parts, fmt.Sprintf("Released %d worker(s), keeping their branches and worktrees: %s.",
+			len(released), strings.Join(released, ", ")))
+	}
+	if len(busy) > 0 {
+		parts = append(parts, fmt.Sprintf("Still running, not released (wait or message them): %s.",
+			strings.Join(busy, ", ")))
+	}
+	if len(unknown) > 0 {
+		parts = append(parts, fmt.Sprintf("Not workers you can release: %s.", strings.Join(unknown, ", ")))
+	}
+	return strings.Join(parts, " ")
 }
 
 // wireAgentMessageCallback sets up a SendMessage interception callback for a
