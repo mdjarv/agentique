@@ -32,6 +32,7 @@ import { useMachineStore } from "~/stores/machine-store";
 import { usePulseStore } from "~/stores/pulse-store";
 import { useUIStore } from "~/stores/ui-store";
 import {
+  agentsOutPhrase,
   compareOpenRows,
   deriveBadge,
   deriveLivePhrase,
@@ -134,6 +135,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         continue;
       }
 
+      const agentsOut = (meta.agentsInFlight ?? 0) > 0;
       const badge = deriveBadge({
         state: meta.state,
         hasPendingApproval: !!data.pendingApproval,
@@ -141,6 +143,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         isPlanning: data.planMode,
         hasUnseenCompletion: data.hasUnseenCompletion,
         connected: meta.connected,
+        agentsOut,
       });
       const pulse = pulses[meta.id];
       const remoteMachine = project.machineId ? machines[project.machineId] : undefined;
@@ -188,11 +191,21 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         livePhrase:
           deriveLivePhrase({
             badge,
-            liveStatus: pulse ? formatPulse(pulse) : undefined,
+            // While the CLI runs, the pulse narrates. Idle with agents out
+            // there is no pulse (it clears at idle), so the count is the story.
+            liveStatus: pulse
+              ? formatPulse(pulse)
+              : agentsOut
+                ? agentsOutPhrase(meta.agentsInFlight ?? 0)
+                : undefined,
             approvalSummary: approvalSummary(data),
             questionSummary: questionSummary(data),
           }) ?? undefined,
-        workKind: deriveWorkKind(pulse?.lastToolCategory),
+        workKind: pulse
+          ? deriveWorkKind(pulse.lastToolCategory)
+          : agentsOut
+            ? "delegate"
+            : "generic",
         live: isRunning(badge),
         restToken,
         parked: isParked(restToken),

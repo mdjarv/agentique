@@ -72,6 +72,7 @@ type StateExtras = Partial<
     | "evictedAt"
     | "worktreeBranch"
     | "worktreePath"
+    | "agentsInFlight"
   >
 > & {
   /**
@@ -433,6 +434,7 @@ export const useChatStore = create<ChatState>((set) => ({
         const wasLive =
           data.meta.connected ||
           settledState !== data.meta.state ||
+          (data.meta.agentsInFlight ?? 0) > 0 ||
           !!data.pendingApproval ||
           !!data.pendingQuestion;
         if (!wasLive) continue;
@@ -443,6 +445,9 @@ export const useChatStore = create<ChatState>((set) => ({
             ...data.meta,
             connected: false,
             state: settledState,
+            // An away machine can't report its agents; a frozen count would
+            // animate "agents out" on a session nothing is reaching.
+            agentsInFlight: undefined,
           },
           pendingApproval: null,
           pendingQuestion: null,
@@ -555,6 +560,10 @@ export const useChatStore = create<ChatState>((set) => ({
         mergeConflictFiles: transient ? m.mergeConflictFiles : extras?.mergeConflictFiles,
         worktreeBranch: extras?.worktreeBranch ?? m.worktreeBranch,
         worktreePath: extras?.worktreePath ?? m.worktreePath,
+        // A server that counts agents states the count on every snapshot
+        // (explicitly zero when none are out), so absence here means an older
+        // peer — keep what we had rather than inventing a zero.
+        agentsInFlight: extras?.agentsInFlight ?? m.agentsInFlight,
       };
       // The unseen mark rides every state snapshot, the way archivedAt does:
       // it is session state rather than a computed git field, so a peer that

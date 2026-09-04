@@ -115,6 +115,12 @@ type SessionInfo struct {
 	Icon               string               `json:"icon,omitempty"`
 	PendingApproval    *WirePendingApproval `json:"pendingApproval,omitempty"`
 	PendingQuestion    *WirePendingQuestion `json:"pendingQuestion,omitempty"`
+	// AgentsInFlight mirrors GitSnapshot's count for the initial list, so a
+	// reloaded client shows "agents out" without waiting for the next state
+	// push. Pointer for the same reason as the snapshot's: present-and-zero is
+	// a reading, absent means "not reported" (an offline session, or an old
+	// peer). Liveness, not attention — it never sets the unread mark.
+	AgentsInFlight *int `json:"agentsInFlight,omitempty"`
 	AgentProfileID     string               `json:"agentProfileId,omitempty"`
 	AgentProfileName   string               `json:"agentProfileName,omitempty"`
 	AgentProfileAvatar string               `json:"agentProfileAvatar,omitempty"`
@@ -1164,6 +1170,8 @@ func (s *Service) applyLiveState(info *SessionInfo, sessionID string) {
 		_, _, _, _, gitOp := live.liveState()
 		info.GitOperation = gitOp
 		info.PendingApproval, info.PendingQuestion = live.PendingState()
+		agents := live.AgentsInFlight()
+		info.AgentsInFlight = &agents
 		return
 	}
 	if s.gitSvc != nil {

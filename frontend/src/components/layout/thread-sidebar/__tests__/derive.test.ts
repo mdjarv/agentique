@@ -21,6 +21,7 @@ function badgeInput(overrides: Partial<DeriveBadgeInput> = {}): DeriveBadgeInput
     isPlanning: false,
     hasUnseenCompletion: false,
     connected: true,
+    agentsOut: false,
     ...overrides,
   };
 }
@@ -68,6 +69,18 @@ describe("deriveBadge", () => {
 
   it("maps an unseen completion to unread", () => {
     expect(deriveBadge(badgeInput({ state: "idle", hasUnseenCompletion: true }))).toBe("unread");
+  });
+
+  it("keeps an idle session working while its subagents are out", () => {
+    expect(deriveBadge(badgeInput({ state: "idle", agentsOut: true }))).toBe("working");
+    // A dead process has no agents; a stale count must not wake the row.
+    expect(deriveBadge(badgeInput({ state: "idle", connected: false, agentsOut: true }))).toBe(
+      "off",
+    );
+    // Attention still outranks liveness.
+    expect(
+      deriveBadge(badgeInput({ state: "idle", agentsOut: true, hasPendingApproval: true })),
+    ).toBe("attention");
   });
 
   it("marks only disconnected idle sessions as off", () => {

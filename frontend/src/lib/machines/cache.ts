@@ -110,6 +110,9 @@ export function saveMachineCache(machineId: string): void {
       state: settleAwayState(data.meta.state),
       pendingApproval: undefined,
       pendingQuestion: undefined,
+      // A cached count is a claim about right now, which a snapshot cannot
+      // make — hydrating it would animate "agents out" for an offline machine.
+      agentsInFlight: undefined,
     });
   }
 

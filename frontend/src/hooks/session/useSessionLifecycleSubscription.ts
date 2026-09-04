@@ -46,6 +46,10 @@ export function useSessionLifecycleSubscription(
         // that reports the stop — learning the reason afterwards means drawing
         // the "Session interrupted" banner first and taking it back.
         evictedAt: payload.evictedAt,
+        // Background subagents still out, counted by the owning server. Rides
+        // every snapshot from a server that counts (explicit zero included);
+        // absent means an older peer, and the store keeps what it had.
+        agentsInFlight: payload.agentsInFlight,
         hasUncommitted: payload.hasUncommitted,
         commitsAhead: payload.commitsAhead,
         commitsBehind: payload.commitsBehind,

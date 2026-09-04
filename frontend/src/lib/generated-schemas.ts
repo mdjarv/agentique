@@ -234,6 +234,7 @@ export const SessionInfoSchema = z.object({
   icon: z.string().optional(),
   pendingApproval: WirePendingApprovalSchema.optional(),
   pendingQuestion: WirePendingQuestionSchema.optional(),
+  agentsInFlight: z.number().optional(),
   agentProfileId: z.string().optional(),
   agentProfileName: z.string().optional(),
   agentProfileAvatar: z.string().optional(),

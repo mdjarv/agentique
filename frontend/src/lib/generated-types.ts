@@ -232,6 +232,7 @@ export interface SessionInfo {
   icon?: string;
   pendingApproval?: WirePendingApproval;
   pendingQuestion?: WirePendingQuestion;
+  agentsInFlight?: number;
   agentProfileId?: string;
   agentProfileName?: string;
   agentProfileAvatar?: string;

@@ -37,6 +37,15 @@ export function deriveWorkKind(category?: string): WorkKind {
   return WORK_KIND_BY_CATEGORY[category] ?? "generic";
 }
 
+/**
+ * The third-line phrase for a session idling while its subagents are out.
+ * Matches the header's SessionWorkLine wording, so the row and the pane it
+ * opens never disagree about the same fact.
+ */
+export function agentsOutPhrase(count: number): string {
+  return `${count} ${count === 1 ? "agent" : "agents"} out`;
+}
+
 export interface DeriveBadgeInput {
   state: string;
   hasPendingApproval: boolean;
@@ -44,6 +53,8 @@ export interface DeriveBadgeInput {
   isPlanning: boolean;
   hasUnseenCompletion: boolean;
   connected: boolean;
+  /** Background subagents still out — work is happening while the CLI idles. */
+  agentsOut: boolean;
 }
 
 /**
@@ -62,6 +73,12 @@ export function deriveBadge(input: DeriveBadgeInput): ThreadBadge {
   if (input.state === "running") return input.isPlanning ? "planning" : "working";
   if (input.state === "merging") return "merging";
   if (input.state === "failed") return "failed";
+  // A background subagent outlives the turn that spawned it, so the CLI
+  // settles to idle while agents are still out — exactly when the row looked
+  // most like nothing was happening. Work is happening, on the same argument
+  // that counts `merging` as working; the call site refines the glyph to
+  // `delegate` and the phrase to "N agents out".
+  if (input.state === "idle" && input.connected && input.agentsOut) return "working";
   if (input.hasUnseenCompletion) return "unread";
   if (input.state === "idle" && !input.connected) return "off";
   return null;
