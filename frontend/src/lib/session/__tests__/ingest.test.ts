@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/session/history", () => ({
   loadSessionHistory: vi.fn(),
+  // No load in flight in these tests — nothing parks. The park/replay round
+  // trip is exercised with the real module in history.test.ts.
+  parkLiveEventDuringLoad: vi.fn(() => false),
+  setLiveEventReplayer: vi.fn(),
 }));
 
 import { loadSessionHistory } from "~/lib/session/history";

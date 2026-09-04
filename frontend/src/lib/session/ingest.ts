@@ -1,5 +1,9 @@
 import { parseServerEvent } from "~/lib/events";
-import { loadSessionHistory } from "~/lib/session/history";
+import {
+  loadSessionHistory,
+  parkLiveEventDuringLoad,
+  setLiveEventReplayer,
+} from "~/lib/session/history";
 import type { WsClient } from "~/lib/ws-client";
 import { applyEvent } from "~/stores/event-orchestrator";
 import { decideSeq, useEventSeqStore } from "~/stores/event-seq";
@@ -30,6 +34,13 @@ export interface SessionEventPayload {
 export function ingestSessionEvent(ws: WsClient, payload: SessionEventPayload): void {
   const sid = payload.sessionId;
 
+  // While a history load is in flight for this session, nothing applies: the
+  // snapshot will replace the turns wholesale and reseed the seq tracker, so
+  // anything applied during the round trip would be wiped and read as
+  // already-seen. The payload parks in history.ts and replays through this
+  // same function once the snapshot has landed.
+  if (parkLiveEventDuringLoad(payload)) return;
+
   // --- Wire-sequence gate (runs FIRST, before any store mutation) ---
   // seq 0 = unsequenced (e.g. a channel message to an offline session) —
   // skip ordering/dedup checks and apply directly. Otherwise drop
@@ -39,13 +50,20 @@ export function ingestSessionEvent(ws: WsClient, payload: SessionEventPayload): 
     const prev = useEventSeqStore.getState().states[sid];
     const { action, next } = decideSeq(prev, payload.epoch ?? 0, seq);
     if (action === "drop") return;
-    useEventSeqStore.getState().record(sid, next);
     if (action === "resync") {
       // Backfill missed events. Coalesced by loadSessionHistory's
       // historyLoading in-flight guard; the force-load reseeds the seq
       // state authoritatively from the response's high-water mark.
       loadSessionHistory(ws, sid, true);
+      // The trigger itself parks too: the snapshot the load fetches will
+      // contain it, and applying it now would mutate turns the snapshot is
+      // about to replace. Recording is skipped for the same reason — the
+      // replay re-runs the gate against the seeded state. Falls through to
+      // record+apply only when the load did not begin parking (session
+      // unknown, or no replayer wired in a bare test).
+      if (parkLiveEventDuringLoad(payload)) return;
     }
+    useEventSeqStore.getState().record(sid, next);
   }
 
   const raw = payload.event as Record<string, unknown>;
@@ -56,3 +74,8 @@ export function ingestSessionEvent(ws: WsClient, payload: SessionEventPayload): 
   // streaming-store + toolBlockIndex).
   applyEvent(sid, event, raw);
 }
+
+// Wire the replay half: history.ts drains its parked payloads back through
+// the full gate+parse+apply. A registration rather than an import from
+// history.ts, which would be a module cycle.
+setLiveEventReplayer(ingestSessionEvent);
