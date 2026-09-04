@@ -459,6 +459,23 @@ the rail cannot say "stopped" on the overview. Grey stays the shelf's and
 Archived's language: both render `compact`, which is grey and collapsed by
 construction.
 
+**A session whose machine is unreachable is filed, and that is not a
+contradiction** — it is the one shelf keyed on something other than the work.
+Pin, archive, merge and open all route to the machine that owns the session
+(`getRoutingClient`), so while that machine is away the row cannot be acted on
+at all, where an evicted or reaped one wakes on the next message. `isAway`
+decides it from the same reachability reading `deriveRestToken` turns into the
+`away` token, so the shelf can only file what the row already says; if that
+reading proves twitchy the fix belongs there, in the one place both surfaces
+read, never in a second timing rule. Pinned outranks Away (a gesture outranks a
+passing fact) and Away outranks "Finished earlier" (whose Archive-all would
+fail on every such row). Three rows are exempt, all still owed a look: a
+blocked one, an unread completion, and the session open right now — this
+filing is not a gesture and lands the instant a machine drops, so without the
+last one the row you are reading collapses underneath you. Its rows carry no
+pin or archive button either, on the rule that already drops Archive mid-turn:
+no button that can only fail.
+
 **Live is a mark that travels, and it is the only thing in the rail that
 moves.** `LiveMarks.tsx` draws one shape at two radii — a bright arc on a faint
 track — around the chip (`ChipComet`) and in the time slot (`OrbitArc`). Travel

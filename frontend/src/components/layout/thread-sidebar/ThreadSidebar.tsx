@@ -1,10 +1,14 @@
 /**
  * Flat session-first sidebar — orchestrator.
  *
- * Drafts / Pinned (drag-orderable) / Open (attention-first) / Archived
- * (collapsed). Session rows come from `useThreadGroups`; pin, archive, and
- * reorder go over WS and settle via the `session.pinned` / `session.state`
- * pushes.
+ * Drafts / Pinned (drag-orderable) / Open (attention-first) / Away / Finished
+ * earlier / Archived (the last three collapsed). Session rows come from
+ * `useThreadGroups`; pin, archive, and reorder go over WS and settle via the
+ * `session.pinned` / `session.state` pushes.
+ *
+ * Which is why Away is a shelf and not a decoration: every one of those
+ * commands routes to the machine that owns the session, so while that machine
+ * is unreachable the row can be read and nothing else.
  *
  * Drafts sit above Pinned because they are the one thing in the list that
  * exists nowhere else: an unsent prompt lives only in this browser's local
@@ -42,6 +46,7 @@ export function ThreadSidebar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [staleExpanded, setStaleExpanded] = useState(false);
+  const [awayExpanded, setAwayExpanded] = useState(false);
   const groups = useThreadGroups(searchQuery);
   const drafts = useDraftRows(searchQuery);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
@@ -56,6 +61,7 @@ export function ThreadSidebar() {
     drafts.length === 0 &&
     groups.pinned.length === 0 &&
     groups.open.length === 0 &&
+    groups.away.length === 0 &&
     groups.stale.length === 0 &&
     groups.archived.length === 0;
 
@@ -244,6 +250,31 @@ export function ThreadSidebar() {
             </div>
           )}
         </ThreadSection>
+
+        {/* Above "Finished earlier" because it is the less final shelf: this
+            work is unfinished, it is just out of reach until the machine is
+            back. Rows carry no pin or archive — see ThreadRow's RowActions. */}
+        {groups.away.length > 0 && (
+          <CollapsibleBlock
+            label="Away"
+            count={groups.away.length}
+            expanded={awayExpanded}
+            onToggle={() => setAwayExpanded((e) => !e)}
+            className="mt-2"
+          >
+            {groups.away.map((vm) => (
+              <ThreadRow
+                key={vm.sessionId}
+                vm={vm}
+                selected={vm.sessionId === activeSessionId}
+                compact
+                onClick={() => openSession(vm)}
+                onTogglePin={() => togglePin(vm)}
+                onArchive={() => archive(vm)}
+              />
+            ))}
+          </CollapsibleBlock>
+        )}
 
         {groups.stale.length > 0 && (
           <CollapsibleBlock

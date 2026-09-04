@@ -318,14 +318,22 @@ function RowActions({
               },
             ]
           : []),
-        {
-          label: vm.pinned ? "Unpin" : "Pin",
-          action: onTogglePin,
-          icon: <PinIcon className="size-3" />,
-        },
+        // Pin and archive both go over the wire to the machine that owns the
+        // session, so an unreachable one offers neither — same rule as the
+        // in-flight turn below, and the reason the Away shelf exists at all.
+        // Folding a crew away is local and survives, which is why it is above.
+        ...(vm.remoteMachineOffline
+          ? []
+          : [
+              {
+                label: vm.pinned ? "Unpin" : "Pin",
+                action: onTogglePin,
+                icon: <PinIcon className="size-3" />,
+              },
+            ]),
         // Archiving is refused while a turn is in flight, so a working row
         // offers only the pin — no button that can only fail.
-        ...(vm.archived || vm.canArchive
+        ...(!vm.remoteMachineOffline && (vm.archived || vm.canArchive)
           ? [
               {
                 label: vm.archived ? "Unarchive" : "Archive",

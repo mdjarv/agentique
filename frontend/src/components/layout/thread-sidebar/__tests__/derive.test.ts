@@ -6,6 +6,7 @@ import {
   deriveLivePhrase,
   deriveWorkKind,
   isAwake,
+  isAway,
   isHued,
   isStale,
   STALE_AFTER_MS,
@@ -332,28 +333,77 @@ describe("a cleanly-exited session reaches the shelf, not the archive", () => {
 // session that claims both is a contradiction the user created by archiving, and
 // leaving it in the priority section defeats the point of filing it.
 describe("sectionFor", () => {
+  const nothing = { archived: false, pinned: false, away: false, stale: false };
+
   it("files an archived session away even when it is still pinned", () => {
-    expect(sectionFor({ archived: true, pinned: true, stale: false })).toBe("archived");
+    expect(sectionFor({ ...nothing, archived: true, pinned: true })).toBe("archived");
   });
 
   it("keeps a pinned, un-archived session at the top", () => {
-    expect(sectionFor({ archived: false, pinned: true, stale: false })).toBe("pinned");
+    expect(sectionFor({ ...nothing, pinned: true })).toBe("pinned");
   });
 
   // Pinning still outranks the shelf: an old pinned session is there on purpose.
   it("keeps a pinned session out of the shelf", () => {
-    expect(sectionFor({ archived: false, pinned: true, stale: true })).toBe("pinned");
+    expect(sectionFor({ ...nothing, pinned: true, stale: true })).toBe("pinned");
   });
 
   it("sends a quiet, unpinned session to the shelf", () => {
-    expect(sectionFor({ archived: false, pinned: false, stale: true })).toBe("stale");
+    expect(sectionFor({ ...nothing, stale: true })).toBe("stale");
   });
 
   it("leaves everything else open", () => {
-    expect(sectionFor({ archived: false, pinned: false, stale: false })).toBe("open");
+    expect(sectionFor(nothing)).toBe("open");
   });
 
   it("archives regardless of staleness", () => {
-    expect(sectionFor({ archived: true, pinned: false, stale: true })).toBe("archived");
+    expect(sectionFor({ ...nothing, archived: true, stale: true })).toBe("archived");
+  });
+
+  it("shelves an unreachable session under Away", () => {
+    expect(sectionFor({ ...nothing, away: true })).toBe("away");
+  });
+
+  // A closed laptop does not get to undo a pin, and it does not get to
+  // un-archive either — both are gestures, where away is a passing fact.
+  it("lets a pin and an archive outrank away", () => {
+    expect(sectionFor({ ...nothing, away: true, pinned: true })).toBe("pinned");
+    expect(sectionFor({ ...nothing, away: true, archived: true })).toBe("archived");
+  });
+
+  // "Finished earlier" carries an Archive-all that would fail on every row
+  // whose machine is gone, so the shelf that explains itself wins.
+  it("puts away above the finished shelf", () => {
+    expect(sectionFor({ ...nothing, away: true, stale: true })).toBe("away");
+  });
+});
+
+// The row is not one you have not dealt with — it is one you *cannot* deal
+// with: pin, archive and open all route to the machine that owns the session.
+describe("isAway", () => {
+  const base = { machineOffline: true, blocked: false, unread: false, active: false };
+
+  it("shelves a session whose machine is unreachable", () => {
+    expect(isAway(base)).toBe(true);
+  });
+
+  it("leaves a reachable session alone", () => {
+    expect(isAway({ ...base, machineOffline: false })).toBe(false);
+  });
+
+  // Amber is the one thing the sidebar never hides, even when answering it has
+  // to wait for the machine to come back.
+  it("never files a row that is blocked on a human", () => {
+    expect(isAway({ ...base, blocked: true })).toBe(false);
+  });
+
+  it("keeps an unseen outcome visible, exactly like the finished shelf", () => {
+    expect(isAway({ ...base, unread: true })).toBe(false);
+  });
+
+  // The filing lands the instant a machine drops, so the row you are reading
+  // must not fold itself into a collapsed shelf underneath you.
+  it("never files the session that is open right now", () => {
+    expect(isAway({ ...base, active: true })).toBe(false);
   });
 });

@@ -38,6 +38,8 @@ import {
   deriveLivePhrase,
   deriveWorkKind,
   isAwake,
+  isAway,
+  isBlocked,
   isHued,
   isRunning,
   isStale,
@@ -79,6 +81,8 @@ function lastActivity(meta: SessionData["meta"]): number {
 
 export function useThreadGroups(searchQuery: string): ThreadGroups {
   const sessions = useChatStore((s) => s.sessions);
+  // Read only to keep the open session out of the Away shelf — see `isAway`.
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
   const collapsedLeads = useUIStore((s) => s.collapsedLeads);
   const projects = useAppStore((s) => s.projects);
   const machines = useMachineStore((s) => s.machines);
@@ -109,6 +113,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
     const now = Date.now();
     const pinned: ThreadRowVM[] = [];
     const open: ThreadRowVM[] = [];
+    const away: ThreadRowVM[] = [];
     const stale: ThreadRowVM[] = [];
     const archived: ThreadRowVM[] = [];
     // Pin order and archival time only matter within their own sections,
@@ -154,13 +159,16 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
       const todoTotal = data.todos?.length ?? 0;
       const todoDone = data.todos?.filter((t) => t.status === "completed").length ?? 0;
       const isArchived = !!meta.archivedAt;
+      // One reading of reachability, shared by the row's rest token and the
+      // Away shelf — the shelf can only file what the row already says.
+      const machineOffline = project.machineId
+        ? machineStatuses[project.machineId] !== "connected"
+        : false;
       const restToken = deriveRestToken({
         state: meta.state,
         merged: !!meta.worktreeMerged,
         connected: meta.connected,
-        machineOffline: project.machineId
-          ? machineStatuses[project.machineId] !== "connected"
-          : false,
+        machineOffline,
         evicted: !!meta.evictedAt,
       });
 
@@ -224,9 +232,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         remoteMachineLabel,
         remoteMachineIcon: remoteMachine?.icon || undefined,
         remoteMachinePlatform: remoteMachine?.platformOs || undefined,
-        remoteMachineOffline: project.machineId
-          ? machineStatuses[project.machineId] !== "connected"
-          : undefined,
+        remoteMachineOffline: project.machineId ? machineOffline : undefined,
         remoteMachineFault: project.machineId
           ? machineFaults[project.machineId]?.detail
           : undefined,
@@ -240,7 +246,15 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         sectionFor({
           archived: isArchived,
           pinned: meta.pinned,
-          // A search flattens the shelf so matches never hide behind it.
+          // A search flattens both shelves so matches never hide behind one.
+          away:
+            !query &&
+            isAway({
+              machineOffline,
+              blocked: isBlocked(badge),
+              unread: vm.unread,
+              active: meta.id === activeSessionId,
+            }),
           stale:
             !query &&
             isStale({ state: meta.state, unread: vm.unread, lastActivity: vm.lastActivity, now }),
@@ -253,6 +267,9 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         case "pinned":
           pinOrderById.set(meta.id, meta.pinOrder);
           pinned.push(vm);
+          break;
+        case "away":
+          away.push(vm);
           break;
         case "stale":
           stale.push(vm);
@@ -268,6 +285,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         a.sessionId.localeCompare(b.sessionId),
     );
     open.sort(compareOpenRows);
+    away.sort((a, b) => b.lastActivity - a.lastActivity);
     stale.sort((a, b) => b.lastActivity - a.lastActivity);
     // Most recently *archived* first — an old session swept today surfaces
     // on top, so a sweep (or a mistake) is easy to find and reverse.
@@ -277,9 +295,10 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         b.lastActivity - a.lastActivity,
     );
 
-    return nestWorkers({ pinned, open, stale, archived }, collapsedLeads);
+    return nestWorkers({ pinned, open, away, stale, archived }, collapsedLeads);
   }, [
     sessions,
+    activeSessionId,
     projects,
     machines,
     machineStatuses,

@@ -32,7 +32,7 @@ function row(sessionId: string, overrides: Partial<ThreadRowVM> = {}): ThreadRow
 }
 
 function groups(over: Partial<ThreadGroups> = {}): ThreadGroups {
-  return { pinned: [], open: [], stale: [], archived: [], ...over };
+  return { pinned: [], open: [], away: [], stale: [], archived: [], ...over };
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();

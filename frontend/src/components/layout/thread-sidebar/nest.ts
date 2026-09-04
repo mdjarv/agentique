@@ -26,10 +26,10 @@
  */
 import type { ThreadGroups, ThreadRowVM } from "./types";
 
-/** The three sections a worker may be pulled between. Archived is not one. */
-type NestableSection = "pinned" | "open" | "stale";
+/** The sections a worker may be pulled between. Archived is not one. */
+type NestableSection = "pinned" | "open" | "away" | "stale";
 
-const SECTIONS: NestableSection[] = ["pinned", "open", "stale"];
+const SECTIONS: NestableSection[] = ["pinned", "open", "away", "stale"];
 
 /**
  * Workers sort by recency among themselves, newest first, independent of how
@@ -94,6 +94,7 @@ export function nestWorkers(
   return {
     pinned: rebuild("pinned"),
     open: rebuild("open"),
+    away: rebuild("away"),
     stale: rebuild("stale"),
     archived: groups.archived,
   };

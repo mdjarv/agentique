@@ -203,6 +203,45 @@ export function isStale(input: StaleInput): boolean {
   return input.now - input.lastActivity > STALE_AFTER_MS;
 }
 
+export interface AwayInput {
+  /** The machine that owns this session is unreachable from here. */
+  machineOffline: boolean;
+  /** Blocked on a human — see {@link isBlocked}. */
+  blocked: boolean;
+  /** Unseen completion — the operator hasn't looked at the outcome yet. */
+  unread: boolean;
+  /** The session open in the pane right now. */
+  active: boolean;
+}
+
+/**
+ * A session is away when the machine that owns it is unreachable.
+ *
+ * This is the one shelf keyed on something other than the work: every command
+ * a row offers — open, pin, archive, merge — routes to the machine that owns
+ * the session, so while that machine is gone the row is not a session you have
+ * not dealt with, it is a session you *cannot* deal with. Left in Open it sits
+ * there permanently, and "Archive all" on the shelf below cannot collect it
+ * either.
+ *
+ * It reads the same predicate the row's own `away` rest token reads, so the
+ * shelf can only ever file what the row already says. If that predicate proves
+ * twitchy — a sleeping laptop, a reconnect — the fix belongs there, in the one
+ * place both surfaces read, never in a second timing rule invented here.
+ *
+ * Three carve-outs. An unread completion stays visible for the reason
+ * {@link isStale} keeps it visible, and a blocked row keeps its place because
+ * amber is the one thing the sidebar promises never to hide — even when the
+ * answer has to wait for the machine. The third is the open session itself:
+ * unlike archiving, this filing is not a gesture and it lands the instant a
+ * machine drops, so without it the row you are *reading* collapses into a shelf
+ * and the rail stops showing where you are.
+ */
+export function isAway(input: AwayInput): boolean {
+  if (!input.machineOffline) return false;
+  return !input.blocked && !input.unread && !input.active;
+}
+
 /**
  * Open-section comparator: sessions blocked on a human first, then
  * last-activity desc, then sessionId for a stable order.
@@ -216,13 +255,15 @@ export function compareOpenRows(a: ThreadRowVM, b: ThreadRowVM): number {
 }
 
 /** Which section of the sidebar a row belongs to. A row is in exactly one. */
-export type ThreadSection = "pinned" | "open" | "stale" | "archived";
+export type ThreadSection = "pinned" | "open" | "away" | "stale" | "archived";
 
 export interface SectionInput {
   /** The user filed it away. */
   archived: boolean;
   /** The user wants it at the top. */
   pinned: boolean;
+  /** Its machine is unreachable, so nothing on the row works — see {@link isAway}. */
+  away: boolean;
   /** Terminal, seen, and quiet for a day — see {@link isStale}. */
   stale: boolean;
 }
@@ -236,9 +277,19 @@ export interface SectionInput {
  * releases the pin when it archives, but the view cannot wait for that — the
  * state push announcing an archive carries archivedAt and not pinned, and a peer
  * on an older release never clears the pin at all.
+ *
+ * Pinned outranks away for the mirror of that reason: pinning is a standing
+ * gesture and a machine sleeping is a passing fact, so a pin is not something a
+ * closed laptop gets to undo. The row still wears its away mark up there.
+ *
+ * Away outranks stale, because the shelves answer different questions and only
+ * one of them is actionable. "Finished earlier" is a tidy-up pile with an
+ * Archive-all on it; a row whose machine is gone would fail that sweep every
+ * time, and the shelf that says why belongs above the one that cannot.
  */
 export function sectionFor(input: SectionInput): ThreadSection {
   if (input.archived) return "archived";
   if (input.pinned) return "pinned";
+  if (input.away) return "away";
   return input.stale ? "stale" : "open";
 }
