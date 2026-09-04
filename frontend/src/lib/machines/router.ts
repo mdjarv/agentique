@@ -61,6 +61,14 @@ class RoutingWsClient extends WsClient {
     return getPrimaryClient();
   }
 
+  /** The per-machine connection this payload routes to. ws-rpc resolves
+   *  through here so its per-connection legacy-op memory keys on the real
+   *  peer: keyed on this facade, one pre-rename machine would flip every
+   *  machine — the primary included — onto the legacy op name. */
+  override resolveClient(payload: unknown): WsClient {
+    return this.targetFor(payload);
+  }
+
   override request<T = unknown>(type: string, payload: unknown = {}, timeoutMs?: number) {
     return this.targetFor(payload).request<T>(type, payload, timeoutMs);
   }

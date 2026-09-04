@@ -82,7 +82,33 @@ describe("isUnknownOpError", () => {
 
 function fakeClient(handler: (type: string) => Promise<unknown>) {
   const request = vi.fn((type: string) => handler(type));
-  return { client: { request } as unknown as WsClient, request };
+  const connectListeners = new Set<() => void>();
+  const fake = {
+    request,
+    resolveClient: () => fake,
+    onConnect: (fn: () => void) => {
+      connectListeners.add(fn);
+      return () => connectListeners.delete(fn);
+    },
+  };
+  const fireConnect = () => {
+    for (const fn of connectListeners) fn();
+  };
+  return { client: fake as unknown as WsClient, request, fireConnect };
+}
+
+/**
+ * The topology production actually produces: every call site holds the ONE
+ * routing facade, which resolves each payload to the per-machine connection
+ * that owns the entity it names.
+ */
+function fakeFacade(route: (payload: { sessionId?: string }) => WsClient) {
+  return {
+    resolveClient: (payload: unknown) => route(payload as { sessionId?: string }),
+    request: () => {
+      throw new Error("renamed ops must ride the resolved peer, not the facade");
+    },
+  } as unknown as WsClient;
 }
 
 describe("define — renamed ops against an older peer", () => {
@@ -129,24 +155,57 @@ describe("define — renamed ops against an older peer", () => {
   });
 
   // Learned per connection: an up-to-date machine must not be dragged onto the
-  // legacy name because a different machine is behind.
-  it("keeps the verdict per connection", async () => {
+  // legacy name because a different machine is behind. The regression this
+  // guards: every call site holds the one routing facade, and keying the
+  // memory on it let one pre-rename machine flip EVERY machine — the primary
+  // included — onto the legacy op until reload.
+  it("keys the verdict on the resolved per-machine connection, not the facade", async () => {
     const old = fakeClient((type) =>
       type === "session.archive"
         ? Promise.reject(new Error("unknown message type: session.archive"))
         : Promise.resolve("ok"),
     );
     const current = fakeClient(() => Promise.resolve("ok"));
+    const facade = fakeFacade((payload) =>
+      payload.sessionId === "on-old" ? old.client : current.client,
+    );
     const archive = define<unknown, { sessionId: string }>("session.archive");
 
-    await archive(old.client, { sessionId: "s1" });
-    await archive(current.client, { sessionId: "s2" });
+    await archive(facade, { sessionId: "on-old" });
+    await archive(facade, { sessionId: "on-current" });
+    await archive(facade, { sessionId: "on-old" });
 
     expect(old.request.mock.calls.map((c) => c[0])).toEqual([
       "session.archive",
       "session.mark-done",
+      "session.mark-done",
     ]);
     expect(current.request.mock.calls.map((c) => c[0])).toEqual(["session.archive"]);
+  });
+
+  // Clients reconnect in place, never replaced — so the entry must clear on
+  // the connection's next connect, which is exactly when the peer may have
+  // been upgraded underneath us. Without this, a machine stuck on the legacy
+  // name stays stuck past the rename's contract phase, until page reload.
+  it("relearns after the peer reconnects", async () => {
+    let peerIsOld = true;
+    const { client, request, fireConnect } = fakeClient((type) =>
+      type === "session.archive" && peerIsOld
+        ? Promise.reject(new Error("unknown message type: session.archive"))
+        : Promise.resolve("ok"),
+    );
+    const archive = define<unknown, { sessionId: string }>("session.archive");
+
+    await archive(client, { sessionId: "s1" });
+    peerIsOld = false; // upgraded while disconnected
+    fireConnect();
+    await archive(client, { sessionId: "s2" });
+
+    expect(request.mock.calls.map((c) => c[0])).toEqual([
+      "session.archive",
+      "session.mark-done",
+      "session.archive",
+    ]);
   });
 
   it("propagates real errors instead of retrying", async () => {
