@@ -136,6 +136,34 @@ func (s *ServiceSuite) TestScheduleOriginTurnLeavesNothingUnread() {
 	s.waitForUnseen(sessionID, true)
 }
 
+// closeTurnLocked releases the next turn's start BEFORE onTurnComplete's
+// goroutine reads the origin. With a single latest-value origin pair, the
+// goroutine for schedule turn N read turn N+1's origin, mismatched, and
+// treated the schedule fire as user-origin — bolding a row for an hourly
+// loop. Origins are keyed by turn index now; this pins that interleaving.
+func (s *ServiceSuite) TestScheduleOriginSurvivesRacingNextTurnStart() {
+	sessionID, _ := s.createLiveSession()
+	sess := s.mgr.Get(sessionID)
+	s.Require().NotNil(sess)
+
+	const scheduleTurn = 7
+	sess.recordTurnOrigin(scheduleTurn, QueryOrigin{Kind: "schedule", ScheduleID: "sched-1", RunID: "run-1"})
+	// The racing next turn records its origin before the schedule turn's
+	// completion goroutine runs.
+	sess.recordTurnOrigin(scheduleTurn+1, QueryOrigin{})
+
+	sess.markUnseenCompletion(scheduleTurn)
+
+	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.False(dbSess.UnseenCompletedAt.Valid,
+		"a schedule fire must leave nothing unread even when the next turn already started")
+
+	// And the racing user turn still marks when its own completion lands.
+	sess.markUnseenCompletion(scheduleTurn + 1)
+	s.waitForUnseen(sessionID, true)
+}
+
 // The read receipt. Idempotent on purpose — a client reconnecting, or opening
 // the same session twice, should not have to know whether the mark was still
 // set.

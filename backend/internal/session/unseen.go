@@ -33,14 +33,29 @@ import (
 // approval and question (lib/session/priority.ts), because the two that hold a
 // process come first. This owns the fact, not its priority.
 
-// recordTurnOrigin remembers which turn the given origin started, so
+// originPruneWindow bounds how far behind the newest turn an unconsumed
+// origin entry may trail before recordTurnOrigin drops it. Only a turn whose
+// end never reached markUnseenCompletion (a fatal abort) leaves one behind,
+// and nothing can ask about it once this many turns have passed.
+const originPruneWindow = 8
+
+// recordTurnOrigin remembers which origin started the given turn, so
 // markUnseenCompletion can recognise a schedule fire when that turn ends. The
 // TurnOutcome does not carry the origin and should not: it describes what
-// happened, not who asked.
+// happened, not who asked. Keyed by turn index, never a latest-value pair:
+// the next turn's start is released before this turn's completion goroutine
+// reads the origin (see the turnOrigins field comment).
 func (s *Session) recordTurnOrigin(turnIndex int, origin QueryOrigin) {
 	s.mu.Lock()
-	s.lastOriginTurn = turnIndex
-	s.lastOriginKind = origin.Kind
+	if s.turnOrigins == nil {
+		s.turnOrigins = make(map[int]string)
+	}
+	s.turnOrigins[turnIndex] = origin.Kind
+	for idx := range s.turnOrigins {
+		if idx < turnIndex-originPruneWindow {
+			delete(s.turnOrigins, idx)
+		}
+	}
 	s.mu.Unlock()
 }
 
@@ -56,10 +71,13 @@ func (s *Session) recordTurnOrigin(turnIndex int, origin QueryOrigin) {
 // than the oldest unread one — the same thing an unread badge means everywhere
 // else.
 func (s *Session) markUnseenCompletion(turnIndex int) {
+	// Consume this turn's own origin entry. An unrecorded turn falls back to
+	// "user", the marking case — same as before the origins were keyed.
 	s.mu.Lock()
-	scheduled := s.lastOriginTurn == turnIndex && s.lastOriginKind == "schedule"
+	kind := s.turnOrigins[turnIndex]
+	delete(s.turnOrigins, turnIndex)
 	s.mu.Unlock()
-	if scheduled {
+	if kind == "schedule" {
 		return
 	}
 

@@ -174,16 +174,18 @@ type Session struct {
 	// mirror can lag a write but never lead one. Guarded by mu. See unseen.go.
 	unseenCompletedAt string
 
-	// lastOriginTurn / lastOriginKind record which turn the most recent
-	// QueryOrigin belongs to, so the turn-end seam can ask "was the turn that
-	// just ended a schedule fire?" — the outcome itself does not carry it, and
-	// schedule attention is its own channel. Turn starts are serialized by
-	// queryMu and wait for the previous completion to drain, so a completion
-	// always describes the most recently started turn; the index is compared
-	// anyway, and a mismatch falls back to "user", the marking case.
-	// Guarded by mu.
-	lastOriginTurn int
-	lastOriginKind string
+	// turnOrigins records, per turn index, which QueryOrigin started it, so
+	// the turn-end seam can ask "was the turn that just ended a schedule
+	// fire?" — the outcome itself does not carry it, and schedule attention
+	// is its own channel. Keyed by index rather than a single latest-value
+	// pair on purpose: closeTurnLocked releases the next turn's start BEFORE
+	// onTurnComplete's goroutine reads the origin, so "latest" routinely
+	// named turn N+1 while the goroutine asked about turn N — the mismatch
+	// fell back to "user", the marking case, and a schedule fire bolded the
+	// row. Entries are consumed by markUnseenCompletion and pruned on record
+	// (a fatal abort skips the unseen seam and leaves its entry behind), so
+	// the map stays a handful of entries. Guarded by mu.
+	turnOrigins map[int]string
 
 	// pendingMessages buffers user messages sent while a turn is running on a
 	// provider without native mid-turn injection (codex). Flushed as a fresh
