@@ -21,21 +21,33 @@ import (
 // events, and trigger a history resync when the pipeline was rebuilt — see the
 // event-seq store. Seq resets to 0 within a new pipeline life, so Epoch is what
 // disambiguates "the counter restarted" from "an old duplicate".
+//
+// Seq and Epoch carry omitempty because the generated Zod schema mirrors these
+// tags, and a required field makes the client reject the WHOLE payload from a
+// peer that does not send it — every session.event push from a paired machine
+// on a pre-seq release silently dropped, its transcript frozen. Absent reads
+// as 0 on the client: unsequenced, which is also what a stamped 0 means, so
+// nothing is lost by omitting the zero value.
 type PushSessionEvent struct {
 	SessionID string `json:"sessionId"`
 	Event     any    `json:"event"`
-	Seq       int64  `json:"seq"`
-	Epoch     int64  `json:"epoch"`
+	Seq       int64  `json:"seq,omitempty"`
+	Epoch     int64  `json:"epoch,omitempty"`
 }
 
 // PushTurnStarted signals a new turn has begun. TurnIndex is the persisted
 // turn identity (allocated by the event pipeline, stable across reloads) —
 // the anchor scheduled-run rows and deep-links key on.
+//
+// TurnIndex is 1-based (AdvanceTurn increments before returning), so omitempty
+// never hides a real index — and it must stay optional on the wire for the
+// same reason as PushSessionEvent.Seq: a required field rejects whole payloads
+// from peers that predate it.
 type PushTurnStarted struct {
 	SessionID   string            `json:"sessionId"`
 	Prompt      string            `json:"prompt"`
 	Attachments []QueryAttachment `json:"attachments,omitempty"`
-	TurnIndex   int               `json:"turnIndex"`
+	TurnIndex   int               `json:"turnIndex,omitempty"`
 	Origin      *QueryOrigin      `json:"origin,omitempty"`
 }
 

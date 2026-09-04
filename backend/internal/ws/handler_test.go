@@ -1004,8 +1004,12 @@ func TestSessionMarkSeen(t *testing.T) {
 		t.Fatalf("unexpected error: %s", resp.Error.Message)
 	}
 	after := unmarshalPayload[session.ListSessionsResult](t, resp)
-	if after.Sessions[0].UnseenCompletedAt != nil {
-		t.Fatalf("expected the mark cleared, got %q", *after.Sessions[0].UnseenCompletedAt)
+	// A cleared mark is STATED as "" on the wire (SessionInfo.MarshalJSON),
+	// never omitted — absence is reserved for peers that predate the field, so
+	// a client can refuse to let old-peer silence wipe a badge. Round-tripped
+	// through JSON here, that explicit empty lands as a non-nil "".
+	if got := after.Sessions[0].UnseenCompletedAt; got != nil && *got != "" {
+		t.Fatalf("expected the mark cleared, got %q", *got)
 	}
 }
 

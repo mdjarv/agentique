@@ -835,9 +835,13 @@ type GitSnapshot struct {
 	//     session.state push from that machine silently dropped, so its rows
 	//     freeze. Wire fields are optional-by-default for exactly this reason.
 	ArchivedAt string `json:"archivedAt,omitempty"`
-	// UnseenCompletedAt is the unread-completion marker, and reads the same way
-	// ArchivedAt does: absent means "nothing waiting", never "unchanged". That
-	// is what lets a read receipt clear the mark by simply not carrying it.
+	// UnseenCompletedAt is the unread-completion marker. Unlike ArchivedAt it is
+	// ALWAYS stated on the wire — MarshalJSON re-emits it without omitempty —
+	// because the client must tell "cleared" apart from "this peer predates the
+	// field". An absent mark from an old peer must not clear a badge, so absence
+	// means "not spoken", and clearing is an explicit empty value. The struct
+	// tag keeps omitempty only so the generated Zod schema stays optional; the
+	// marshalled payload never omits it.
 	UnseenCompletedAt string `json:"unseenCompletedAt,omitempty"`
 	// EvictedAt says this session's `stopped` is the idle sweep's doing rather
 	// than anybody's. It reads like the two above — absent means "not evicted",
@@ -872,7 +876,15 @@ func (s GitSnapshot) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		snapshot
 		CompletedAt string `json:"completedAt,omitempty"`
-	}{snapshot(s), s.ArchivedAt})
+		// Re-stated without omitempty so a cleared mark is an explicit "" on
+		// the wire. With omitempty, the read receipt's broadcast looked exactly
+		// like a payload from a peer that predates the field, and the client —
+		// which must not let old-peer silence wipe badges — kept the stale
+		// badge on every other client. The tag lives here and not on the
+		// struct because the generated Zod schema mirrors struct tags, and a
+		// required field would reject whole payloads from older peers.
+		UnseenCompletedAt string `json:"unseenCompletedAt"`
+	}{snapshot(s), s.ArchivedAt, s.UnseenCompletedAt})
 }
 
 // RefreshGitStatus recomputes, broadcasts, and returns git status for a session.

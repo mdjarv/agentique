@@ -79,10 +79,13 @@ type StateExtras = Partial<
    * that owns it. Spelled out rather than picked off `SessionMetadata`: the
    * generated wire type does not carry it until the next typegen run.
    *
-   * Three-valued on purpose. `undefined` means this snapshot does not report
-   * the mark at all — a git refresh is about git, and must not be read as a
-   * statement that nothing is unread. `null` means it reports the mark and
-   * there is none; a timestamp means there is one.
+   * Four-valued on purpose. `undefined` means this snapshot does not report
+   * the mark at all — a payload from a peer that predates the field, which
+   * must not be read as a statement that nothing is unread. `""` means the
+   * peer explicitly stated the mark is cleared (a read receipt from another
+   * client), which clears unconditionally. `null` means a full session row
+   * omitted the field — cleared, but only once the vocabulary is known. A
+   * timestamp means something is unread.
    */
   unseenCompletedAt?: string | null;
 };
@@ -113,10 +116,22 @@ export function _resetUnseenWireLearning(): void {
 /** What a peer's snapshot says about the mark, or undefined when it says nothing. */
 function unseenFromWire(stated: string | null | undefined): boolean | undefined {
   if (stated === undefined) return undefined; // this snapshot is not about the mark
+  if (stated === "") {
+    // A stated empty — readUnseenCompletedAt only yields "" when the payload
+    // carried the key, which no pre-field release does. That is a read receipt
+    // arriving from another client, and it clears unconditionally; requiring
+    // the vocabulary to have been heard first would keep the badge a peer just
+    // said is gone.
+    serverSpeaksUnseen = true;
+    return false;
+  }
   if (stated) {
     serverSpeaksUnseen = true;
     return true;
   }
+  // null — a full session row that omitted the field (the list sites coerce
+  // absence to null, because a whole row omitting the mark means "not marked"
+  // once the vocabulary is known, but means nothing from an older fleet).
   return serverSpeaksUnseen ? false : undefined;
 }
 

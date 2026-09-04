@@ -918,8 +918,8 @@ export interface ScreencastMetadata {
 export interface PushSessionEvent {
   sessionId: string;
   event: unknown;
-  seq: number;
-  epoch: number;
+  seq?: number;
+  epoch?: number;
 }
 
 export interface PushSessionRenamed {
@@ -979,7 +979,7 @@ export interface PushTurnStarted {
   sessionId: string;
   prompt: string;
   attachments?: QueryAttachment[];
-  turnIndex: number;
+  turnIndex?: number;
   origin?: QueryOrigin;
 }
 

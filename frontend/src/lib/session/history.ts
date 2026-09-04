@@ -1,6 +1,9 @@
 import { startTransition } from "react";
 import { parseServerEvent } from "~/lib/events";
 import type { HistoryResult, HistoryTurn } from "~/lib/generated-types";
+// Type-only: the runtime dependency goes the other way (ingest.ts registers
+// its replayer here), so this cannot become a module cycle.
+import type { SessionEventPayload } from "~/lib/session/ingest";
 import { uuid } from "~/lib/utils";
 import type { WsClient } from "~/lib/ws-client";
 import type { Turn } from "~/stores/chat-store";
@@ -8,6 +11,63 @@ import { useChatStore } from "~/stores/chat-store";
 import { useEventSeqStore } from "~/stores/event-seq";
 
 const INITIAL_TURN_LIMIT = 20;
+
+// --- Live events parked during a history load ---
+//
+// A history snapshot replaces a session's turns wholesale and reseeds the
+// wire-seq tracker to the snapshot's high-water mark. A live event applied
+// during the fetch's round trip was therefore wiped by the replacement and
+// never redelivered: the tracker rewound to the snapshot's mark, so the
+// wiped events read as already-seen duplicates when nothing redelivered
+// them. If that window held the turn's result, the turn rendered
+// permanently unfinished. So while a load is in flight NOTHING applies —
+// the ingest path parks raw payloads here and the load's completion replays
+// them through the full gate+parse+apply, where the gate drops what the
+// snapshot already contains (seq <= highWaterSeq) and applies the rest.
+
+/** Wired once by lib/session/ingest.ts, which owns gate+parse+apply. A
+ *  registration seam rather than an import, to avoid the module cycle. */
+let replayLiveEvent: ((ws: WsClient, payload: SessionEventPayload) => void) | undefined;
+
+export function setLiveEventReplayer(
+  fn: (ws: WsClient, payload: SessionEventPayload) => void,
+): void {
+  replayLiveEvent = fn;
+}
+
+const parkedLiveEvents = new Map<string, SessionEventPayload[]>();
+
+/**
+ * Parks a live `session.event` while a history load is in flight for its
+ * session. Returns false when no load is parking (the caller applies the
+ * event normally).
+ */
+export function parkLiveEventDuringLoad(payload: SessionEventPayload): boolean {
+  const parked = parkedLiveEvents.get(payload.sessionId);
+  if (!parked) return false;
+  parked.push(payload);
+  return true;
+}
+
+function beginParking(sessionId: string): void {
+  // Without a registered replayer parking would swallow events for good;
+  // apply-live-then-get-wiped is the lesser failure.
+  if (!replayLiveEvent) return;
+  if (!parkedLiveEvents.has(sessionId)) parkedLiveEvents.set(sessionId, []);
+}
+
+function drainParked(ws: WsClient, sessionId: string): void {
+  const parked = parkedLiveEvents.get(sessionId);
+  // Deleted BEFORE replaying: a replay must not park into the list being
+  // drained. If a replayed gap starts another load, that load begins a fresh
+  // list and the remaining payloads park there instead of jumping it.
+  parkedLiveEvents.delete(sessionId);
+  if (!parked || parked.length === 0 || !replayLiveEvent) return;
+  if (!useChatStore.getState().sessions[sessionId]) return; // deleted mid-load
+  for (const payload of parked) {
+    replayLiveEvent(ws, payload);
+  }
+}
 
 /** Number of history turns to process per batch before yielding. */
 const CONVERT_BATCH_SIZE = 10;
@@ -76,6 +136,10 @@ async function fetchAndApplyFullHistory(
   if (!useChatStore.getState().sessions[sessionId]) return;
 
   if (full.turns.length === 0) {
+    // Still authoritative about sequencing: seed the tracker so parked live
+    // events replay against this snapshot's high-water mark. Left unseeded,
+    // every replay re-read its own seq as a gap and started another load.
+    useEventSeqStore.getState().seedFromHistory(sessionId, full.epoch, full.highWaterSeq);
     useChatStore.getState().setHistoryLoading(sessionId, false);
     return;
   }
@@ -115,15 +179,22 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
   performance.mark(`${tag}:request`);
 
   store.setHistoryLoading(sessionId, true);
+  // From here to the drain, live events for this session park instead of
+  // applying — see the block comment on parkedLiveEvents. The drain runs in
+  // finally: after the seed on success, and on failure too, where the replay
+  // simply meets the pre-load gate state (a genuine gap starts another load).
+  beginParking(sessionId);
 
   // Force-reload of an already-complete history: skip the partial phase.
   // Truncating from N→20 just to refetch all N is destructive — causes DOM
   // churn and scroll-position jumps in long sessions. Go straight to full.
   if (force && session.historyComplete) {
-    fetchAndApplyFullHistory(ws, sessionId, tag).catch((err) => {
-      useChatStore.getState().setHistoryLoading(sessionId, false);
-      console.error("Failed to load session history:", err);
-    });
+    fetchAndApplyFullHistory(ws, sessionId, tag)
+      .catch((err) => {
+        useChatStore.getState().setHistoryLoading(sessionId, false);
+        console.error("Failed to load session history:", err);
+      })
+      .finally(() => drainParked(ws, sessionId));
     return;
   }
 
@@ -156,5 +227,6 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
     .catch((err) => {
       useChatStore.getState().setHistoryLoading(sessionId, false);
       console.error("Failed to load session history:", err);
-    });
+    })
+    .finally(() => drainParked(ws, sessionId));
 }

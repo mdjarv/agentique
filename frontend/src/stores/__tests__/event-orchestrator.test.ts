@@ -114,13 +114,30 @@ describe("event-orchestrator — applyEvent", () => {
     expect(turn?.complete).toBe(true);
     expect(turn?.events.map((e) => e.type)).toContain("result");
 
-    // Streaming-store: the result clears text, tool inputs, reasoning and the
-    // toolBlockIndex together (tool outputs/progress are cleared per tool_result,
-    // not on result, so they may linger — assert the result-scoped clears).
+    // Streaming-store: the whole drain, outputs and progress included. Their
+    // per-tool clears fire on tool_result, which an interrupted tool never
+    // gets — before the drain covered them, an aborted tool's accumulated
+    // output lived until session delete or reconnect.
     const streaming = useStreamingStore.getState();
     expect(streaming.texts[SID]).toBeUndefined();
     expect(streaming.toolInputs[SID]).toBeUndefined();
+    expect(streaming.toolOutputs[SID]).toBeUndefined();
+    expect(streaming.toolProgress[SID]).toBeUndefined();
     expect(streaming.reasoningDeltas[SID]).toBeUndefined();
     expect(streaming.toolBlockIndex[SID]).toBeUndefined();
+  });
+
+  // The leak in isolation: a tool interrupted mid-stream has output and
+  // progress in hand and will never see its tool_result. The turn's result is
+  // the last moment those can be reclaimed.
+  it("reclaims an interrupted tool's output and progress at turn completion", () => {
+    seedSession();
+    useStreamingStore.getState().appendToolOutput(SID, "tool-interrupted", "half-written");
+    useStreamingStore.getState().setToolProgress(SID, "tool-interrupted", { elapsedMs: 30_000 });
+
+    applyEvent(SID, result(), {});
+
+    expect(useStreamingStore.getState().toolOutputs[SID]).toBeUndefined();
+    expect(useStreamingStore.getState().toolProgress[SID]).toBeUndefined();
   });
 });

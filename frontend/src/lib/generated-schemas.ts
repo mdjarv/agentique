@@ -920,8 +920,8 @@ export const ScreencastMetadataSchema = z.object({
 export const PushSessionEventSchema = z.object({
   sessionId: z.string(),
   event: z.unknown(),
-  seq: z.number(),
-  epoch: z.number(),
+  seq: z.number().optional(),
+  epoch: z.number().optional(),
 });
 
 export const PushSessionRenamedSchema = z.object({
@@ -981,7 +981,7 @@ export const PushTurnStartedSchema = z.object({
   sessionId: z.string(),
   prompt: z.string(),
   attachments: z.array(QueryAttachmentSchema).optional(),
-  turnIndex: z.number(),
+  turnIndex: z.number().optional(),
   origin: QueryOriginSchema.optional(),
 });
 

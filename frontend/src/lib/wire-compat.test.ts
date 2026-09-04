@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { GitSnapshotSchema } from "~/lib/generated-schemas";
+import {
+  GitSnapshotSchema,
+  PushSessionEventSchema,
+  PushTurnStartedSchema,
+} from "~/lib/generated-schemas";
 import {
   isUnknownOpError,
   LEGACY_OP,
@@ -51,9 +55,18 @@ describe("readUnseenCompletedAt", () => {
     );
   });
 
-  // omitempty on the server side: nothing unread and the field is simply gone.
-  it("reports nothing for an empty or absent mark", () => {
-    expect(readUnseenCompletedAt({ unseenCompletedAt: "" })).toBeUndefined();
+  // The regression this pins: the read receipt's broadcast states the mark as
+  // "" (a current peer always states it), and that explicit empty must read as
+  // a clear — mapping it to undefined made "cleared" indistinguishable from
+  // "peer predates the field", so the badge never left the other clients.
+  it("reads a stated empty mark as an explicit clear", () => {
+    expect(readUnseenCompletedAt({ unseenCompletedAt: "" })).toBe("");
+    expect(readUnseenCompletedAt({ unseenCompletedAt: null })).toBe("");
+  });
+
+  // A payload without the key says nothing — the shape a peer from before the
+  // field produces, which must never clear a badge.
+  it("reports nothing when the field is absent", () => {
     expect(readUnseenCompletedAt({})).toBeUndefined();
   });
 
@@ -64,7 +77,6 @@ describe("readUnseenCompletedAt", () => {
     expect(readUnseenCompletedAt(null)).toBeUndefined();
     expect(readUnseenCompletedAt("nonsense")).toBeUndefined();
     expect(readUnseenCompletedAt({ unseenCompletedAt: 1756198800 })).toBeUndefined();
-    expect(readUnseenCompletedAt({ unseenCompletedAt: null })).toBeUndefined();
   });
 });
 
@@ -263,5 +275,46 @@ describe("session.state accepts a payload from a peer that predates the rename",
   it("still validates a current peer's payload", () => {
     const fromCurrentPeer = { ...fromOldPeer, archivedAt: "2026-08-24T09:00:00Z" };
     expect(GitSnapshotSchema.safeParse(fromCurrentPeer).success).toBe(true);
+  });
+
+  // A current peer states the unseen mark on every snapshot, "" when cleared;
+  // that explicit empty is what lets a read receipt clear the badge elsewhere.
+  it("validates a stated-empty unseen mark and reads it as a clear", () => {
+    const cleared = { ...fromOldPeer, unseenCompletedAt: "" };
+    expect(GitSnapshotSchema.safeParse(cleared).success).toBe(true);
+    expect(readUnseenCompletedAt(cleared)).toBe("");
+  });
+});
+
+// The same required-field regression, one struct over: seq/epoch/turnIndex
+// were required in the generated schemas, so every session.event and
+// session.turn-started push from a paired machine on a pre-seq release failed
+// validation — the WHOLE payload silently dropped, its transcript frozen.
+// Wire fields stay optional; absent seq reads as unsequenced (0).
+describe("event pushes accept payloads from a peer that predates sequencing", () => {
+  it("validates a session.event without seq/epoch", () => {
+    const parsed = PushSessionEventSchema.safeParse({
+      sessionId: "s1",
+      event: { type: "text", content: "hello" },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("validates a session.turn-started without turnIndex", () => {
+    const parsed = PushTurnStartedSchema.safeParse({
+      sessionId: "s1",
+      prompt: "do the thing",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still validates a current peer's stamped payload", () => {
+    const parsed = PushSessionEventSchema.safeParse({
+      sessionId: "s1",
+      event: { type: "text", content: "hello" },
+      seq: 4,
+      epoch: 2,
+    });
+    expect(parsed.success).toBe(true);
   });
 });

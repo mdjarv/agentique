@@ -333,6 +333,31 @@ describe("applyServerEvent — late append to a complete turn", () => {
     // The turn stays complete (the late append doesn't reopen it).
     expect(res?.patch.turns?.[0]?.complete).toBe(true);
   });
+
+  // Background subagents outlive the turn that spawned them by design, so a
+  // long-lived agent ticks task_progress into the finished turn every few
+  // seconds. Without the upsert those ticks accumulated by the hundreds and
+  // re-rendered the turn on each one.
+  it("upserts task_progress by toolUseId in the finished turn too", () => {
+    const turn = makeTurn({
+      events: [text("done"), taskProgress("t1", "first")],
+      complete: true,
+    });
+    const session = makeSession({ turns: [turn], streamingEvents: [] });
+    const res = applyServerEvent(session, taskProgress("t1", "second"), true);
+
+    const events = res?.patch.turns?.[0]?.events;
+    expect(events).toHaveLength(2);
+    expect((events?.[1] as { taskSummary?: string } | undefined)?.taskSummary).toBe("second");
+    expect(res?.patch.turns?.[0]?.complete).toBe(true);
+  });
+
+  it("appends a late task_progress for a toolUseId the turn has not seen", () => {
+    const turn = makeTurn({ events: [taskProgress("t1", "first")], complete: true });
+    const session = makeSession({ turns: [turn], streamingEvents: [] });
+    const res = applyServerEvent(session, taskProgress("t2", "other"), true);
+    expect(res?.patch.turns?.[0]?.events).toHaveLength(2);
+  });
 });
 
 describe("applyServerEvent — message_delivery acks", () => {

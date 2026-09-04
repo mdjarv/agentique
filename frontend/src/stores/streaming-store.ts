@@ -24,8 +24,10 @@ interface StreamingState {
   clearAllToolInputs: (sessionId: string) => void;
   appendToolOutput: (sessionId: string, toolId: string, delta: string) => void;
   clearToolOutput: (sessionId: string, toolId: string) => void;
+  clearAllToolOutputs: (sessionId: string) => void;
   setToolProgress: (sessionId: string, toolId: string, progress: ToolProgress) => void;
   clearToolProgress: (sessionId: string, toolId: string) => void;
+  clearAllToolProgress: (sessionId: string) => void;
   appendReasoning: (sessionId: string, itemId: string, delta: string) => void;
   clearReasoning: (sessionId: string, itemId: string) => void;
   clearAllReasoning: (sessionId: string) => void;
@@ -119,6 +121,13 @@ export const useStreamingStore = create<StreamingState>((set) => ({
       };
     }),
 
+  clearAllToolOutputs: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.toolOutputs)) return s;
+      const { [sessionId]: _, ...rest } = s.toolOutputs;
+      return { toolOutputs: rest };
+    }),
+
   setToolProgress: (sessionId, toolId, progress) =>
     set((s) => {
       const sessionProgress = s.toolProgress[sessionId] ?? {};
@@ -141,6 +150,13 @@ export const useStreamingStore = create<StreamingState>((set) => ({
           [sessionId]: Object.keys(rest).length > 0 ? rest : {},
         },
       };
+    }),
+
+  clearAllToolProgress: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.toolProgress)) return s;
+      const { [sessionId]: _, ...rest } = s.toolProgress;
+      return { toolProgress: rest };
     }),
 
   appendReasoning: (sessionId, itemId, delta) =>

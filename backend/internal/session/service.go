@@ -132,10 +132,19 @@ type SessionInfo struct {
 // Remove once no supported release predates the rename.
 func (s SessionInfo) MarshalJSON() ([]byte, error) {
 	type info SessionInfo // sheds this method, so json won't recurse
+	// The unseen mark is always stated, "" when cleared — same contract as
+	// GitSnapshot.MarshalJSON, and for the same reason: absence is reserved
+	// for peers that predate the field, so a list row must not clear a badge
+	// by silence.
+	unseen := ""
+	if s.UnseenCompletedAt != nil {
+		unseen = *s.UnseenCompletedAt
+	}
 	return json.Marshal(struct {
 		info
-		CompletedAt string `json:"completedAt,omitempty"`
-	}{info(s), s.ArchivedAt})
+		CompletedAt       string `json:"completedAt,omitempty"`
+		UnseenCompletedAt string `json:"unseenCompletedAt"`
+	}{info(s), s.ArchivedAt, unseen})
 }
 
 // CreateSessionParams holds client-provided parameters for creating a session.
