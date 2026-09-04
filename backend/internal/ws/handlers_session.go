@@ -195,7 +195,7 @@ func (c *conn) handleSessionHistory(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionGeneratePRDesc(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionGeneratePRDescPayload) (msggen.PRDescriptionResult, error) {
+	handleRequestAsync(c, msg, func(ctx context.Context, p SessionGeneratePRDescPayload) (msggen.PRDescriptionResult, error) {
 		return c.gitSvc.GeneratePRDescription(ctx, p.SessionID)
 	})
 }
@@ -258,13 +258,13 @@ func (c *conn) handleSessionDiscardFile(msg ClientMessage) {
 }
 
 func (c *conn) handleSessionGenerateCommitMsg(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
+	handleRequestAsync(c, msg, func(ctx context.Context, p SessionGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.gitSvc.GenerateCommitMessage(ctx, p.SessionID)
 	})
 }
 
 func (c *conn) handleSessionGenerateName(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p SessionGenerateNamePayload) (SessionGenerateNameResult, error) {
+	handleRequestAsync(c, msg, func(ctx context.Context, p SessionGenerateNamePayload) (SessionGenerateNameResult, error) {
 		name, err := c.svc.GenerateSessionName(ctx, p.SessionID)
 		if err != nil {
 			return SessionGenerateNameResult{}, err

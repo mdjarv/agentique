@@ -31,6 +31,27 @@ func handleRequestQuiet[P any, R any](c *conn, msg ClientMessage, fn func(contex
 	doHandleRequest(c, msg, fn, slog.LevelDebug)
 }
 
+// handleRequestAsync is handleRequest on its own goroutine, for handlers that
+// block far longer than any RPC should hold the dispatch loop — the msggen
+// family runs a provider CLI call whose retry sleeps are measured in tens of
+// seconds, and on the dispatch loop that stalled every RPC queued behind it
+// (a session stop, an approval answer) for the duration. Responses are
+// matched by request ID client-side, so these handlers have no ordering
+// contract with their neighbours. Sends (respond/push) are goroutine-safe.
+// The recover mirrors the per-request panic guard net/http gives a
+// synchronous handler for free; without it a panic here kills the process.
+func handleRequestAsync[P any, R any](c *conn, msg ClientMessage, fn func(context.Context, P) (R, error)) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("ws handler panic", "type", msg.Type, "requestID", msg.ID, "panic", r)
+				c.respond(msg.ID, nil, "internal error")
+			}
+		}()
+		handleRequest(c, msg, fn)
+	}()
+}
+
 func doHandleRequest[P any, R any](c *conn, msg ClientMessage, fn func(context.Context, P) (R, error), errLevel slog.Level) {
 	ctx := context.WithValue(c.ctx, requestIDKey{}, msg.ID)
 	logger := slog.With("type", msg.Type, "requestID", msg.ID)

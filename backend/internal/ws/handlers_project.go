@@ -80,7 +80,7 @@ func (c *conn) handleProjectUncommittedFiles(msg ClientMessage) {
 }
 
 func (c *conn) handleProjectGenerateCommitMsg(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p ProjectGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
+	handleRequestAsync(c, msg, func(ctx context.Context, p ProjectGenerateCommitMsgPayload) (msggen.CommitMessageResult, error) {
 		return c.projectGitSvc.GenerateCommitMessage(ctx, p.ProjectID)
 	})
 }
