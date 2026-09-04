@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -313,7 +314,7 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 			ID: sql.NullString{String: req.ReplaceSessionID, Valid: true}, UserID: row.UserID,
 		})
 		if err != nil {
-			_ = s.queries.DeleteAuthSession(r.Context(), bearer)
+			s.rollbackPairedSession(r.Context(), bearer)
 			httperror.RespondError(w, httperror.Internal("rotate previous session", err))
 			return
 		}
@@ -335,6 +336,18 @@ func (s *Service) handlePairExchange(w http.ResponseWriter, r *http.Request) {
 			"isAdmin":     user.IsAdmin != 0,
 		},
 	})
+}
+
+// rollbackPairedSession revokes a bearer the exchange minted but cannot hand
+// out. Sessions are stored as digests (there is no plaintext column), so the
+// delete must key on the hash — passed the raw token it was a silent no-op
+// that left an orphaned live credential behind every failed rotation. The
+// error is only logged: the caller is already reporting the failure that got
+// us here, and there is nothing else to do about a rollback that also failed.
+func (s *Service) rollbackPairedSession(ctx context.Context, bearer string) {
+	if err := s.queries.DeleteAuthSession(ctx, hashToken(bearer)); err != nil {
+		slog.Error("pairing rollback failed; the minted session is still live", "error", err)
+	}
 }
 
 // handleIdentityProof signs a fresh client nonce so a paired client can prove
