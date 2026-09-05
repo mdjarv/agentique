@@ -4,6 +4,13 @@ set dotenv-load
 # TLS hostname — override per-machine: just --set tls-host myhost.ts.net dev-tls
 tls-host := env("AGENTIQUE_TLS_HOST", "localhost")
 
+# Executable suffix. `go build -o <name>` takes the name literally, so nothing
+# adds this for us, and the rest of the repo already assumes it is there: both
+# Playwright configs resolve `agentique.exe` on win32, and a Windows shell will
+# not run an extensionless PE off PATH. One definition, because every recipe
+# that names the binary needs the same answer.
+exe := if os() == "windows" { ".exe" } else { "" }
+
 # List available tasks
 default:
     @just --list
@@ -88,7 +95,7 @@ backend-build: frontend-build
     # `local` here and `release` in the release recipe and release.yml.
     cd backend && go build \
         -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.buildOrigin=local" \
-        -o ../agentique ./cmd/agentique
+        -o ../agentique{{exe}} ./cmd/agentique
 
 # Test
 test-backend:
@@ -163,15 +170,24 @@ install: build
     #!/usr/bin/env bash
     set -euo pipefail
     INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+    TARGET="${INSTALL_DIR}/agentique{{exe}}"
     mkdir -p "$INSTALL_DIR"
-    # Atomic replace via rename(2) — works even if the binary is currently running
-    # (kernel unlinks the busy inode; the running process keeps it; path now points
-    # to a fresh inode). Plain cp would fail with "Text file busy".
-    cp agentique "${INSTALL_DIR}/agentique.new"
-    chmod +x "${INSTALL_DIR}/agentique.new"
-    mv "${INSTALL_DIR}/agentique.new" "${INSTALL_DIR}/agentique"
-    VERSION="$("${INSTALL_DIR}/agentique" --version 2>/dev/null | awk '{print $2}' || echo unknown)"
-    echo "Installed agentique ${VERSION} to ${INSTALL_DIR}/agentique"
+    # The same two renames within one directory that internal/update's installOver
+    # does, and for the same reasons. On POSIX rename(2) is atomic and the running
+    # process keeps its open inode, where a plain cp fails with "Text file busy".
+    # On Windows a running .exe can be renamed aside but never overwritten, so
+    # moving the old one out of the way first is what makes the swap possible at
+    # all. Keeping it as .prev is also what lets `agentique rollback` undo a
+    # source install, exactly as it undoes an in-app upgrade.
+    cp "agentique{{exe}}" "${TARGET}.new"
+    chmod +x "${TARGET}.new"
+    rm -f "${TARGET}.prev"
+    if [ -e "$TARGET" ]; then
+      mv "$TARGET" "${TARGET}.prev"
+    fi
+    mv "${TARGET}.new" "$TARGET"
+    VERSION="$("$TARGET" --version 2>/dev/null | awk '{print $2}' || echo unknown)"
+    echo "Installed agentique ${VERSION} to ${TARGET}"
     if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
       echo ""
       echo "WARNING: ${INSTALL_DIR} is not in your PATH. Add it:"
@@ -183,48 +199,61 @@ install: build
       fish)
         COMP_DIR="$HOME/.config/fish/completions"
         mkdir -p "$COMP_DIR"
-        "${INSTALL_DIR}/agentique" completion fish > "$COMP_DIR/agentique.fish" 2>/dev/null && \
+        "$TARGET" completion fish > "$COMP_DIR/agentique.fish" 2>/dev/null && \
           echo "Installed fish completions to $COMP_DIR/agentique.fish" || true
         ;;
       zsh)
         COMP_DIR="$HOME/.zsh/completions"
         mkdir -p "$COMP_DIR"
-        "${INSTALL_DIR}/agentique" completion zsh > "$COMP_DIR/_agentique" 2>/dev/null && \
+        "$TARGET" completion zsh > "$COMP_DIR/_agentique" 2>/dev/null && \
           echo "Installed zsh completions to $COMP_DIR/_agentique" || true
         ;;
       bash)
         COMP_DIR="$HOME/.local/share/bash-completion/completions"
         mkdir -p "$COMP_DIR"
-        "${INSTALL_DIR}/agentique" completion bash > "$COMP_DIR/agentique" 2>/dev/null && \
+        "$TARGET" completion bash > "$COMP_DIR/agentique" 2>/dev/null && \
           echo "Installed bash completions to $COMP_DIR/agentique" || true
         ;;
     esac
+    # Refreshing the unit is a systemd-only concern — the unit's contents can
+    # change between builds, where the launchd plist and the Windows task name a
+    # path that has not moved.
     if systemctl --user is-enabled agentique &>/dev/null; then
-      "${INSTALL_DIR}/agentique" service install
-      if systemctl --user is-active agentique &>/dev/null; then
-        echo ""
-        echo "Service is running the OLD binary. To pick up this build, run:"
-        echo "  agentique service restart"
-      fi
+      "$TARGET" service install
+    fi
+    # Being left on the binary this build just replaced is not systemd-only,
+    # though, and `service status` is the cross-platform answer: systemd, launchd
+    # and schtasks all live behind it.
+    if "$TARGET" service status 2>/dev/null | grep -q '^Running'; then
+      echo ""
+      echo "Service is running the OLD binary. To pick up this build, run:"
+      echo "  agentique service restart"
       echo ""
     fi
     echo "Checking dependencies..."
     echo ""
-    "${INSTALL_DIR}/agentique" doctor || true
+    "$TARGET" doctor || true
 
 # Install, restart the service, and report doctor status
 upgrade: install
     #!/usr/bin/env bash
     set -euo pipefail
     INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-    if systemctl --user is-enabled agentique &>/dev/null; then
-      echo "Restarting agentique service..."
-      "${INSTALL_DIR}/agentique" service restart
-    else
-      echo "Service not installed — skipping restart."
-    fi
+    TARGET="${INSTALL_DIR}/agentique{{exe}}"
+    # No systemctl probe. `service restart` already owns systemd, launchd and
+    # schtasks behind one command, and reports "Service not installed" itself.
+    # Asking systemctl first duplicated that knowledge and got it wrong on two
+    # platforms of three: on Windows and macOS the probe simply failed, so the
+    # upgrade installed a new binary and then left the old one running, saying
+    # it had skipped the restart because no service was installed.
+    #
+    # Note this ends any turn in flight on this machine — a restart reaps the
+    # CLI process groups (docs/process-lifecycle.md). The in-app upgrade has a
+    # drain gate for that; this recipe is the blunt instrument and does not.
+    echo "Restarting agentique service..."
+    "$TARGET" service restart
     echo ""
-    "${INSTALL_DIR}/agentique" doctor || true
+    "$TARGET" doctor || true
 
 # Clean build artifacts
 clean:
