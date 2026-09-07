@@ -143,7 +143,11 @@ func (s *LiveSessionControlSuite) TestContextMeterMeasuresLiveTranscript() {
 	s.waitFor(60*time.Second, func() bool { return sess.State() == StateIdle }, "turn never completed")
 	s.waitFor(30*time.Second, func() bool { return len(s.usageEvents()) > 0 }, "no live measurement after turn end")
 
-	got := s.usageEvents()[0]
+	// The last one, not the first: the meter is seeded when the runtime
+	// attaches and then follows what the provider pushes, so the turn's own
+	// reading is at the end of the list, not the start of it.
+	evs := s.usageEvents()
+	got := evs[len(evs)-1]
 	s.T().Logf("live context usage: %d/%d (%.1f%%) raw=%d autoCompact=%v@%d",
 		got.UsedTokens, got.ContextWindow, got.Percentage, got.RawContextWindow,
 		got.AutoCompactEnabled, got.AutoCompactThreshold)

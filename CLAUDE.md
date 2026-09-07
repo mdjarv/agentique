@@ -959,6 +959,36 @@ as unknown, not as "turn". The composer's optimistic turn is rolled back **by
 turn id** — matching on prompt text can delete a genuinely running turn that
 happens to repeat the words.
 
+**The context meter has two sources and one denominator.** `contextMeter`
+follows the measurement both providers *push* (`runtime.ContextUsageEvent`,
+several times per turn), and keeps the *pull* (`Session.ContextUsage`, one
+control round-trip) as the correction on the two signals that invalidate it — a
+turn completing and a compaction — plus one seed when the runtime attaches. Only
+the pull is right straight after a compaction; only it carries the compaction
+policy, which therefore rides forward onto every pushed reading rather than
+flickering off between turns.
+
+The push always reports the model's **hard** window and the pull reports the
+**resolved** one, so a meter that seeds from one and follows the other divides
+by two numbers and the bar jumps. Divide by the resolved one — it is the window
+auto-compaction fires against, which is what `lib/session/context-tier.ts` is
+calibrated for — and recompute the percentage on both paths, because the
+provider truncates its own.
+
+Claude pushes nothing unless partial messages are on, and **two** things turn
+them on: `session.ClaudeBaselineOptions` at the connector (which is what
+actually does it here, and is why the option lives in a named function rather
+than spelled at the serve command) and `runtime.ConnectParams.PartialMessages`
+on every create/resume in `manager.go`. Either suffices; both are set, because
+losing the meter is not a visible failure. Codex pushes regardless and ignores
+the field. A live test must build its connector from `ClaudeBaselineOptions` —
+a bare one streams nothing, and measures a configuration nobody runs.
+
+The latch is `errors.Is(err, runtime.ErrNotSupported)` and nothing wider. Codex
+answers a *different* error before its first model response, meaning "not yet",
+so latching on `err != nil` silences the meter on every session that has not
+started. A latched pull never silences the push.
+
 **agentique never runs a provider CLI.** No `exec` of `claude` or `codex`
 anywhere in this repo: not for a version, not for `doctor`, not to update.
 Install facts come from the connector through `runtime.InstallInspectable`, which

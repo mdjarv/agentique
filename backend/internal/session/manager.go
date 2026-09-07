@@ -454,6 +454,20 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		MCPConfigs:  mcpConfigs,
 		Extra:       extra,
 		SessionName: params.Name,
+		// The inner API events behind a turn, which is where the mid-turn
+		// context measurement is decoded from (Claude only; codex pushes its
+		// own regardless and ignores this).
+		//
+		// It costs a StreamEvent per chunk — but ClaudeBaselineOptions already
+		// asks the CLI for those, so on this codebase it adds nothing to the
+		// wire. Measured against CLI 2.1.263: one small tool-using turn is 16
+		// stream chunks whether this is set or not, and the mid-turn
+		// measurements arrive either way. What it adds is the first-turn window
+		// seed agentkit's Connect wires to it, which duplicates the meter's own
+		// seed-on-attach — kept because it is the documented contract and the
+		// only thing that keeps the feature working for a connector built
+		// without the baseline options.
+		PartialMessages: true,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -610,6 +624,8 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		MCPConfigs:      mcpConfigs,
 		Extra:           extra,
 		SessionName:     p.Name,
+		// Partial messages: see the comment in Create.
+		PartialMessages: true,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),
@@ -702,6 +718,8 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		MCPConfigs:  mcpConfigs,
 		Extra:       extra,
 		SessionName: p.Name,
+		// Partial messages: see the comment in Create.
+		PartialMessages: true,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(makeBroadcastHook(sess)),
 			runtime.WithInterceptors(sess.agentiqueInterceptors()),

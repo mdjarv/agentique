@@ -337,10 +337,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
-		claudeOpts := []claudecli.Option{
-			claudecli.WithIncludePartialMessages(),
-			claudecli.WithReplayUserMessages(),
-		}
+		claudeOpts := session.ClaudeBaselineOptions()
 		// [claude] flags. Both are additive and default to the CLI's own
 		// behavior, so an unset section leaves the connector exactly as it was.
 		if cfg.Claude.ExcludeDynamicSystemPromptSections {

@@ -75,8 +75,12 @@ func (c *capableCLISession) usageQueryCount() int {
 type capableConnector struct {
 	rc *testutil.RecordingConnector
 
-	mu   sync.Mutex
-	last *capableCLISession
+	mu sync.Mutex
+	// initialUsage is what a freshly connected session answers. Set it before
+	// Create to make the meter's seed-on-attach deterministic — otherwise the
+	// seed races the test setting usage on the session it just got back.
+	initialUsage *runtime.ContextUsage
+	last         *capableCLISession
 }
 
 func (a *capableConnector) Connect(_ context.Context, _ runtime.ConnectParams) (runtime.CLISession, error) {
@@ -84,7 +88,10 @@ func (a *capableConnector) Connect(_ context.Context, _ runtime.ConnectParams) (
 	if err != nil {
 		return nil, err
 	}
-	wrapped := &capableCLISession{MockCLISession: mock}
+	a.mu.Lock()
+	initial := a.initialUsage
+	a.mu.Unlock()
+	wrapped := &capableCLISession{MockCLISession: mock, usage: initial}
 	a.mu.Lock()
 	a.last = wrapped
 	a.mu.Unlock()

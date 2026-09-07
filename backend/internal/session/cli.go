@@ -10,6 +10,23 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 )
 
+// ClaudeBaselineOptions are the claudecli options every agentique claude
+// session runs with, whatever the config says. Named here rather than spelled
+// at the serve command because a live test that builds a bare connector is
+// testing a configuration nobody runs — and the difference is invisible until
+// something depends on it. Partial messages are what the mid-turn context
+// measurement is decoded from (see context_meter.go); the replay echo is how
+// the pipeline confirms a mid-turn send was delivered.
+//
+// Config-dependent options ([claude] in the TOML) are appended by the serve
+// command on top of these.
+func ClaudeBaselineOptions() []claudecli.Option {
+	return []claudecli.Option{
+		claudecli.WithIncludePartialMessages(),
+		claudecli.WithReplayUserMessages(),
+	}
+}
+
 // BlockingRunner runs a single blocking Claude CLI invocation. Used by the
 // auto-title path — separate from the runtime.Manager-managed sessions.
 type BlockingRunner interface {

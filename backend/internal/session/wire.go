@@ -111,8 +111,11 @@ type WireContextManagementEvent struct {
 //
 // It exists because WireResultEvent.ContextWindow describes the *last API call*:
 // it does not shrink when the provider compacts, and drifts upward until the
-// next turn — so the meter is simply wrong after a compaction. This event is
-// measured on demand (see contextMeter) and stays correct across one.
+// next turn — so the meter is simply wrong after a compaction. This event
+// carries the reading the session actually has: the provider's pushed
+// measurement while the turn runs, corrected by an on-demand query at turn end
+// and across a compaction. contextMeter owns both and reconciles them onto one
+// window, so consecutive events are always comparable.
 //
 // Transient: broadcast-only, never persisted. It is a point-in-time measurement
 // of the session, not part of the conversation, so replaying history must not
@@ -129,7 +132,11 @@ type WireContextUsageEvent struct {
 	Percentage float64 `json:"percentage"`
 	// RawContextWindow is the model's believed hard limit. Larger than
 	// ContextWindow when a narrower compaction-policy window applies.
-	RawContextWindow     int  `json:"rawContextWindow,omitempty"`
+	RawContextWindow int `json:"rawContextWindow,omitempty"`
+	// The compaction policy exists only on the query's answer — the pushed
+	// measurement carries neither — so the meter carries the last query's
+	// values forward rather than let them flicker off between turns. Both stay
+	// zero until a query has answered on this session.
 	AutoCompactEnabled   bool `json:"autoCompactEnabled,omitempty"`
 	AutoCompactThreshold int  `json:"autoCompactThreshold,omitempty"`
 }
@@ -347,8 +354,12 @@ func errorDetail(err error) string {
 	return err.Error()
 }
 
-// defaultContextWindow returns a sensible fallback context window size for a model
-// before the CLI reports the actual value.
+// defaultContextWindow is the guess a turn falls back on when the provider
+// reported no window at all. It is a guess, and a coarse one — it can only tell
+// a 1M-context Claude model from everything else — so it is the last resort,
+// behind both of the meter's real sources. Codex used to land here on every
+// turn and be told 200000, where it actually runs at 258400; agentkit v0.5.0
+// gave its turns a real ContextWindow, so it no longer does.
 func defaultContextWindow(model string) int {
 	if strings.HasSuffix(model, "[1m]") {
 		return 1_000_000

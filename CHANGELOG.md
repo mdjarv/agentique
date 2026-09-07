@@ -8,6 +8,62 @@ before you upgrade.
 Starts at v0.4.0. Releases v0.1.0 through v0.3.0 are listed at the bottom with
 links to their own notes, rather than reconstructed here after the fact.
 
+## Unreleased
+
+### Changed
+
+- **The context meter moves while the turn runs.** It used to refresh only when
+  a turn completed or the provider compacted, each time paying a control
+  round-trip to the CLI, so the bar sat still through the part of a turn that
+  fills the window. agentkit v0.6.0 pushes the measurement several times per
+  turn on both providers — once per model response — and the meter now follows
+  that stream continuously, keeping the round-trip as the correction on the two
+  signals that invalidate it (a completed turn, a compaction) plus one seed when
+  the session's CLI attaches.
+
+  **The percentage you see is unchanged.** The two sources can disagree about
+  the denominator — the pushed measurement always reports the model's hard
+  window, the query the narrower compaction-policy one that may actually apply —
+  so the meter divides everything by the resolved one, which is the window
+  auto-compaction fires against and what the bar's warning tiers are calibrated
+  for. Measured live against CLI 2.1.263 the two currently agree on both
+  providers, so this is a guard rather than a correction, and nothing about the
+  reading moves.
+
+  Nothing new goes on the wire for it either. The event stream this is decoded
+  from was already switched on at the connector, so the chunk traffic is
+  unchanged — one small tool-using turn is 16 stream events either way,
+  measured against CLI 2.1.263.
+
+- **Codex turns report real token usage and a real context window.** They
+  carried zeroes before agentkit v0.5.0, so a codex session contributed nothing
+  to the day's token figure in the usage panel, and every codex turn fell back
+  on a guessed 200000-token window where it actually runs at 258400. Both now
+  come from codex itself. Nothing here changed shape: the existing arithmetic
+  already summed the uncached input and both cache buckets, which is what the
+  buckets have now come to mean on both providers.
+
+- **A codex shell line reads as what it did.** The same split that fixed the
+  blank rows below also means a `cat`/`grep`/`ls` segment is now typed as a
+  read, so it takes the quiet green of a read rather than the amber of a
+  command. That is a change you will see on every codex session.
+
+### Fixed
+
+- **A codex `ls` no longer renders as a blank row.** agentkit v0.5.0 splits a
+  compound shell line into one tool use per segment and types them — in real
+  sessions 141 of 177 tool uses that used to arrive as one opaque `Bash` — and a
+  `listFiles` segment has no pattern at all, which is the only thing the summary
+  line read. Those rows now name the directory they listed, and a codex
+  `Read`/`Grep`/`Glob` expands to show the shell line that produced it with its
+  output, the way its Bash rows always did.
+
+- **A tool row with nothing to show no longer opens onto nothing.** Codex
+  reports one stdout for a whole shell line and attributes it to the last
+  segment; the earlier ones carry the exit code with an empty result. Those
+  still get their completion mark — they did complete — but no longer offer an
+  expander onto a blank panel.
+
 ## v0.6.0
 
 Nothing to do before upgrading: no migration changes schema, no credential is

@@ -313,7 +313,10 @@ func (m *MockCLISession) Interrupt(_ context.Context) error {
 // Interrupted reports whether Interrupt has been called. Deliberately the only
 // interrupt surface on the plain mock: it implements neither
 // runtime.QueuedInterruptCapable nor runtime.ContextUsageCapable, so tests get
-// the ErrNotSupported fallback path for free. Decorate it to test the other one.
+// the ErrNotSupported fallback path for free — and, since it pushes no
+// runtime.ContextUsageEvent either, the context meter's event-driven path has
+// nothing to follow and goes quiet rather than spinning. Decorate it to test
+// the other one.
 func (m *MockCLISession) Interrupted() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

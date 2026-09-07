@@ -371,6 +371,13 @@ func (s *Session) setRuntime(rt *runtime.Session, cli runtime.CLISession) {
 	// resume/reconnect (or an idle-evict round trip).
 	s.repoRoots = nil
 	s.mu.Unlock()
+	// Seed the meter's denominator before the first pushed measurement arrives.
+	// The pushed one carries the model's hard window; only this query resolves
+	// the narrower compaction-policy window the bar is rendered against, so
+	// without a seed the first turn renders against one window and every turn
+	// after it against another. Non-blocking, and a provider that cannot answer
+	// costs exactly one round-trip per session. See context_meter.go.
+	s.meter.Refresh()
 }
 
 // directSendMessage injects prompt directly into the underlying CLISession,
@@ -538,6 +545,7 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 		},
 		OnWriteToolResult: s.scheduleGitRefresh,
 		OnContextStale:    func() { s.meter.Refresh() },
+		OnContextUsage:    func(u runtime.ContextUsage) { s.meter.Observe(u) },
 		OnAgentsInFlight: func(count int) {
 			// Liveness, not attention: no unseen mark, no schedule-origin
 			// gate — a background agent is out whoever asked for it. The

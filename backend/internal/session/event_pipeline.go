@@ -73,6 +73,12 @@ type PipelineConfig struct {
 	// transcript. Dispatched from the event-loop goroutine, so it must not
 	// block — contextMeter.Refresh is the intended implementation.
 	OnContextStale func()
+	// OnContextUsage fires for every measurement the provider pushes — several
+	// times per turn, once per model response. It is what moves the meter while
+	// the turn runs; OnContextStale is the correction behind it. Dispatched
+	// from the event-loop goroutine; contextMeter.Observe is the intended
+	// implementation and does not block.
+	OnContextUsage func(runtime.ContextUsage)
 	// OnAgentsInFlight fires with the new count whenever the number of
 	// subagents currently out changes: a task_started with taskType
 	// "local_agent" opens one, its terminal task event closes it. Liveness,
@@ -182,6 +188,7 @@ type EventPipeline struct {
 	onSendMessage     func(string, string, string, string)
 	onActivityEvent   func(any)
 	onContextStale    func()
+	onContextUsage    func(runtime.ContextUsage)
 	onAgentsInFlight  func(int)
 }
 
@@ -208,6 +215,7 @@ func NewEventPipeline(cfg PipelineConfig) *EventPipeline {
 		onSendMessage:     cfg.OnSendMessage,
 		onActivityEvent:   cfg.OnActivityEvent,
 		onContextStale:    cfg.OnContextStale,
+		onContextUsage:    cfg.OnContextUsage,
 		onAgentsInFlight:  cfg.OnAgentsInFlight,
 	}
 }
@@ -244,6 +252,17 @@ func (p *EventPipeline) ProcessEvent(event runtime.CLIEvent) {
 			"type", rle.RateLimitType,
 			"raw", rle.Raw,
 		)
+	}
+
+	// A pushed context measurement is not a transcript event and never becomes
+	// a wire event on its own: the meter owns the denominator it is rendered
+	// against and the compaction policy it does not carry, and broadcasts the
+	// reconciled WireContextUsageEvent itself. See context_meter.go.
+	if cu, ok := event.(runtime.ContextUsageEvent); ok {
+		if p.onContextUsage != nil {
+			p.onContextUsage(cu.Usage)
+		}
+		return
 	}
 
 	// UserEcho: may produce multiple wire events (tool results), and also

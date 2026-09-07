@@ -42,7 +42,12 @@ export function formatSummary(
     case "Edit":
       return strip(String(obj.file_path ?? ""));
     case "Glob":
-      return String(obj.pattern ?? "");
+      // A codex Glob is a segment of a shell line codex parsed for us — a bare
+      // `ls` has no pattern at all, only the path it listed and the command
+      // that listed it. Reading `pattern` alone rendered those rows blank.
+      if (obj.pattern) return String(obj.pattern);
+      if (obj.path) return strip(String(obj.path));
+      return String(obj.command ?? "");
     case "Grep":
       return `${obj.pattern ?? ""}${obj.path ? ` in ${strip(String(obj.path))}` : ""}`;
     case "Bash":
@@ -126,6 +131,20 @@ function buildDetail(
   if (!input || typeof input !== "object") return null;
   const obj = input as Record<string, unknown>;
 
+  // A codex Read/Grep/Glob is one segment of a shell line, and carries the
+  // line that produced it. The summary shows the parsed intent (the path, the
+  // pattern); expanding shows what actually ran, with its output — the same
+  // reading a Bash row gets, which is what those rows were before agentkit
+  // v0.5.0 taught codex's segments apart. Claude's own Read/Grep/Glob carry no
+  // command and fall through unchanged.
+  if ((name === "Read" || name === "Grep" || name === "Glob") && typeof obj.command === "string") {
+    const output = resultContent
+      ?.filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
+      .join("");
+    return { kind: "bash", command: obj.command, output: output || undefined };
+  }
+
   switch (name) {
     // These tools have all useful info in the summary line already
     case "Read":
@@ -174,7 +193,10 @@ function buildDetail(
     case "Agent":
       return obj.prompt ? { kind: "text", content: String(obj.prompt) } : null;
 
+    // Claude's Grep says everything in the summary; its matches are the result.
     case "Grep":
+      return null;
+
     case "ExitPlanMode":
       return obj.plan ? { kind: "markdown", content: String(obj.plan) } : null;
 
@@ -362,10 +384,19 @@ export const ToolUseBlock = memo(function ToolUseBlock({
   const detail = isStreaming
     ? null
     : buildDetail(name, input, projectPath, worktreePath, resultContent);
+  // The row returned — that is what the checkmark claims, and it is true for
+  // every segment of a codex compound command.
   const hasResultContent = (resultContent ?? []).length > 0;
+  // Whether that result has anything to *show*. Codex reports one stdout for a
+  // whole shell line and attributes it to the LAST segment; the earlier ones
+  // carry the exit code with an empty text block. Those must not open into a
+  // blank panel, so expandability keys on renderable content, not on presence.
+  const hasRenderableResult = (resultContent ?? []).some((b) =>
+    b.type === "image" ? !!b.url : !!b.text,
+  );
   const hasStreamingOutput = !!streamingOutput;
-  const hasDetail = detail !== null || hasResultContent || hasStreamingOutput;
-  const showResultContent = hasResultContent && detail?.kind !== "bash";
+  const hasDetail = detail !== null || hasRenderableResult || hasStreamingOutput;
+  const showResultContent = hasRenderableResult && detail?.kind !== "bash";
 
   return (
     <div className="border rounded-md bg-muted/50 text-xs overflow-hidden">
