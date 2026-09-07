@@ -35,6 +35,13 @@ links to their own notes, rather than reconstructed here after the fact.
   unchanged — one small tool-using turn is 16 stream events either way,
   measured against CLI 2.1.263.
 
+  **One thing now reports it, where two did.** The browser used to add up token
+  counts from the raw provider chunks and keep its own reading beside the
+  server's. That only ever worked for Claude, and it had to guess its
+  denominator from the model name — a hardcoded window table, of exactly the
+  kind that means a new upstream model needs an agentique release. It is gone;
+  the server's measurement is the reading.
+
 - **Codex turns report real token usage and a real context window.** They
   carried zeroes before agentkit v0.5.0, so a codex session contributed nothing
   to the day's token figure in the usage panel, and every codex turn fell back

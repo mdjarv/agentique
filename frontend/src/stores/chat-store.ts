@@ -279,10 +279,6 @@ export interface ChatState {
   addSessionChannel: (sessionId: string, channelId: string, role?: string) => void;
   removeSessionChannel: (sessionId: string, channelId: string) => void;
   setUnreadChannelMessage: (sessionId: string, value: boolean) => void;
-  updateStreamingContextUsage: (
-    sessionId: string,
-    patch: { inputTokens?: number; outputTokens?: number },
-  ) => void;
 
   // History
   setHistoryLoading: (sessionId: string, loading: boolean) => void;
@@ -653,28 +649,6 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setUnreadChannelMessage: (sessionId, value) =>
     set((s) => updateSession(s, sessionId, { hasUnreadChannelMessage: value })),
-
-  updateStreamingContextUsage: (sessionId, patch) =>
-    set((s) => {
-      const session = s.sessions[sessionId];
-      if (!session) return s;
-      const prev = session.contextUsage;
-      const contextWindow =
-        prev?.contextWindow ?? (session.meta.model?.endsWith("[1m]") ? 1_000_000 : 200_000);
-      const inputTokens = patch.inputTokens ?? prev?.inputTokens ?? 0;
-      const outputTokens = patch.outputTokens ?? prev?.outputTokens ?? 0;
-      // message_start reports the tokens the API call actually carried, so
-      // after a compaction it is already the compacted number — it may claim
-      // usedTokens from an earlier live measurement without going stale.
-      return updateSession(s, sessionId, {
-        contextUsage: {
-          contextWindow,
-          inputTokens,
-          outputTokens,
-          usedTokens: inputTokens + outputTokens,
-        },
-      });
-    }),
 
   setHistoryLoading: (sessionId, loading) =>
     set((s) => {

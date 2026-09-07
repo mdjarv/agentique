@@ -989,6 +989,15 @@ answers a *different* error before its first model response, meaning "not yet",
 so latching on `err != nil` silences the meter on every session that has not
 started. A latched pull never silences the push.
 
+**The client never derives a second reading.** `event-orchestrator` sees the
+same raw chunks the server decodes from, and it used to add their token counts
+into `contextUsage` itself. Two writers, and only one of them could name its
+denominator: the client had to guess the window from the model name, which is
+the hardcoded table `docs/model-catalog.md` exists to prevent, and it worked for
+Claude alone. The `context_usage` push is the reading; `result` is its
+turn-end fallback for a peer too old to push one mid-turn. Nothing else writes
+that field.
+
 **agentique never runs a provider CLI.** No `exec` of `claude` or `codex`
 anywhere in this repo: not for a version, not for `doctor`, not to update.
 Install facts come from the connector through `runtime.InstallInspectable`, which

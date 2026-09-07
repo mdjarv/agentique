@@ -31,33 +31,16 @@ function handleStreamDelta(sessionId: string, rawEvent: Record<string, unknown>)
     const type = evt.type;
     if (typeof type !== "string") return;
 
-    if (type === "message_start") {
-      const message = evt.message;
-      if (message == null || typeof message !== "object") return;
-      const usage = (message as Record<string, unknown>).usage;
-      if (usage == null || typeof usage !== "object") return;
-      const u = usage as Record<string, unknown>;
-      if (typeof u.input_tokens !== "number") return;
-      const contextTokens =
-        u.input_tokens +
-        (typeof u.cache_read_input_tokens === "number" ? u.cache_read_input_tokens : 0) +
-        (typeof u.cache_creation_input_tokens === "number" ? u.cache_creation_input_tokens : 0);
-      useChatStore.getState().updateStreamingContextUsage(sessionId, {
-        inputTokens: contextTokens,
-      });
-      return;
-    }
-
-    if (type === "message_delta") {
-      const usage = evt.usage;
-      if (usage == null || typeof usage !== "object") return;
-      const u = usage as Record<string, unknown>;
-      if (typeof u.output_tokens !== "number") return;
-      useChatStore.getState().updateStreamingContextUsage(sessionId, {
-        outputTokens: u.output_tokens,
-      });
-      return;
-    }
+    // `message_start` / `message_delta` carry token counts, and this used to
+    // add them up into a context reading. It no longer does: the server pushes
+    // that measurement itself (`context_usage`, from the same inner API events,
+    // at the same one-pair-per-model-response cadence), against the window the
+    // provider actually reported. Deriving a second one here meant two writers
+    // to one number, only one of which could name its own denominator — this
+    // side had to guess it from the model name, which is a hardcoded window
+    // table of exactly the kind `docs/model-catalog.md` exists to prevent, and
+    // it only ever worked for Claude. Text and tool deltas below are still this
+    // function's job; the meter is not.
 
     if (type === "content_block_start") {
       const contentBlock = evt.content_block;

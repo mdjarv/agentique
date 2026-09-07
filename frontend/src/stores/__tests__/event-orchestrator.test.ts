@@ -85,6 +85,56 @@ describe("event-orchestrator — applyEvent", () => {
     expect(buffered.some((e) => e.type === "tool_use")).toBe(true);
   });
 
+  // The server pushes the context measurement itself now (`context_usage`,
+  // decoded from these same inner API events, against the window the provider
+  // reported). Deriving a second reading here made two writers to one number,
+  // and only the server's could name its own denominator — this side had to
+  // guess it from the model name.
+  it("does not derive a context reading from message_start / message_delta", () => {
+    seedSession();
+
+    applyEvent(
+      SID,
+      { id: rid(), type: "stream" },
+      {
+        event: {
+          type: "message_start",
+          message: {
+            usage: {
+              input_tokens: 1000,
+              cache_read_input_tokens: 40_000,
+              cache_creation_input_tokens: 2000,
+            },
+          },
+        },
+      },
+    );
+    applyEvent(
+      SID,
+      { id: rid(), type: "stream" },
+      {
+        event: { type: "message_delta", usage: { output_tokens: 700 } },
+      },
+    );
+
+    expect(useChatStore.getState().sessions[SID]?.contextUsage).toBeNull();
+  });
+
+  // ...and the server's own measurement still moves it, mid-turn, as many times
+  // as the provider pushes one.
+  it("follows the server's pushed context measurement", () => {
+    seedSession();
+
+    for (const usedTokens of [40_000, 48_000, 52_000]) {
+      applyEvent(SID, { id: rid(), type: "context_usage", contextWindow: 200_000, usedTokens }, {});
+    }
+
+    expect(useChatStore.getState().sessions[SID]?.contextUsage).toMatchObject({
+      contextWindow: 200_000,
+      usedTokens: 52_000,
+    });
+  });
+
   it("clears tool output + progress buffers when a tool_result lands", () => {
     seedSession();
     useStreamingStore.getState().appendToolOutput(SID, "tool-A", "partial");
