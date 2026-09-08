@@ -1,5 +1,5 @@
-import type { ChangeEvent, ClipboardEvent, DragEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent, ClipboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   isAllowedType,
@@ -12,7 +12,6 @@ import type { Attachment } from "~/stores/chat-store";
 
 export function useAttachments() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef(attachments);
@@ -26,9 +25,16 @@ export function useAttachments() {
     };
   }, []);
 
-  const addFiles = async (files: File[]) => {
+  // Stable: it is handed to the window drop target, and reads only refs.
+  const addFiles = useCallback(async (files: File[]) => {
     const allowed = files.filter((f) => isAllowedType(f.type));
-    if (allowed.length === 0) return;
+    if (allowed.length === 0) {
+      // Silent refusal is fine for a picker filtered by `accept` and for a
+      // paste (which checks before it hijacks the event), but a drop can be
+      // anything the desktop holds, and it lands nowhere visible.
+      toast.error("Only images and PDFs can be attached");
+      return;
+    }
 
     const remaining = MAX_ATTACHMENTS - attachmentsRef.current.length;
     if (remaining <= 0) {
@@ -62,7 +68,7 @@ export function useAttachments() {
     if (added.length > 0) {
       setAttachments((prev) => [...prev, ...added]);
     }
-  };
+  }, []);
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => {
@@ -96,26 +102,12 @@ export function useAttachments() {
     e.target.value = "";
   };
 
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) addFiles(files);
-  };
-
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: DragEvent) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setIsDragging(false);
-  };
+  // Dropping is not handled here. A file dragged into the app is destined for
+  // the next message wherever it is released, so the drop target is the window
+  // — see `lib/file-drop.ts`. This hook only supplies `addFiles` as its sink.
 
   return {
     attachments,
-    isDragging,
     lightboxSrc,
     setLightboxSrc,
     fileInputRef,
@@ -124,8 +116,5 @@ export function useAttachments() {
     clearAll,
     handlePaste,
     handleFileInput,
-    handleDrop,
-    handleDragOver,
-    handleDragLeave,
   };
 }

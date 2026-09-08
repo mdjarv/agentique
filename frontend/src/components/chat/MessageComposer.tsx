@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { useAttachments } from "~/hooks/useAttachments";
+import { useFileDropTarget } from "~/hooks/useFileDrop";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { ACCEPTED_TYPES, type EffortLevel } from "~/lib/composer-constants";
 import type { ModelId, ProviderId } from "~/lib/session/actions";
@@ -18,6 +19,7 @@ import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AttachmentStrip } from "./composer/AttachmentStrip";
 import { ComposerTextarea, type ComposerTextareaHandle } from "./composer/ComposerTextarea";
 import { ComposerToolbar } from "./composer/ComposerToolbar";
+import { FileDropOverlay } from "./composer/FileDropOverlay";
 import { useComposerSend } from "./composer/useComposerSend";
 import { useComposerSpeech } from "./composer/useComposerSpeech";
 import { ImageLightbox } from "./ImageLightbox";
@@ -133,18 +135,22 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
     const useFocusLayout = !!focusMode && isMobile;
     const {
       attachments,
-      isDragging,
       lightboxSrc,
       setLightboxSrc,
       fileInputRef,
+      addFiles,
       removeAttachment,
       clearAll,
       handlePaste,
       handleFileInput,
-      handleDrop,
-      handleDragOver,
-      handleDragLeave,
     } = useAttachments();
+
+    // The composer is the only place a dropped file can go, so it claims the
+    // whole window rather than defending its own 48px box.
+    const isDragging = useFileDropTarget({
+      enabled: attachmentsSupported && !disabled,
+      onFiles: addFiles,
+    });
 
     const inputRef = useRef<ComposerTextareaHandle>(null);
     const [hasContent, setHasContent] = useState((initialText ?? "").trim().length > 0);
@@ -341,12 +347,6 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         placeholder={placeholder ?? (isRunning ? "Queue a follow-up..." : "Send a message...")}
         disabled={!!disabled || send.submitting}
         busy={send.submitting}
-        isDragging={isDragging}
-        dropHandlers={{
-          onDrop: handleDrop,
-          onDragOver: handleDragOver,
-          onDragLeave: handleDragLeave,
-        }}
         onPaste={handlePaste}
         stashBanner={stashBanner}
         bottomBar={bottomBar}
@@ -392,6 +392,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
           {textarea}
           <div className="h-[env(safe-area-inset-bottom)]" />
           {fileField}
+          <FileDropOverlay visible={isDragging} />
           <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
         </div>
       );
@@ -406,6 +407,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         />
         {textarea}
         {fileField}
+        <FileDropOverlay visible={isDragging} />
         <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       </div>
     );

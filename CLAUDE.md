@@ -399,6 +399,29 @@ both, because a textarea is inline-block by default and the line box its parent
 opens adds ~6px of leading under it — which is what put the placeholder half a
 line above the `+` beside it.
 
+**A dropped file has one destination, so the drop target is the window.** The
+composer's own box is 48px, which made dropping something to aim at — and a
+near miss was not a no-op: an unclaimed drop belongs to the browser, and the
+browser navigates away to the file, taking the session view with it. So
+`lib/file-drop.ts` splits the two jobs. The **guard** swallows every file drop
+on every route and is installed once from the app shell; a **sink** is somewhere
+the files can actually go, and `MessageComposer` registers one while attachments
+are supported. With no sink the drop is still swallowed, and silently — a page
+that never offered a paperclip is not refusing anything.
+
+Everything is gated on `dataTransfer.types` carrying `Files`, so a drag the app
+itself is running keeps its own drop. Enter and leave are **counted**, not a
+boolean: they fire for every element the pointer crosses and enter on the new
+one arrives *before* leave on the old, so a boolean flickers off between
+adjacent children. The overlay is `pointer-events-none` — appearing under the
+cursor would make it the drag's own target and fire the `dragleave` that
+removes it — and sits above the `z-50` dialog layer, because it accepts a drop
+from wherever the app is.
+
+`addFiles` refuses an unaccepted type **out loud**. Silence is right for the
+picker (filtered by `accept`) and for paste (which checks before it hijacks the
+event), but a drop can be anything on the desktop and it lands nowhere visible.
+
 ### The New-session panel remembers model and effort
 
 `ui-store.lastUsed` carries model and effort from the last session **created**

@@ -11,6 +11,7 @@ import { VoiceStrip } from "~/components/voice/VoiceStrip";
 import { useActiveProjectFetch } from "~/hooks/git/useActiveProjectFetch";
 import { useSyncSweep } from "~/hooks/git/useSyncSweep";
 import { useBrowserStatusSync } from "~/hooks/useBrowserStatusSync";
+import { useFileDropGuard } from "~/hooks/useFileDrop";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useMachineConnections } from "~/hooks/useMachineConnections";
@@ -61,6 +62,9 @@ function AuthenticatedLayout() {
   useActiveProjectFetch();
   useUpdateChecks();
   usePreventViewportScroll();
+  // A file dropped anywhere the composer is not listening would otherwise be
+  // the browser's, and the browser navigates away to it.
+  useFileDropGuard();
   // The screen follows the voice: a `focus` frame navigates, wherever the
   // operator happens to be.
   useVoiceFocusNavigation();

@@ -1,4 +1,4 @@
-import type { ClipboardEvent, DragEvent, ReactNode } from "react";
+import type { ClipboardEvent, ReactNode } from "react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useAutocomplete } from "~/hooks/useAutocomplete";
 import { useAutosizeTextarea } from "~/hooks/useAutosizeTextarea";
@@ -22,12 +22,6 @@ interface ComposerTextareaProps {
   disabled: boolean;
   /** submitting — drives aria-busy */
   busy: boolean;
-  isDragging: boolean;
-  dropHandlers: {
-    onDrop: (e: DragEvent) => void;
-    onDragOver: (e: DragEvent) => void;
-    onDragLeave: (e: DragEvent) => void;
-  };
   onPaste: (e: ClipboardEvent) => void;
   /** Banner rendered above the textarea (stash affordance). */
   stashBanner?: ReactNode;
@@ -84,8 +78,6 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
       placeholder,
       disabled,
       busy,
-      isDragging,
-      dropHandlers,
       onPaste,
       stashBanner,
       bottomBar,
@@ -262,15 +254,10 @@ export const ComposerTextarea = forwardRef<ComposerTextareaHandle, ComposerTexta
             // Flush to the pane on the phone: the card's border and its 12px of
             // outer padding were 26px of a screen that has 427.
             inline ? "border-t" : "rounded-xl border",
-            isDragging
-              ? "border-agent ring-2 ring-agent/30"
-              : inline
-                ? "border-agent/25 focus-within:border-agent/50"
-                : "focus-within:border-agent/50 focus-within:ring-1 focus-within:ring-agent/30",
+            inline
+              ? "border-agent/25 focus-within:border-agent/50"
+              : "focus-within:border-agent/50 focus-within:ring-1 focus-within:ring-agent/30",
           )}
-          onDrop={dropHandlers.onDrop}
-          onDragOver={dropHandlers.onDragOver}
-          onDragLeave={dropHandlers.onDragLeave}
           {...focusHandlers}
         >
           {topEdge}
