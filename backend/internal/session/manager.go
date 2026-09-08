@@ -66,11 +66,14 @@ type Manager struct {
 	// session ID; entries are created lazily via LoadOrStore and intentionally
 	// never reaped — the lock identity must stay stable, and one tiny mutex per
 	// session is negligible.
-	gitOpLocks     sync.Map
-	db             *sql.DB
-	queries        managerQueries
-	broadcaster    eventbus.Broadcaster
-	gitStatus      branchStatusQuerier
+	gitOpLocks  sync.Map
+	db          *sql.DB
+	queries     managerQueries
+	broadcaster eventbus.Broadcaster
+	gitStatus   branchStatusQuerier
+	// branchStatus is what session.list reads instead of shelling out; every
+	// path that computes a status fresh stores it here. See branch_status_cache.go.
+	branchStatus   *branchStatusCache
 	GlobalPreamble string
 
 	// MemoryPreambleFn, when set, returns a system-preamble block of the project's
@@ -136,11 +139,12 @@ type Manager struct {
 // NewManager creates a new session manager backed by the given runtime CLI connector.
 func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadcaster, connector runtime.CLIConnector) *Manager {
 	m := &Manager{
-		sessions:    make(map[string]*Session),
-		db:          db,
-		queries:     queries,
-		broadcaster: broadcaster,
-		gitStatus:   RealBranchStatusQuerier(),
+		sessions:     make(map[string]*Session),
+		db:           db,
+		queries:      queries,
+		broadcaster:  broadcaster,
+		gitStatus:    RealBranchStatusQuerier(),
+		branchStatus: newBranchStatusCache(),
 	}
 	m.connWrap = &capturingConnector{inner: connector}
 	m.rt = runtime.NewManager(m.connWrap,
@@ -406,6 +410,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		turnIndex:    -1, // first Query() will increment to 0
 		workDir:      params.WorkDir,
 		gitStatus:    m.gitStatus,
+		branchStatus: m.branchStatus,
 	})
 	// Discussion personas opt out of brain-recall so their turns aren't polluted
 	// with memory blocks — the orchestrator wants clean per-persona context.
@@ -580,6 +585,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		workDir:           p.WorkDir,
 		initialGitVersion: p.InitialGitVersion,
 		gitStatus:         m.gitStatus,
+		branchStatus:      m.branchStatus,
 	})
 	m.wireRecall(sess, p.ProjectID)
 	m.wireCompletion(sess, p.ProjectID)
@@ -677,6 +683,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		workDir:           p.WorkDir,
 		initialGitVersion: p.InitialGitVersion,
 		gitStatus:         m.gitStatus,
+		branchStatus:      m.branchStatus,
 	})
 	m.wireRecall(sess, p.ProjectID)
 	m.wireCompletion(sess, p.ProjectID)

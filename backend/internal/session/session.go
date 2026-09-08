@@ -92,6 +92,7 @@ type sessionGitState struct {
 	gitVersion      int64
 	gitRefreshTimer *time.Timer // debounce timer for mid-turn git refresh
 	gitStatus       branchStatusQuerier
+	branchStatus    *branchStatusCache // shared with the Manager; nil in bare tests
 	worktreeMerged  bool
 	gitOperation    string
 }
@@ -305,6 +306,7 @@ type sessionParams struct {
 	workDir           string
 	initialGitVersion int64
 	gitStatus         branchStatusQuerier
+	branchStatus      *branchStatusCache
 }
 
 // newSession constructs an agentique Session shell. The runtime.Session is
@@ -329,9 +331,10 @@ func newSession(p sessionParams) *Session {
 		syntheticApprovals: make(map[string]*syntheticApproval),
 		turnReg:            newTurnRegistry(),
 		git: sessionGitState{
-			workDir:    p.workDir,
-			gitVersion: p.initialGitVersion,
-			gitStatus:  p.gitStatus,
+			workDir:      p.workDir,
+			gitVersion:   p.initialGitVersion,
+			gitStatus:    p.gitStatus,
+			branchStatus: p.branchStatus,
 		},
 	}
 	s.meter = newContextMeter(p.id, s.queryContextUsage, s.emitContextUsage)

@@ -43,6 +43,7 @@ type conn struct {
 	catalog         *providers.Catalog      // model catalog; nil = base aliases only
 	sendCh          chan any
 	dispatchCh      chan ClientMessage
+	readSlots       chan struct{} // read-lane semaphore; see dispatchLoop
 	maxMessageBytes int64
 	mu              sync.Mutex
 	closeOnce       sync.Once
@@ -75,6 +76,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		catalog:         catalog,
 		sendCh:          make(chan any, sendBufSize),
 		dispatchCh:      make(chan ClientMessage, dispatchBufSize),
+		readSlots:       make(chan struct{}, maxConcurrentReads),
 		maxMessageBytes: maxMessageBytes,
 	}
 	c.sub = bus.SubscribeTopics(nil, &connSubscriber{c: c})
@@ -172,20 +174,97 @@ func (c *conn) enqueueDispatch(msg ClientMessage) bool {
 	}
 }
 
-// dispatchLoop executes handlers off the read loop, in arrival order. Serial
-// on purpose: handler execution order still matches arrival order, exactly
-// as it did when the read loop dispatched inline. Handlers known to block
+// dispatchLoop executes handlers off the read loop, in arrival order.
+//
+// Two lanes. A **mutation** runs on this loop, serially, so what the client
+// sent in order lands in order: a set-model before an enqueue, a subscribe
+// before the list that expects its pushes. A **read** (concurrentOps) runs
+// on its own goroutine, bounded by readSlots, because a read has no ordering
+// contract with its neighbours — responses match by request id — and a slow
+// one on the serial lane stalled every RPC behind it: a `project.fetch`
+// waiting on the network held up a session history for 1.6s, and at boot
+// the open session's history sat behind twenty other projects' lists. A
+// mutation still waits for at most one read slot to free, never for a whole
+// flood, and it never overtakes a read sent after it. Handlers known to block
 // for tens of seconds (the msggen family) additionally leave this loop via
-// handleRequestAsync so they cannot stall the RPCs queued behind them.
+// handleRequestAsync.
 func (c *conn) dispatchLoop() {
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		case msg := <-c.dispatchCh:
+			if concurrentOps[msg.Type] {
+				c.dispatchConcurrently(msg)
+				continue
+			}
 			c.dispatch(msg)
 		}
 	}
+}
+
+// maxConcurrentReads bounds the read lane per connection. Enough that a
+// boot's lists and histories overlap; few enough that thirty of them cannot
+// fork git thirty ways at once.
+const maxConcurrentReads = 8
+
+// concurrentOps are the handlers that run on the read lane. Membership is a
+// claim that the handler mutates nothing a later request could observe out
+// of order; a handler that writes stays off this list, whatever it costs.
+var concurrentOps = map[string]bool{
+	"session.list":              true,
+	"session.history":           true,
+	"session.diff":              true,
+	"session.commit-log":        true,
+	"session.uncommitted-files": true,
+	"session.uncommitted-diff":  true,
+	"session.pr-status":         true,
+	"project.git-status":        true,
+	"project.fetch":             true,
+	"project.list-branches":     true,
+	"project.tracked-files":     true,
+	"project.commands":          true,
+	"project.uncommitted-files": true,
+	"project.activity":          true,
+	"wire.list":                 true,
+	"channel.list":              true,
+	"channel.info":              true,
+	"channel.timeline":          true,
+	"schedule.list":             true,
+	"schedule.runs":             true,
+	"team.list":                 true,
+	"agent-profile.list":        true,
+	"persona.list":              true,
+	"providers.models":          true,
+	"browser.status":            true,
+}
+
+// dispatchConcurrently runs a read-lane handler on its own goroutine once a
+// slot is free. Waiting for the slot happens on the dispatch loop, which is
+// the backpressure: the loop, not the goroutine count, absorbs a flood. A
+// conn built without slots (a bare test) runs the handler inline.
+func (c *conn) dispatchConcurrently(msg ClientMessage) {
+	if c.readSlots == nil {
+		c.dispatch(msg)
+		return
+	}
+	select {
+	case c.readSlots <- struct{}{}:
+	case <-c.ctx.Done():
+		return
+	}
+	go func() {
+		defer func() { <-c.readSlots }()
+		// The same per-request panic guard handleRequestAsync carries: a
+		// panic on a bare goroutine kills the process.
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("ws handler panic", "type", msg.Type, "requestID", msg.ID, "panic", r)
+				c.respond(msg.ID, nil, "internal error")
+			}
+		}()
+		c.dispatch(msg)
+	}()
 }
 
 // writeLoop owns all socket writes. Exiting on a write error must go through

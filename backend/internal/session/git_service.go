@@ -178,10 +178,14 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 			snap.HasUncommitted = bs.HasUncommitted
 			snap.MergeStatus = bs.MergeStatus
 			snap.MergeConflictFiles = bs.MergeConflictFiles
+			g.mgr.branchStatus.put(dbSess.ID, branchStatusKey{projectPath: project.Path, branch: branch}, bs)
 		} else if dbSess.WorkDir != "" {
 			// Local (non-worktree) session: only check uncommitted changes.
 			if dirty, err := g.mgr.gitStatus.HasUncommittedChanges(dbSess.WorkDir); err == nil {
 				snap.HasUncommitted = dirty
+				g.mgr.branchStatus.put(dbSess.ID,
+					branchStatusKey{projectPath: project.Path, workDir: dbSess.WorkDir},
+					branchStatus{HasUncommitted: dirty})
 			}
 		}
 	}

@@ -982,6 +982,34 @@ remote machine's images fetch with its bearer like its files do.
 The socket negotiates permessage-deflate (`EnableCompression`); a peer that
 does not offer it gets plain frames.
 
+**The socket has two lanes, and membership is a claim.** `dispatchLoop` runs
+a mutation serially, in arrival order, so a set-model lands before the
+enqueue sent after it and a subscribe before the list that expects its
+pushes. A read in `concurrentOps` runs on its own goroutine, bounded by
+`maxConcurrentReads` per connection, because responses match by request id
+and a read has no ordering contract with its neighbours — a `project.fetch`
+waiting on the network used to hold a session history for 1.6s. Putting an
+op on the read lane claims it mutates nothing a later request could observe
+out of order; a handler that writes stays off it whatever it costs, and a
+test asserts every member is a registered handler. The slot wait happens on
+the loop, which is the backpressure: a mutation waits for at most one slot to
+free, never for a flood, and never overtakes a read sent after it.
+
+**`session.list` never shells out.** Branch status (ahead, behind, dirty,
+merge-tree) is five git subprocesses per unmerged worktree session, and the
+list paid it for thirty sessions on every call. It now reads
+`branchStatusCache` (`branch_status_cache.go`) and never computes: a miss or
+an entry past `branchStatusTTL` is queued for one background worker, which
+recomputes the full snapshot and broadcasts it as `session.state`, the push
+the client already applies — so a cold list answers with what it holds and
+the row is right within a second. Every path that computes a status fresh (a
+live session's own refresh, `refresh-git`, the worker) stores through the
+same cache, so for a live session it is current by construction and the TTL
+only covers what nothing reports: the project's HEAD moving underneath. An
+archived session is computed once and then left alone. One worker on
+purpose: the point is to take git off the request path, not to fork it
+thirty ways at once.
+
 ### Provider abstraction
 
 Sessions are driven through agentkit/runtime's neutral contract. Never import a

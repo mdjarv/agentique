@@ -300,6 +300,8 @@ func NewService(mgr *Manager, queries serviceQueries, hub eventbus.Broadcaster, 
 		learnHighWater:   make(map[string]int),
 		done:             make(chan struct{}),
 	}
+	// Reads s.gitSvc at call time, so the order of SetGitService does not matter.
+	mgr.branchStatus.setRefresher(svc.refreshBranchStatus)
 	go svc.sweepIdempotencyCache()
 	return svc
 }
@@ -1113,7 +1115,7 @@ func (s *Service) enrichSession(
 	}
 
 	s.applyLiveState(&info, ss.ID)
-	enrichGitStatus(s.mgr.gitStatus, &info, projectPaths[ss.ProjectID], ss.WorkDir)
+	s.enrichGitStatus(&info, projectPaths[ss.ProjectID], ss.WorkDir)
 	s.applyChannelMemberships(&info, ss.ID)
 
 	return info
@@ -1197,26 +1199,73 @@ func (s *Service) applyChannelMemberships(info *SessionInfo, sessionID string) {
 	}
 }
 
-// enrichGitStatus populates git-related fields on a SessionInfo.
-func enrichGitStatus(q branchStatusQuerier, info *SessionInfo, projectPath, workDir string) {
+// enrichGitStatus populates git-related fields on a SessionInfo from the
+// branch-status cache. It never computes: a session the cache cannot answer
+// for is queued for the background worker, which broadcasts the fresh
+// snapshot as `session.state`. An archived session is computed once and then
+// left alone — nothing moves its branch but an explicit refresh, which
+// stores through the same cache.
+func (s *Service) enrichGitStatus(info *SessionInfo, projectPath, workDir string) {
 	if info.WorktreeMerged || projectPath == "" {
 		return
 	}
-	if info.WorktreeBranch != "" {
-		// Worktree session: full branch status.
-		bs := computeBranchStatus(q, projectPath, info.WorktreeBranch, info.WorktreePath)
-		info.BranchMissing = bs.BranchMissing
-		info.CommitsAhead = bs.CommitsAhead
-		info.CommitsBehind = bs.CommitsBehind
-		info.HasUncommitted = bs.HasUncommitted
-		info.HasDirtyWorktree = bs.HasUncommitted
-		info.MergeStatus = bs.MergeStatus
-		info.MergeConflictFiles = bs.MergeConflictFiles
-	} else if workDir != "" {
-		// Local (non-worktree) session: only check uncommitted changes.
-		if dirty, err := q.HasUncommittedChanges(workDir); err == nil {
-			info.HasUncommitted = dirty
+	key := branchStatusKey{projectPath: projectPath, branch: info.WorktreeBranch}
+	if info.WorktreeBranch == "" {
+		if workDir == "" {
+			return
 		}
+		key.workDir = workDir
+	}
+	cache := s.mgr.branchStatus
+	entry, ok := cache.get(info.ID, key)
+	if !ok || (info.ArchivedAt == "" && cache.stale(entry)) {
+		cache.request(info.ID)
+	}
+	if !ok {
+		return
+	}
+	bs := entry.status
+	if info.WorktreeBranch == "" {
+		info.HasUncommitted = bs.HasUncommitted
+		return
+	}
+	info.BranchMissing = bs.BranchMissing
+	info.CommitsAhead = bs.CommitsAhead
+	info.CommitsBehind = bs.CommitsBehind
+	info.HasUncommitted = bs.HasUncommitted
+	info.HasDirtyWorktree = bs.HasUncommitted
+	info.MergeStatus = bs.MergeStatus
+	info.MergeConflictFiles = bs.MergeConflictFiles
+}
+
+// refreshBranchStatus is what the cache's worker runs for a queued session:
+// the full snapshot, computed fresh and broadcast, which stores the status
+// on its way through buildSnapshot. Without a GitService (a bare test) the
+// status is computed and stored without a broadcast.
+func (s *Service) refreshBranchStatus(sessionID string) {
+	ctx := context.Background()
+	dbSess, err := s.queries.GetSession(ctx, sessionID)
+	if err != nil {
+		return
+	}
+	project, err := s.queries.GetProject(ctx, dbSess.ProjectID)
+	if err != nil {
+		return
+	}
+	if s.gitSvc != nil {
+		s.gitSvc.broadcastSnapshot(dbSess, project)
+		return
+	}
+	branch := nullStr(dbSess.WorktreeBranch)
+	if branch != "" {
+		bs := computeBranchStatus(s.mgr.gitStatus, project.Path, branch, nullStr(dbSess.WorktreePath))
+		s.mgr.branchStatus.put(sessionID, branchStatusKey{projectPath: project.Path, branch: branch}, bs)
+		return
+	}
+	if dirty, err := s.mgr.gitStatus.HasUncommittedChanges(dbSess.WorkDir); err == nil {
+		s.mgr.branchStatus.put(sessionID,
+			branchStatusKey{projectPath: project.Path, workDir: dbSess.WorkDir},
+			branchStatus{HasUncommitted: dirty})
 	}
 }
 
@@ -1381,6 +1430,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 	if s.gitSvc != nil {
 		s.gitSvc.CleanupVersion(sessionID)
 	}
+	s.mgr.branchStatus.forget(sessionID)
 
 	s.hub.Publish(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
 

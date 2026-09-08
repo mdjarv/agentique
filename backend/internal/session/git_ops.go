@@ -96,6 +96,12 @@ func (s *Session) enrichSnapshot(snap *GitSnapshot) {
 	snap.CommitsBehind = bs.CommitsBehind
 	snap.MergeStatus = bs.MergeStatus
 	snap.MergeConflictFiles = bs.MergeConflictFiles
+	// Computed fresh, so the list can serve it: the dirty bit was read by the
+	// caller a moment ago, and the key is the one session.list asks with.
+	if s.git.branchStatus != nil {
+		bs.HasUncommitted = snap.HasUncommitted
+		s.git.branchStatus.put(s.ID, branchStatusKey{projectPath: project.Path, branch: branch}, bs)
+	}
 }
 
 // scheduleGitRefresh debounces a lightweight git status check during a running turn.
