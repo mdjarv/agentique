@@ -57,9 +57,10 @@ function findSession(sessions: SessionMetadata[], idOrPrefix?: string | null) {
 // Also drives per-project loading for remote machines (useMachineConnections
 // passes that machine's own client instead of the routing facade).
 //
-// Resolves once the session list has been applied and the history requests
-// are on the wire — never rejects, so a caller sequencing projects behind
-// this one is not stalled by a machine that is asleep.
+// Resolves once the session list has been applied and the priority
+// session's first snapshot has landed (at once, when there is none) — never
+// rejects, so a caller sequencing projects behind this one is not stalled by
+// a machine that is asleep.
 export function subscribeAndLoad(
   ws: ReturnType<typeof useWebSocket>,
   projectId: string,
@@ -90,18 +91,23 @@ export function subscribeAndLoad(
       // disconnected are cleared (not just added).
       useChatStore.getState().setSessions(sessions, projectId, force);
 
-      // The session on screen goes first and whole; the rest hold a tail.
-      // The socket serves requests in the order they were sent, so this
-      // order is the priority.
+      // The session on screen goes first, whole, and ALONE: its siblings'
+      // tails are sent only once its own first snapshot has landed. The
+      // socket runs reads concurrently, so "first on the wire" no longer
+      // means "served first" — a request sent alongside eight others shares
+      // the server with them. What the operator is looking at gets the
+      // server to itself for the ~100ms it needs.
       const priority = findSession(
         sessions,
         opts.prioritySession ?? useChatStore.getState().activeSessionId,
       );
-      if (priority) loadSessionHistory(ws, priority.id, { force });
-      for (const session of sessions) {
-        if (session.id === priority?.id || session.archivedAt) continue;
-        loadSessionHistory(ws, session.id, { force, tail: true });
-      }
+      const painted = priority ? loadSessionHistory(ws, priority.id, { force }) : Promise.resolve();
+      return painted.then(() => {
+        for (const session of sessions) {
+          if (session.id === priority?.id || session.archivedAt) continue;
+          loadSessionHistory(ws, session.id, { force, tail: true });
+        }
+      });
     })
     .catch((err) => {
       console.error("session.list failed", err);
@@ -131,12 +137,12 @@ export interface RouteFocus {
 /**
  * Loads a set of projects with the one the operator is looking at first.
  *
- * Every request on a socket is served in arrival order, so firing all
- * projects at once put the open session behind twenty-two other projects'
- * lists, their git status and every other session's history. The focused
- * project goes alone; the rest are sent once its session list has landed,
- * which puts them behind the focused session's own history request on the
- * wire. With no focus (the landing page) everything goes at once, as before.
+ * Firing all projects at once put the open session behind twenty-two other
+ * projects' lists, their git status and every other session's history. The
+ * focused project goes alone; the rest are sent once its session list AND
+ * the focused session's first snapshot have landed, so that session has the
+ * server to itself. With no focus (the landing page) everything goes at
+ * once, as before.
  */
 export function loadProjectsInOrder(
   ws: ReturnType<typeof useWebSocket>,

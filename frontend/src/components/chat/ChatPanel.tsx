@@ -193,6 +193,12 @@ export function ChatPanel({
   );
   const isLoadingHistory = useChatStore((s) => s.historyLoading.has(sessionId));
   const historyComplete = useChatStore((s) => s.sessions[sessionId]?.historyComplete ?? false);
+  // The transcript has something to show: a first snapshot has landed, or
+  // the history is known to be empty. The git work this panel does on
+  // opening — a diff, a branch refresh, both git subprocesses — waits for
+  // this, so the one request the operator is waiting on has the server to
+  // itself. Nothing is skipped; it fires the moment this flips.
+  const transcriptReady = turns.length > 0 || historyComplete;
 
   // Through the representative, never this checkout's own row: a session on a
   // remote machine must wear the repo's colour, not that machine's opinion of it.
@@ -270,7 +276,7 @@ export function ChatPanel({
     setFollowRequest(0);
   }, []);
 
-  const git = useGitActions(sessionId);
+  const git = useGitActions(sessionId, transcriptReady);
 
   const hasChanges =
     (git.diffResult?.files.length ?? 0) + (git.uncommittedDiffResult?.files.length ?? 0) > 0;
@@ -299,12 +305,13 @@ export function ChatPanel({
     };
   }, [sessionId]);
 
-  // Refresh git status on session navigation (skip if already fresh)
+  // Refresh git status on session navigation (skip if already fresh), once
+  // the transcript has painted.
   useEffect(() => {
-    if (!isGitFresh(sessionId)) {
+    if (transcriptReady && !isGitFresh(sessionId)) {
       refreshGitStatus(ws, sessionId).catch((err) => console.error("refreshGitStatus failed", err));
     }
-  }, [ws, sessionId]);
+  }, [ws, sessionId, transcriptReady]);
 
   // Design contract (docs/scheduled-loops.md): action_needed attention clears
   // on *viewing* the session — this panel being mounted is the view. failed

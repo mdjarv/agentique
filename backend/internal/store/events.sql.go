@@ -13,11 +13,9 @@ import (
 const allSessionSummaries = `-- name: AllSessionSummaries :many
 SELECT
   s.id AS session_id,
-  CAST(COALESCE(MAX(e.turn_index) + 1, 0) AS INTEGER) AS turn_count,
-  CAST(COALESCE(SUM(CASE WHEN e.type = 'result' THEN json_extract(e.data, '$.cost') ELSE 0 END), 0) AS REAL) AS total_cost
+  CAST((SELECT COALESCE(MAX(turn_index) + 1, 0) FROM session_events WHERE session_id = s.id) AS INTEGER) AS turn_count,
+  CAST((SELECT COALESCE(SUM(json_extract(data, '$.cost')), 0) FROM session_events WHERE session_id = s.id AND type = 'result') AS REAL) AS total_cost
 FROM sessions s
-LEFT JOIN session_events e ON e.session_id = s.id
-GROUP BY s.id
 `
 
 type AllSessionSummariesRow struct {
@@ -230,12 +228,10 @@ func (q *Queries) MaxTurnIndex(ctx context.Context, sessionID string) (int64, er
 const sessionSummariesByProject = `-- name: SessionSummariesByProject :many
 SELECT
   s.id AS session_id,
-  CAST(COALESCE(MAX(e.turn_index) + 1, 0) AS INTEGER) AS turn_count,
-  CAST(COALESCE(SUM(CASE WHEN e.type = 'result' THEN json_extract(e.data, '$.cost') ELSE 0 END), 0) AS REAL) AS total_cost
+  CAST((SELECT COALESCE(MAX(turn_index) + 1, 0) FROM session_events WHERE session_id = s.id) AS INTEGER) AS turn_count,
+  CAST((SELECT COALESCE(SUM(json_extract(data, '$.cost')), 0) FROM session_events WHERE session_id = s.id AND type = 'result') AS REAL) AS total_cost
 FROM sessions s
-LEFT JOIN session_events e ON e.session_id = s.id
 WHERE s.project_id = ?
-GROUP BY s.id
 `
 
 type SessionSummariesByProjectRow struct {
@@ -244,6 +240,10 @@ type SessionSummariesByProjectRow struct {
 	TotalCost float64 `json:"total_cost"`
 }
 
+// Two correlated subqueries rather than a join: the join read every event
+// row of every session in the project (117ms for one project on a live
+// database) where the turn count needs only the index and the cost only the
+// result rows.
 func (q *Queries) SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error) {
 	rows, err := q.db.QueryContext(ctx, sessionSummariesByProject, projectID)
 	if err != nil {

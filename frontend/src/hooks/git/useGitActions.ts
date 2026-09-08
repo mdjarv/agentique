@@ -9,8 +9,9 @@ import { useRefreshGit } from "./useRefreshGit";
 import { useUncommittedDiff } from "./useUncommittedDiff";
 import { useUncommittedFiles } from "./useUncommittedFiles";
 
-export function useGitActions(sessionId: string) {
-  const diff = useSessionDiff(sessionId);
+/** `ready`: whether the session's transcript has painted; see useSessionDiff. */
+export function useGitActions(sessionId: string, ready = true) {
+  const diff = useSessionDiff(sessionId, ready);
   const merge = useMergeSession(sessionId);
   const rebase = useRebaseSession(sessionId);
   const commit = useCommitSession(sessionId);

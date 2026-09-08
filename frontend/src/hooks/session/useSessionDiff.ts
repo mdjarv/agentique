@@ -3,13 +3,19 @@ import { useGitResource } from "~/hooks/git/useGitResource";
 import { type DiffResult, getSessionDiff } from "~/lib/session/actions";
 import { useChatStore } from "~/stores/chat-store";
 
-export function useSessionDiff(sessionId: string) {
+/**
+ * `ready` holds the eager fetch back until the caller says the transcript
+ * has painted: the diff is a git subprocess, and on a session's opening it
+ * competed with the history request for the same cores. False means "not
+ * yet", never "never" — the fetch fires the moment it flips.
+ */
+export function useSessionDiff(sessionId: string, ready = true) {
   const isMerged = useChatStore((s) => s.sessions[sessionId]?.meta?.worktreeMerged ?? false);
 
   const { data, loading, refetch } = useGitResource<DiffResult>({
     sessionId,
     fetch: getSessionDiff,
-    enabled: !isMerged,
+    enabled: !isMerged && ready,
     fetchOnIdle: true,
     errorMessage: "Failed to load diff",
   });

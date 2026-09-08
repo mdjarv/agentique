@@ -138,6 +138,10 @@ type Querier interface {
 	ReorderPromptTemplates(ctx context.Context, arg ReorderPromptTemplatesParams) error
 	RequeueScheduleRun(ctx context.Context, arg RequeueScheduleRunParams) error
 	ResolveScheduleRun(ctx context.Context, arg ResolveScheduleRunParams) (int64, error)
+	// Two correlated subqueries rather than a join: the join read every event
+	// row of every session in the project (117ms for one project on a live
+	// database) where the turn count needs only the index and the cost only the
+	// result rows.
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
 	SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error
 	SetScheduleAttention(ctx context.Context, arg SetScheduleAttentionParams) error

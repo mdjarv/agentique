@@ -217,22 +217,27 @@ export interface LoadHistoryOptions {
  * complete history being force-reloaded) goes straight to the full snapshot:
  * truncating N turns to a tail just to refetch all N is destructive — DOM
  * churn and scroll jumps in long sessions.
+ *
+ * Resolves once the first snapshot has been applied — the tail, where there
+ * is one — which is the moment the session can be drawn. Never rejects, and
+ * resolves at once when there is nothing to do, so a caller sequencing other
+ * work behind a session's first paint is never stalled by it.
  */
 export function loadSessionHistory(
   ws: WsClient,
   sessionId: string,
   opts: LoadHistoryOptions = {},
-): void {
+): Promise<void> {
   const { force = false, tail = false } = opts;
   const store = useChatStore.getState();
   const session = store.sessions[sessionId];
-  if (!session) return;
-  if (store.historyLoading.has(sessionId)) return;
+  if (!session) return Promise.resolve();
+  if (store.historyLoading.has(sessionId)) return Promise.resolve();
   const holdsTurns = session.turns.length > 0;
   if (tail) {
-    if (holdsTurns && !force) return;
+    if (holdsTurns && !force) return Promise.resolve();
   } else if (session.historyComplete && !force) {
-    return;
+    return Promise.resolve();
   }
 
   const sid = shortId(sessionId);
@@ -246,6 +251,13 @@ export function loadSessionHistory(
   // simply meets the pre-load gate state (a genuine gap starts another load).
   beginParking(sessionId);
 
+  // Settled by the first applied snapshot, or by the load's end when it fails
+  // before one lands.
+  let firstPaint!: () => void;
+  const painted = new Promise<void>((resolve) => {
+    firstPaint = resolve;
+  });
+
   let load: Promise<void>;
   if (tail) {
     load = fetchAndApplyTail(ws, sessionId, tag).then(() => {
@@ -253,11 +265,13 @@ export function loadSessionHistory(
       // more; the loading flag must not stay up, or the full load the
       // session's panel asks for on arrival would be refused as in flight.
       useChatStore.getState().setHistoryLoading(sessionId, false);
+      firstPaint();
     });
   } else if (holdsTurns) {
-    load = fetchAndApplyFullHistory(ws, sessionId, tag);
+    load = fetchAndApplyFullHistory(ws, sessionId, tag).then(firstPaint);
   } else {
     load = fetchAndApplyTail(ws, sessionId, tag).then(async (complete) => {
+      firstPaint();
       if (complete) {
         useChatStore.getState().setHistoryLoading(sessionId, false);
         return;
@@ -271,5 +285,9 @@ export function loadSessionHistory(
       useChatStore.getState().setHistoryLoading(sessionId, false);
       console.error("Failed to load session history:", err);
     })
-    .finally(() => drainParked(ws, sessionId));
+    .finally(() => {
+      drainParked(ws, sessionId);
+      firstPaint();
+    });
+  return painted;
 }
