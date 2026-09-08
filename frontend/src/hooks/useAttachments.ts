@@ -5,6 +5,7 @@ import {
   isAllowedType,
   isImage,
   MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_MB,
   MAX_ATTACHMENTS,
 } from "~/lib/composer-constants";
 import { readFileAsDataUrl, uuid } from "~/lib/utils";
@@ -49,7 +50,7 @@ export function useAttachments() {
     const added: Attachment[] = [];
     for (const file of batch) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
-        toast.error(`${file.name} exceeds 5 MB limit`);
+        toast.error(`${file.name} exceeds the ${MAX_ATTACHMENT_MB} MB limit`);
         continue;
       }
       try {

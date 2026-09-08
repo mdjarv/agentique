@@ -1263,20 +1263,31 @@ func TestSessionQueryPayloadBoundsAttachments(t *testing.T) {
 		SessionID: newID(),
 		Prompt:    "inspect these",
 		Attachments: []session.QueryAttachment{
-			{Name: "huge.png", MimeType: "image/png", DataUrl: "data:image/png;base64," + strings.Repeat("A", 8<<20)},
+			// Past the data-URL length cap, so it is refused without decoding.
+			{Name: "huge.png", MimeType: "image/png", DataUrl: "data:image/png;base64," + strings.Repeat("A", 11<<20)},
 		},
 	}
 	if err := payload.Validate(); err == nil {
 		t.Fatal("oversized attachment was accepted")
 	}
 
-	payload.Attachments = make([]session.QueryAttachment, 5)
+	// Under the length cap and over the decoded-byte cap: 9,900,000 base64
+	// characters decode to ~7.42 MiB. The cheap pre-filter cannot catch this one,
+	// so it is the case that proves the byte check does its own work.
+	payload.Attachments = []session.QueryAttachment{
+		{Name: "big.png", MimeType: "image/png", DataUrl: "data:image/png;base64," + strings.Repeat("A", 9_900_000)},
+	}
+	if err := payload.Validate(); err == nil {
+		t.Fatal("attachment over the decoded-byte limit was accepted")
+	}
+
+	payload.Attachments = make([]session.QueryAttachment, 4)
 	for i := range payload.Attachments {
 		payload.Attachments[i] = session.QueryAttachment{
 			Name: "small.png", MimeType: "image/png", DataUrl: "data:image/png;base64,QQ==",
 		}
 	}
 	if err := payload.Validate(); err == nil {
-		t.Fatal("more than four attachments were accepted")
+		t.Fatal("more attachments than the cap were accepted")
 	}
 }

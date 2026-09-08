@@ -237,7 +237,10 @@ var (
 	errApprovalIDRequired         = errors.New("sessionId and approvalId are required")
 	errQuestionIDRequired         = errors.New("sessionId and questionId are required")
 	errSessionIDAndMsgRequired    = errors.New("sessionId and message are required")
-	errTooManyAttachments         = errors.New("too many attachments (max 4)")
+	// Spelled from the limits rather than beside them: this message said "max 4"
+	// for a while after the cap moved.
+	errTooManyAttachments = fmt.Errorf("too many attachments (max %d)", maxAttachments)
+	errAttachmentTooLarge = fmt.Errorf("attachment exceeds the %d MiB limit", maxAttachmentBytes>>20)
 )
 
 // --- Session Validate methods ---
@@ -303,8 +306,10 @@ func validateQueryAttachment(attachment session.QueryAttachment) error {
 		(!strings.HasPrefix(attachment.MimeType, "image/") && attachment.MimeType != "application/pdf") {
 		return errors.New("mimeType must be an image or PDF")
 	}
+	// Cheap length pre-filter, so an oversized string is refused before it is
+	// decoded. The decoded size below is the real limit.
 	if len(attachment.DataUrl) > maxAttachmentDataURLLen {
-		return errors.New("dataUrl exceeds the 5 MiB attachment limit")
+		return errAttachmentTooLarge
 	}
 	header, encoded, ok := strings.Cut(attachment.DataUrl, ",")
 	if !ok || header != "data:"+attachment.MimeType+";base64" {
@@ -316,7 +321,7 @@ func validateQueryAttachment(attachment session.QueryAttachment) error {
 		return errors.New("dataUrl contains invalid base64")
 	}
 	if n > maxAttachmentBytes {
-		return errors.New("decoded attachment exceeds 5 MiB")
+		return errAttachmentTooLarge
 	}
 	return nil
 }

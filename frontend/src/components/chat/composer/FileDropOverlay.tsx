@@ -1,8 +1,6 @@
 import { Upload } from "lucide-react";
 import { createPortal } from "react-dom";
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "~/lib/composer-constants";
-
-const MAX_MB = Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024));
+import { MAX_ATTACHMENT_MB, MAX_ATTACHMENTS } from "~/lib/composer-constants";
 
 /**
  * The affordance for a window-wide drop. Two things it must be:
@@ -24,7 +22,7 @@ export function FileDropOverlay({ visible }: { visible: boolean }) {
         <Upload className="h-6 w-6 text-agent" />
         <p className="text-sm font-medium">Drop to attach</p>
         <p className="text-xs text-muted-foreground">
-          Images and PDFs · up to {MAX_ATTACHMENTS} files, {MAX_MB} MB each
+          Images and PDFs · up to {MAX_ATTACHMENTS} files, {MAX_ATTACHMENT_MB} MB each
         </p>
       </div>
     </div>,

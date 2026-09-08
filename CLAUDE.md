@@ -422,6 +422,25 @@ from wherever the app is.
 picker (filtered by `accept`) and for paste (which checks before it hijacks the
 event), but a drop can be anything on the desktop and it lands nowhere visible.
 
+**The attachment cap is a product, not a per-file size.** Attachments ride to
+the provider as inline base64 (`agentkit`'s claude adapter builds an image or
+document content block; codex answers `ErrNotSupported` and takes none), and
+Anthropic caps the whole *request* at 32 MB — replayed with the conversation
+history on every turn, so a payload that fits once and then grows fails every
+turn after it. So the count and the size move **together**: 3 x 7 MiB is ~28 MB
+encoded, where a fourth file would be 37 MB. 7 MiB also stays under Anthropic's
+10 MB-base64 per-image cap.
+
+`backend/internal/ws/validate.go` is the guard and
+`lib/composer-constants.ts` mirrors it for the UX — refusing a file the server
+would have taken is the only failure mode here that costs nothing. Three rules
+that bit already: `maxAttachmentDataURLLen` is a cheap length pre-filter and
+must stay above `ceil(bytes * 4/3)` plus the `data:<mime>;base64,` prefix, or it
+rejects a legal file before the real check sees it; every message naming a limit
+is **formatted from** that limit, because "max 4" outlived the cap it described;
+and the bounds test needs a fixture that is under the length cap and over the
+byte cap, or it only ever exercises the pre-filter.
+
 ### The New-session panel remembers model and effort
 
 `ui-store.lastUsed` carries model and effort from the last session **created**

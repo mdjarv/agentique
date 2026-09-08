@@ -2,8 +2,17 @@ import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type EffortLevel = "" | "low" | "medium" | "high" | "xhigh" | "max";
 
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-export const MAX_ATTACHMENTS = 4;
+/**
+ * Attachment limits, mirrored from `backend/internal/ws/validate.go` — which is
+ * the guard; this pair is the UX, and refusing a file the server would take is
+ * the only failure mode that costs nothing. The comment there explains why the
+ * *product* is what matters (Anthropic caps the whole request at 32 MB, replayed
+ * every turn) and why the two must move together.
+ */
+export const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 3;
+/** The size as it is said to the reader. Spelled once, so no two surfaces disagree. */
+export const MAX_ATTACHMENT_MB = Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024));
 export const ACCEPTED_TYPES = "image/*,application/pdf";
 
 export function isAllowedType(mime: string): boolean {
