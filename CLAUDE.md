@@ -965,6 +965,17 @@ screen must be content with the tail.
 turns is not a size; the newest turn is always included whole because the
 visible area is its end.
 
+**A snapshot landing is not a gesture, so it is not animated.** The commit
+that ends a backfill prepends every older turn and removes the "Loading
+earlier messages" placeholder at once, and auto-animate answered it with a
+300ms FLIP — the placeholder re-inserted mid-list to animate its exit, every
+turn sliding, the bottom pin chasing a height that changed frame by frame — a
+visible stutter after the transcript had already painted. `MessageList` keeps
+animation off for the whole backfill and re-enables it a frame after, because
+auto-animate reads its flag in the MutationObserver microtask and a same-task
+re-enable can still catch the closing commit. The byte-bounded tail is what
+made this common: with a twenty-turn tail most sessions never backfilled.
+
 **A history snapshot never carries image bytes.** Tool results embed
 screenshots as 640KB data URLs; `buildTurns` replaces each with a reference
 to `/api/sessions/{id}/events/{eventId}/images/{idx}` (`event_images.go`),

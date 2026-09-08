@@ -367,9 +367,25 @@ export function MessageList({
   // Disable auto-animate during active turns — MutationObserver + FLIP calculations
   // are pure overhead when DOM mutations are rapid, and removal animations (position:
   // absolute) cause pending messages to float over content during delivery transitions.
+  //
+  // A history backfill is not a gesture either. The commit that ends it
+  // prepends every older turn and removes the "Loading earlier messages"
+  // placeholder in one go, and auto-animate answered that with a 300ms FLIP:
+  // the placeholder re-inserted mid-list to animate its exit, every turn
+  // sliding to its new position, and the bottom pin chasing a height that
+  // changed frame by frame — a visible stutter right after the transcript
+  // had already painted. So animation is off for the whole backfill, and
+  // comes back a frame AFTER it ends: auto-animate reads its enabled flag in
+  // the MutationObserver microtask, which runs before the next frame, so a
+  // same-task re-enable could still catch the closing commit.
   useEffect(() => {
-    setAnimateEnabled(!isAnyStreaming && !hasIncompleteTurn);
-  }, [isAnyStreaming, hasIncompleteTurn, setAnimateEnabled]);
+    if (isAnyStreaming || hasIncompleteTurn || isBackfilling) {
+      setAnimateEnabled(false);
+      return;
+    }
+    const frame = requestAnimationFrame(() => setAnimateEnabled(true));
+    return () => cancelAnimationFrame(frame);
+  }, [isAnyStreaming, hasIncompleteTurn, isBackfilling, setAnimateEnabled]);
 
   // Re-pin bottom whenever content grows while the user is following. Handles
   // layout deferrals on session switch: lazy-mounted turns, content-visibility
