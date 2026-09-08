@@ -59,3 +59,6 @@ JOIN sessions s ON s.id = e.session_id
 WHERE e.type = 'result'
   AND date(e.created_at) = date('now', 'localtime')
 GROUP BY s.provider;
+
+-- name: GetSessionEvent :one
+SELECT * FROM session_events WHERE id = ? AND session_id = ?;

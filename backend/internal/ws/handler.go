@@ -51,6 +51,11 @@ func (h *Handler) upgrader() websocket.Upgrader {
 		CheckOrigin: func(r *http.Request) bool {
 			return httpsecurity.WebSocketOriginAllowed(r, h.AllowedOrigins, h.AllowTicketOrigin)
 		},
+		// permessage-deflate, when the client offers it. A history snapshot
+		// is JSON that deflates about five to one, and the socket is what a
+		// remote operator waits on; a peer that does not negotiate it gets
+		// plain frames as before.
+		EnableCompression: true,
 	}
 }
 

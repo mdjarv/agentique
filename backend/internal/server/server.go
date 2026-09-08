@@ -855,6 +855,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	fh := &session.FilesHandler{}
 	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", fh.HandleServe)
+	eih := &session.EventImageHandler{Queries: queries}
+	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", eih.HandleServe)
 
 	sth := &storage.Handler{
 		Queries: queries,

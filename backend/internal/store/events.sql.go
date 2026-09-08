@@ -60,6 +60,31 @@ func (q *Queries) CountTurnsBySession(ctx context.Context, sessionID string) (in
 	return column_1, err
 }
 
+const getSessionEvent = `-- name: GetSessionEvent :one
+SELECT id, session_id, turn_index, seq, type, data, created_at, message_id FROM session_events WHERE id = ? AND session_id = ?
+`
+
+type GetSessionEventParams struct {
+	ID        int64  `json:"id"`
+	SessionID string `json:"session_id"`
+}
+
+func (q *Queries) GetSessionEvent(ctx context.Context, arg GetSessionEventParams) (SessionEvent, error) {
+	row := q.db.QueryRowContext(ctx, getSessionEvent, arg.ID, arg.SessionID)
+	var i SessionEvent
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.TurnIndex,
+		&i.Seq,
+		&i.Type,
+		&i.Data,
+		&i.CreatedAt,
+		&i.MessageID,
+	)
+	return i, err
+}
+
 const insertEvent = `-- name: InsertEvent :exec
 INSERT INTO session_events (session_id, turn_index, seq, type, data) VALUES (?, ?, ?, ?, ?)
 `

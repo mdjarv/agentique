@@ -78,7 +78,17 @@ type HistoryTurn struct {
 	Origin      *QueryOrigin      `json:"origin,omitempty"`
 }
 
-// RecentHistoryFromDB returns the most recent N turns from persisted events.
+// tailHistoryByteBudget bounds the tail snapshot a client draws first. A
+// turn count alone is not a size: twenty turns of a browser session were
+// 46MB before images were detached, and a long turn is still megabytes of
+// tool results. The tail is what has to cross the socket before the page
+// shows anything, so it is measured in bytes and the client backfills the
+// rest. The newest turn is always included whole, because the visible area
+// is its end and a turn split across two snapshots would render unfinished.
+const tailHistoryByteBudget = 1 << 20
+
+// RecentHistoryFromDB returns the most recent N turns from persisted events,
+// trimmed from the oldest end to tailHistoryByteBudget.
 func RecentHistoryFromDB(ctx context.Context, q historyQueries, sessionID string, limit int) ([]HistoryTurn, error) {
 	rows, err := q.ListRecentEventsBySession(ctx, store.ListRecentEventsBySessionParams{
 		SessionID: sessionID,
@@ -87,7 +97,36 @@ func RecentHistoryFromDB(ctx context.Context, q historyQueries, sessionID string
 	if err != nil {
 		return nil, err
 	}
-	return buildTurns(rows), nil
+	return trimTurnsToBudget(buildTurns(rows), tailHistoryByteBudget), nil
+}
+
+// trimTurnsToBudget drops turns from the oldest end until the wire size of
+// what remains fits the budget. The newest turn survives regardless.
+func trimTurnsToBudget(turns []HistoryTurn, budget int) []HistoryTurn {
+	total := 0
+	start := len(turns)
+	for i := len(turns) - 1; i >= 0; i-- {
+		size := turnWireBytes(turns[i])
+		if i < len(turns)-1 && total+size > budget {
+			break
+		}
+		total += size
+		start = i
+	}
+	return turns[start:]
+}
+
+// turnWireBytes approximates a turn's marshalled size from its parts; the
+// events are already raw JSON, so the sum is within a few percent.
+func turnWireBytes(t HistoryTurn) int {
+	n := len(t.Prompt)
+	for _, a := range t.Attachments {
+		n += len(a.DataUrl) + len(a.Name)
+	}
+	for _, e := range t.Events {
+		n += len(e)
+	}
+	return n
 }
 
 // HistoryFromDB reconstructs turn history from persisted events.
@@ -119,12 +158,16 @@ func buildTurns(rows []store.SessionEvent) []HistoryTurn {
 				Origin      *QueryOrigin      `json:"origin,omitempty"`
 			}
 			if json.Unmarshal([]byte(row.Data), &p) == nil {
+				detachAttachmentImages(row.SessionID, row.ID, p.Attachments)
 				t.Prompt = p.Prompt
 				t.Attachments = p.Attachments
 				t.Origin = p.Origin
 			}
 		} else {
 			ev := NormalizeEventJSON(row.Type, []byte(row.Data))
+			if row.Type == "tool_result" {
+				ev = detachToolResultImages(row.SessionID, row.ID, ev)
+			}
 			if row.Type == "result" && row.CreatedAt != "" {
 				ev = injectTimestamp(ev, row.CreatedAt)
 			}
