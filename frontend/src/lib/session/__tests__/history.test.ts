@@ -22,9 +22,9 @@ import { useEventSeqStore } from "~/stores/event-seq";
 
 const SID = "sess-hist";
 
-function makeMeta(): SessionMetadata {
+function makeMeta(id = SID): SessionMetadata {
   return {
-    id: SID,
+    id,
     projectId: "proj-1",
     name: "Test Session",
     state: "running",
@@ -102,9 +102,9 @@ function lastTurnContents(): string[] {
 const liveText = (content: string, seq: number) =>
   ({ sessionId: SID, event: { type: "text", content }, seq, epoch: 7 }) as const;
 
-async function loadingSettled() {
+async function loadingSettled(id = SID) {
   await vi.waitFor(() => {
-    expect(useChatStore.getState().historyLoading.has(SID)).toBe(false);
+    expect(useChatStore.getState().historyLoading.has(id)).toBe(false);
   });
 }
 
@@ -124,7 +124,7 @@ describe("loadSessionHistory — live events during the fetch window", () => {
     const d = deferred<HistoryResult>();
     const ws = { request: vi.fn(() => d.promise) } as unknown as WsClient;
 
-    loadSessionHistory(ws, SID, true);
+    loadSessionHistory(ws, SID, { force: true });
     expect(useChatStore.getState().historyLoading.has(SID)).toBe(true);
 
     // Lands mid-round-trip, above the snapshot's high-water mark — the exact
@@ -151,7 +151,7 @@ describe("loadSessionHistory — live events during the fetch window", () => {
     const d = deferred<HistoryResult>();
     const ws = { request: vi.fn(() => d.promise) } as unknown as WsClient;
 
-    loadSessionHistory(ws, SID, true);
+    loadSessionHistory(ws, SID, { force: true });
     ingestSessionEvent(ws, liveText("mid-load", 6));
 
     // The server processed seq 6 before answering, so the snapshot includes
@@ -206,7 +206,7 @@ describe("loadSessionHistory — live events during the fetch window", () => {
     const d = deferred<HistoryResult>();
     const ws = { request: vi.fn(() => d.promise) } as unknown as WsClient;
 
-    loadSessionHistory(ws, SID, true);
+    loadSessionHistory(ws, SID, { force: true });
     ingestSessionEvent(ws, liveText("after-empty", 9));
 
     // Empty turns, but the response still names the authoritative high-water
@@ -233,7 +233,7 @@ describe("loadSessionHistory — live events during the fetch window", () => {
         }),
       } as unknown as WsClient;
 
-      loadSessionHistory(ws, SID, true);
+      loadSessionHistory(ws, SID, { force: true });
       ingestSessionEvent(ws, liveText("survivor", 8));
 
       d.reject(new Error("socket closed"));
@@ -246,5 +246,115 @@ describe("loadSessionHistory — live events during the fetch window", () => {
     } finally {
       err.mockRestore();
     }
+  });
+});
+
+/**
+ * The session on screen holds its full history; every other session holds a
+ * tail. These pin the shape each call leaves behind, and the number of round
+ * trips it costs — the boot flood was every open session fetching everything.
+ */
+// Its own session id: the parking tests above leave a retry load parked on
+// SID on purpose, and a parked event replayed against these immediate mocks
+// would resync forever.
+const HELD = "sess-held";
+
+function heldTurnContents(): string[] {
+  const session = useChatStore.getState().sessions[HELD];
+  const turn = session?.turns[session.turns.length - 1];
+  return (turn?.events ?? [])
+    .filter((e) => e.type === "text")
+    .map((e) => ("content" in e ? (e.content as string) : ""));
+}
+
+describe("loadSessionHistory — what a session holds", () => {
+  beforeEach(() => {
+    useEventSeqStore.getState().reset();
+    useChatStore.setState({
+      sessions: {},
+      activeSessionId: null,
+      loadedProjects: new Set(),
+      historyLoading: new Set(),
+    });
+    useChatStore.getState().addSession(makeMeta(HELD));
+  });
+
+  function tailThenFull(hasMore: boolean) {
+    const calls: Array<{ limit?: number }> = [];
+    const ws = {
+      request: vi.fn((_type: string, payload: { limit?: number }) => {
+        calls.push(payload);
+        const turns = payload.limit
+          ? [[{ type: "text", content: "newest" }, { type: "result" }]]
+          : [
+              [{ type: "text", content: "oldest" }, { type: "result" }],
+              [{ type: "text", content: "newest" }, { type: "result" }],
+            ];
+        return Promise.resolve({
+          ...snapshot(turns, { highWaterSeq: 5 }),
+          hasMore: payload.limit ? hasMore : false,
+          totalTurns: 2,
+        });
+      }),
+    } as unknown as WsClient;
+    return { ws, calls };
+  }
+
+  it("a tail load costs one round trip and leaves the session incomplete but not loading", async () => {
+    const { ws, calls } = tailThenFull(true);
+    loadSessionHistory(ws, HELD, { tail: true });
+    await loadingSettled(HELD);
+
+    expect(calls).toEqual([{ sessionId: HELD, limit: 20 }]);
+    const session = useChatStore.getState().sessions[HELD];
+    expect(session?.turns.map((t) => t.events.length)).toEqual([2]);
+    expect(session?.historyComplete).toBe(false);
+    // Authoritative about sequencing even though it is only the tail.
+    expect(useEventSeqStore.getState().states[HELD]?.lastSeq).toBe(5);
+  });
+
+  it("a tail is not refetched while one is held, unless forced", async () => {
+    const { ws, calls } = tailThenFull(true);
+    loadSessionHistory(ws, HELD, { tail: true });
+    await loadingSettled(HELD);
+    loadSessionHistory(ws, HELD, { tail: true });
+    expect(calls).toHaveLength(1);
+
+    loadSessionHistory(ws, HELD, { tail: true, force: true });
+    await loadingSettled(HELD);
+    expect(calls).toHaveLength(2);
+    expect(useChatStore.getState().sessions[HELD]?.historyComplete).toBe(false);
+  });
+
+  it("a full load on a held tail goes straight to the full snapshot", async () => {
+    const { ws, calls } = tailThenFull(true);
+    loadSessionHistory(ws, HELD, { tail: true });
+    await loadingSettled(HELD);
+
+    loadSessionHistory(ws, HELD);
+    await loadingSettled(HELD);
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessions[HELD]?.historyComplete).toBe(true);
+    });
+    expect(calls).toEqual([{ sessionId: HELD, limit: 20 }, { sessionId: HELD }]);
+    expect(heldTurnContents()).toEqual(["newest"]);
+    expect(useChatStore.getState().sessions[HELD]?.turns).toHaveLength(2);
+  });
+
+  it("a cold full load is the tail, then the rest — or just the tail when that is everything", async () => {
+    const more = tailThenFull(true);
+    loadSessionHistory(more.ws, HELD);
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessions[HELD]?.historyComplete).toBe(true);
+    });
+    expect(more.calls).toEqual([{ sessionId: HELD, limit: 20 }, { sessionId: HELD }]);
+
+    useChatStore.setState({ sessions: {}, historyLoading: new Set() });
+    useChatStore.getState().addSession(makeMeta(HELD));
+    const all = tailThenFull(false);
+    loadSessionHistory(all.ws, HELD);
+    await loadingSettled(HELD);
+    expect(all.calls).toEqual([{ sessionId: HELD, limit: 20 }]);
+    expect(useChatStore.getState().sessions[HELD]?.historyComplete).toBe(true);
   });
 });

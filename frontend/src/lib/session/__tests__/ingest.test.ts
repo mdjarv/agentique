@@ -128,7 +128,11 @@ describe("ingestSessionEvent", () => {
     push("s1", 3, textEvent("c"));
 
     expect(loadSessionHistory).toHaveBeenCalledTimes(1);
-    expect(loadSessionHistory).toHaveBeenCalledWith(ws, "s1", true);
+    expect(loadSessionHistory).toHaveBeenCalledWith(
+      ws,
+      "s1",
+      expect.objectContaining({ force: true }),
+    );
   });
 
   it("drops a duplicate before it reaches the stores", () => {

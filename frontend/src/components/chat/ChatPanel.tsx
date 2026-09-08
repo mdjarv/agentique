@@ -325,15 +325,19 @@ export function ChatPanel({
     }
   }, [ws, sessionSchedules]);
 
-  // Load history on mount or session switch
+  // The session on screen is the one that holds its full history; everything
+  // else holds a tail (lib/session/history.ts). So this asks for the whole
+  // thing whenever it is not held: on mount, on switch, and again after a
+  // reconnect has replaced it with a tail. `isLoadingHistory` is a dependency
+  // because a tail-only load leaves historyComplete false when it settles,
+  // and the full load must start at exactly that moment.
   const sessionExists = !!meta;
   const hasTurns = turns.length > 0;
-  const needsArchivedBackfill = !!meta?.archivedAt && hasTurns && !historyComplete;
   useEffect(() => {
-    if (sessionExists && (!hasTurns || needsArchivedBackfill)) {
+    if (sessionExists && !historyComplete && !isLoadingHistory) {
       loadSessionHistory(ws, sessionId);
     }
-  }, [ws, sessionId, sessionExists, hasTurns, needsArchivedBackfill]);
+  }, [ws, sessionId, sessionExists, historyComplete, isLoadingHistory]);
 
   // Redirect if session was deleted or doesn't exist
   useEffect(() => {

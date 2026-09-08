@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { ExpandableRow } from "~/components/chat/ExpandableRow";
 import { Markdown } from "~/components/chat/Markdown";
 import { ToolIcon } from "~/components/chat/ToolIcons";
+import { useSessionImageSrc } from "~/hooks/useSessionImageSrc";
 import { useTheme } from "~/hooks/useTheme";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import { stripPrefix } from "~/lib/tool-format";
@@ -325,18 +326,7 @@ function ResultContentView({
       {images.length > 0 && (
         <div className="flex gap-2 flex-wrap p-2">
           {images.map((img) => (
-            <button
-              key={img.url}
-              type="button"
-              className="p-0 border-none bg-transparent cursor-pointer"
-              onClick={() => img.url && onImageClick?.(img.url)}
-            >
-              <img
-                src={img.url}
-                alt="Tool result"
-                className="max-h-64 max-w-full rounded border object-contain"
-              />
-            </button>
+            <ToolResultImage key={img.url} url={img.url} onImageClick={onImageClick} />
           ))}
         </div>
       )}
@@ -346,6 +336,32 @@ function ResultContentView({
         </pre>
       )}
     </div>
+  );
+}
+
+/** A tool result's image arrives live as a data URL and from history as a
+ *  reference the owning machine serves; the hook turns either into a src. */
+function ToolResultImage({
+  url,
+  onImageClick,
+}: {
+  url?: string;
+  onImageClick?: (src: string) => void;
+}) {
+  const src = useSessionImageSrc(url);
+  if (!src) return null;
+  return (
+    <button
+      type="button"
+      className="p-0 border-none bg-transparent cursor-pointer"
+      onClick={() => onImageClick?.(src)}
+    >
+      <img
+        src={src}
+        alt="Tool result"
+        className="max-h-64 max-w-full rounded border object-contain"
+      />
+    </button>
   );
 }
 

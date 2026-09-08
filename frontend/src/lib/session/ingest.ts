@@ -5,6 +5,7 @@ import {
   setLiveEventReplayer,
 } from "~/lib/session/history";
 import type { WsClient } from "~/lib/ws-client";
+import { useChatStore } from "~/stores/chat-store";
 import { applyEvent } from "~/stores/event-orchestrator";
 import { decideSeq, useEventSeqStore } from "~/stores/event-seq";
 
@@ -53,8 +54,11 @@ export function ingestSessionEvent(ws: WsClient, payload: SessionEventPayload): 
     if (action === "resync") {
       // Backfill missed events. Coalesced by loadSessionHistory's
       // historyLoading in-flight guard; the force-load reseeds the seq
-      // state authoritatively from the response's high-water mark.
-      loadSessionHistory(ws, sid, true);
+      // state authoritatively from the response's high-water mark. A
+      // session holding only a tail gets a fresh tail — a resync restores
+      // what was held, it does not promote a background session to full.
+      const held = useChatStore.getState().sessions[sid];
+      loadSessionHistory(ws, sid, { force: true, tail: !held?.historyComplete });
       // The trigger itself parks too: the snapshot the load fetches will
       // contain it, and applying it now would mutate turns the snapshot is
       // about to replace. Recording is skipped for the same reason — the

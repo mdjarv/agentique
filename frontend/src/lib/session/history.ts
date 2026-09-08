@@ -167,12 +167,73 @@ async function fetchAndApplyFullHistory(
   performance.measure(`${tag} store-update`, `${tag}:store:start`, `${tag}:store:end`);
 }
 
-export function loadSessionHistory(ws: WsClient, sessionId: string, force = false): void {
+/**
+ * Fetches the tail snapshot (the newest turns, within the server's byte
+ * budget) and applies it. Resolves true when the tail is the whole history.
+ * Either way the wire-seq tracker is reseeded from it: a tail is as
+ * authoritative about sequencing as a full snapshot, since every event with
+ * seq <= its high-water mark is older than or inside it.
+ */
+async function fetchAndApplyTail(ws: WsClient, sessionId: string, tag: string): Promise<boolean> {
+  const hist = await ws.request<HistoryResult>(
+    "session.history",
+    { sessionId, limit: INITIAL_TURN_LIMIT },
+    10_000,
+  );
+  performance.mark(`${tag}:response`);
+  performance.measure(`${tag} ws-roundtrip (partial)`, `${tag}:request`, `${tag}:response`);
+
+  if (!useChatStore.getState().sessions[sessionId]) return true;
+
+  if (hist.turns.length > 0) {
+    // A tail is small — convert synchronously for minimum latency.
+    const turns = historyToTurns(hist.turns);
+    useChatStore.getState().setSessionHistory(sessionId, turns, !hist.hasMore);
+  }
+  useEventSeqStore.getState().seedFromHistory(sessionId, hist.epoch, hist.highWaterSeq);
+  return !hist.hasMore;
+}
+
+export interface LoadHistoryOptions {
+  /** Reload even when this session already holds what was asked for: a
+   *  reconnect or a wire-seq gap, where the held copy may have missed events. */
+  force?: boolean;
+  /** Fetch only the tail and stop. */
+  tail?: boolean;
+}
+
+/**
+ * Loads a session's history into the store.
+ *
+ * The session on screen holds its full history; every other session holds
+ * only a **tail** — the newest turns, within a byte budget the server
+ * enforces. That is the whole of what the sidebar, the deck and a
+ * turn-started dedup need, and it is what keeps a boot from fetching every
+ * open session's entire transcript over one serial socket before the one the
+ * operator opened. Switching to a session costs one full fetch, and the tail
+ * it already holds draws instantly while that lands.
+ *
+ * A full load on a session that already holds something (a tail, or a
+ * complete history being force-reloaded) goes straight to the full snapshot:
+ * truncating N turns to a tail just to refetch all N is destructive — DOM
+ * churn and scroll jumps in long sessions.
+ */
+export function loadSessionHistory(
+  ws: WsClient,
+  sessionId: string,
+  opts: LoadHistoryOptions = {},
+): void {
+  const { force = false, tail = false } = opts;
   const store = useChatStore.getState();
   const session = store.sessions[sessionId];
   if (!session) return;
-  if (!force && session.historyComplete) return;
   if (store.historyLoading.has(sessionId)) return;
+  const holdsTurns = session.turns.length > 0;
+  if (tail) {
+    if (holdsTurns && !force) return;
+  } else if (session.historyComplete && !force) {
+    return;
+  }
 
   const sid = shortId(sessionId);
   const tag = `history:${sid}`;
@@ -185,45 +246,27 @@ export function loadSessionHistory(ws: WsClient, sessionId: string, force = fals
   // simply meets the pre-load gate state (a genuine gap starts another load).
   beginParking(sessionId);
 
-  // Force-reload of an already-complete history: skip the partial phase.
-  // Truncating from N→20 just to refetch all N is destructive — causes DOM
-  // churn and scroll-position jumps in long sessions. Go straight to full.
-  if (force && session.historyComplete) {
-    fetchAndApplyFullHistory(ws, sessionId, tag)
-      .catch((err) => {
-        useChatStore.getState().setHistoryLoading(sessionId, false);
-        console.error("Failed to load session history:", err);
-      })
-      .finally(() => drainParked(ws, sessionId));
-    return;
-  }
-
-  // Phase 1: fetch recent turns for instant display
-  ws.request<HistoryResult>("session.history", { sessionId, limit: INITIAL_TURN_LIMIT }, 10_000)
-    .then(async (hist) => {
-      performance.mark(`${tag}:response`);
-      performance.measure(`${tag} ws-roundtrip (partial)`, `${tag}:request`, `${tag}:response`);
-
-      if (!useChatStore.getState().sessions[sessionId]) return;
-
-      if (hist.turns.length > 0) {
-        // Partial load is small — convert synchronously for minimum latency
-        const turns = historyToTurns(hist.turns);
-        // Set partial history — historyComplete stays false, historyLoading stays true
-        useChatStore.getState().setSessionHistory(sessionId, turns, !hist.hasMore);
-      }
-
-      if (!hist.hasMore) {
-        // No backfill phase — this partial IS the complete snapshot, so reseed
-        // the wire-seq tracker from it (fetchAndApplyFullHistory won't run).
-        useEventSeqStore.getState().seedFromHistory(sessionId, hist.epoch, hist.highWaterSeq);
+  let load: Promise<void>;
+  if (tail) {
+    load = fetchAndApplyTail(ws, sessionId, tag).then(() => {
+      // A tail-only load settles with historyComplete false when there is
+      // more; the loading flag must not stay up, or the full load the
+      // session's panel asks for on arrival would be refused as in flight.
+      useChatStore.getState().setHistoryLoading(sessionId, false);
+    });
+  } else if (holdsTurns) {
+    load = fetchAndApplyFullHistory(ws, sessionId, tag);
+  } else {
+    load = fetchAndApplyTail(ws, sessionId, tag).then(async (complete) => {
+      if (complete) {
         useChatStore.getState().setHistoryLoading(sessionId, false);
         return;
       }
-
-      // Phase 2: fetch full history for backfill (chunked conversion + low-priority render)
       await fetchAndApplyFullHistory(ws, sessionId, tag);
-    })
+    });
+  }
+
+  load
     .catch((err) => {
       useChatStore.getState().setHistoryLoading(sessionId, false);
       console.error("Failed to load session history:", err);

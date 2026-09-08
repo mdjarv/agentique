@@ -264,7 +264,9 @@ export interface Attachment {
   id: string;
   name: string;
   mimeType: string;
-  dataUrl: string; // data:...;base64,... for sending/history
+  /** data:...;base64,... while sending; restored from history as a reference
+   *  (`/api/sessions/{id}/events/…/images/…`) the owning machine serves. */
+  dataUrl: string;
   previewUrl?: string; // blob: URL for local preview (not persisted)
 }
 

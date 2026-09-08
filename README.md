@@ -642,6 +642,9 @@ Inside it:
   `/api/sessions/{id}/files/…`. Only provably inert types render inline. HTML,
   SVG and anything unrecognized download as attachments, because these bytes come
   from agents and the app's own origin is where they would otherwise execute.
+  Screenshots inside tool results stay in the event row and are served by
+  reference from `/api/sessions/{id}/events/{eventId}/images/{idx}` under the
+  same rule, so a history snapshot never carries image bytes.
 - `machine-id`, `machine-identity-key.pem` — this server's stable identity and
   its P-256 signing key. Paired clients pin both. Corrupt key material is fatal
   rather than silently replaced.

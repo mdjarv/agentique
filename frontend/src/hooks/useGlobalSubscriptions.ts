@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useSessionSubscriptions } from "~/hooks/session/useSessionSubscriptions";
@@ -39,13 +39,33 @@ function loadPersonaInteractions(ws: ReturnType<typeof useWebSocket>, teams: Tea
   }
 }
 
+export interface LoadProjectOptions {
+  /** Reconnect: the fetched state is authoritative and held history is stale. */
+  force?: boolean;
+  /** The session the operator is looking at, as an id or id prefix. It is
+   *  the one session that loads its full history, and it loads first. Falls
+   *  back to the store's active session. */
+  prioritySession?: string;
+}
+
+/** The session a prefix names, if it is in this list. */
+function findSession(sessions: SessionMetadata[], idOrPrefix?: string | null) {
+  if (!idOrPrefix) return undefined;
+  return sessions.find((s) => s.id.startsWith(idOrPrefix));
+}
+
 // Also drives per-project loading for remote machines (useMachineConnections
 // passes that machine's own client instead of the routing facade).
+//
+// Resolves once the session list has been applied and the history requests
+// are on the wire — never rejects, so a caller sequencing projects behind
+// this one is not stalled by a machine that is asleep.
 export function subscribeAndLoad(
   ws: ReturnType<typeof useWebSocket>,
   projectId: string,
-  forceHistory = false,
-) {
+  opts: LoadProjectOptions = {},
+): Promise<void> {
+  const { force = false } = opts;
   // Background sync never raises a toast. It is driven by lifecycle, not by
   // the operator, and its dominant failure is a machine that is simply
   // asleep — an everyday state, not an error. Connection state already says
@@ -54,7 +74,8 @@ export function subscribeAndLoad(
   ws.request("project.subscribe", { projectId }, 10_000).catch((err) => {
     console.error("project.subscribe failed", err);
   });
-  ws.request<ListSessionsResult>("session.list", { projectId }, 10_000)
+  const listed = ws
+    .request<ListSessionsResult>("session.list", { projectId }, 10_000)
     .then((result) => {
       // The wire boundary for the list: a peer on a release from before the
       // archive rename says `completedAt`, and reading only `archivedAt` would
@@ -64,14 +85,22 @@ export function subscribeAndLoad(
         archivedAt: readArchivedAt(s),
       })) as SessionMetadata[];
 
-      // forceHistory is true only on reconnect: make session.list authoritative
+      // force is true only on reconnect: make session.list authoritative
       // for pending approval/question state so requests resolved while
       // disconnected are cleared (not just added).
-      useChatStore.getState().setSessions(sessions, projectId, forceHistory);
+      useChatStore.getState().setSessions(sessions, projectId, force);
+
+      // The session on screen goes first and whole; the rest hold a tail.
+      // The socket serves requests in the order they were sent, so this
+      // order is the priority.
+      const priority = findSession(
+        sessions,
+        opts.prioritySession ?? useChatStore.getState().activeSessionId,
+      );
+      if (priority) loadSessionHistory(ws, priority.id, { force });
       for (const session of sessions) {
-        if (!session.archivedAt) {
-          loadSessionHistory(ws, session.id, forceHistory);
-        }
+        if (session.id === priority?.id || session.archivedAt) continue;
+        loadSessionHistory(ws, session.id, { force, tail: true });
       }
     })
     .catch((err) => {
@@ -86,10 +115,48 @@ export function subscribeAndLoad(
       // channels deleted while disconnected. On the normal subscribe path use
       // mergeChannels to avoid a stale-RPC-vs-fresh-broadcast race.
       const store = useChannelStore.getState();
-      if (forceHistory) store.reconcileChannels(channels, projectId);
+      if (force) store.reconcileChannels(channels, projectId);
       else store.mergeChannels(channels);
     })
     .catch((err) => console.error("listChannels failed", err));
+  return listed;
+}
+
+/** Where the operator is: the route's project, and the session within it. */
+export interface RouteFocus {
+  projectSlug?: string;
+  sessionShortId?: string;
+}
+
+/**
+ * Loads a set of projects with the one the operator is looking at first.
+ *
+ * Every request on a socket is served in arrival order, so firing all
+ * projects at once put the open session behind twenty-two other projects'
+ * lists, their git status and every other session's history. The focused
+ * project goes alone; the rest are sent once its session list has landed,
+ * which puts them behind the focused session's own history request on the
+ * wire. With no focus (the landing page) everything goes at once, as before.
+ */
+export function loadProjectsInOrder(
+  ws: ReturnType<typeof useWebSocket>,
+  projects: Project[],
+  focus: RouteFocus,
+  force = false,
+): Promise<void> {
+  const first = focus.projectSlug ? projects.find((p) => p.slug === focus.projectSlug) : undefined;
+  const rest = projects.filter((p) => p !== first);
+  const loadRest = () => {
+    for (const project of rest) subscribeAndLoad(ws, project.id, { force });
+  };
+  if (!first) {
+    loadRest();
+    return Promise.resolve();
+  }
+  return subscribeAndLoad(ws, first.id, {
+    force,
+    prioritySession: focus.sessionShortId,
+  }).finally(loadRest);
 }
 
 export function useGlobalSubscriptions(projects: Project[]) {
@@ -98,6 +165,11 @@ export function useGlobalSubscriptions(projects: Project[]) {
   const subscribedRef = useRef(new Set<string>());
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
+  // Read loosely: this hook lives in the root layout, above the route that
+  // owns these params, and they are absent everywhere but a session page.
+  const focus = useParams({ strict: false }) as RouteFocus;
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
 
   // Domain-specific subscription hooks
   useSessionSubscriptions(ws, navigate);
@@ -139,12 +211,10 @@ export function useGlobalSubscriptions(projects: Project[]) {
   // every cached project of a sleeping laptop fired a doomed request that
   // could only ever time out.
   useEffect(() => {
-    for (const project of projects) {
-      if (project.machineId) continue;
-      if (subscribedRef.current.has(project.id)) continue;
-      subscribedRef.current.add(project.id);
-      subscribeAndLoad(ws, project.id);
-    }
+    const pending = projects.filter((p) => !p.machineId && !subscribedRef.current.has(p.id));
+    if (pending.length === 0) return;
+    for (const project of pending) subscribedRef.current.add(project.id);
+    loadProjectsInOrder(ws, pending, focusRef.current);
   }, [ws, projects]);
 
   // One-time migration of pre-server-side pinned project IDs from localStorage.
@@ -208,14 +278,12 @@ export function useGlobalSubscriptions(projects: Project[]) {
       // it authoritatively from each session's high-water mark.
       useEventSeqStore.getState().reset();
       subscribedRef.current.clear();
-      for (const project of projectsRef.current) {
-        // This is the PRIMARY's reconnect; a remote machine re-syncs on its
-        // own socket's onConnect and must never be reset from here (a flaky
-        // remote and a flaky primary are separate failures).
-        if (project.machineId) continue;
-        subscribedRef.current.add(project.id);
-        subscribeAndLoad(ws, project.id, true);
-      }
+      // This is the PRIMARY's reconnect; a remote machine re-syncs on its
+      // own socket's onConnect and must never be reset from here (a flaky
+      // remote and a flaky primary are separate failures).
+      const local = projectsRef.current.filter((p) => !p.machineId);
+      for (const project of local) subscribedRef.current.add(project.id);
+      loadProjectsInOrder(ws, local, focusRef.current, true);
       listTeams(ws)
         .then((teams) => {
           useTeamStore.getState().setTeams(teams);

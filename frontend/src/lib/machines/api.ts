@@ -51,14 +51,19 @@ export function rewriteRemoteLocalhost(href: string, machineId: string | null): 
   }
 }
 
-const SESSION_FILE_PATH = /^\/api\/sessions\/([0-9a-fA-F-]+)\/files\//;
+// Two session-scoped content routes: files an agent wrote to its session
+// directory, and images the history builder detached from persisted events
+// (`/events/{eventId}/images/{idx}`). Both are served by the machine that
+// owns the session, so both resolve the same way.
+const SESSION_FILE_PATH = /^\/api\/sessions\/([0-9a-fA-F-]+)\/(?:files|events)\//;
 
-/** For a session-file URL (agents embed their session files as
- *  `/api/sessions/{id}/files/…` per the preamble), the owning machine's id —
- *  undefined for anything else, including the primary's own sessions. Besides
- *  the instructed relative form, absolute variants agents sometimes write are
- *  tolerated when the session id resolves: viewer-origin and
- *  localhost/127.0.0.1 (the agent's idea of "this server"). */
+/** For a session-content URL (agents embed their session files as
+ *  `/api/sessions/{id}/files/…` per the preamble; history refers to detached
+ *  images under `/events/`), the owning machine's id — undefined for anything
+ *  else, including the primary's own sessions. Besides the instructed
+ *  relative form, absolute variants agents sometimes write are tolerated when
+ *  the session id resolves: viewer-origin and localhost/127.0.0.1 (the
+ *  agent's idea of "this server"). */
 export function sessionFileMachineId(href: string): string | undefined {
   const parsed = parseSessionFileHref(href);
   return parsed ? machineIdForSession(parsed.sessionId) : undefined;

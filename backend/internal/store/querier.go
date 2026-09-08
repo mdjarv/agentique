@@ -80,6 +80,7 @@ type Querier interface {
 	GetSchedule(ctx context.Context, id string) (Schedule, error)
 	GetScheduleRun(ctx context.Context, id string) (ScheduleRun, error)
 	GetSession(ctx context.Context, id string) (Session, error)
+	GetSessionEvent(ctx context.Context, arg GetSessionEventParams) (SessionEvent, error)
 	GetTeam(ctx context.Context, id string) (Team, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (User, error)

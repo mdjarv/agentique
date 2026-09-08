@@ -938,6 +938,50 @@ with agents: a loop's `failed` attention **survives being viewed** and clears
 only on an explicit act (edit or re-enable). That is the scheduler's rule
 (`schedule/api.go`), so the badge must not invent a local seen-state for it.
 
+### Session history: one session holds it all, the rest hold a tail
+
+A socket serves requests **in the order they were sent**, one at a time
+(`dispatchLoop`), so the order the client fires them in is the priority. Boot
+used to fire every project's four RPCs at once and then every open session's
+whole history, which put the session the operator had opened behind
+twenty-two other projects and a 46MB transcript. `loadProjectsInOrder` sends
+the route's project alone, and only after its session list lands does
+anything else go out — by then the focused session's history request is
+already ahead of it on the wire. With no focus (the landing page) everything
+goes at once, as before.
+
+**The session on screen holds its full history; every other session holds a
+tail.** `loadSessionHistory(ws, id, { tail: true })` fetches the newest turns
+within the server's byte budget and stops, which is all the sidebar, the deck
+and a turn-started dedup need. `ChatPanel` asks for the whole thing whenever it
+is not held — on mount, and again after a reconnect has replaced it with a
+tail — and a load on a session that already holds something goes straight to
+the full snapshot rather than truncating it to a tail first. A wire-seq
+resync restores what was held (`ingest.ts`), never promotes a background
+session to full. Anything that reads `turns` of a session that is not on
+screen must be content with the tail.
+
+**The tail is measured in bytes, not turns** (`tailHistoryByteBudget`). Twenty
+turns is not a size; the newest turn is always included whole because the
+visible area is its end.
+
+**A history snapshot never carries image bytes.** Tool results embed
+screenshots as 640KB data URLs; `buildTurns` replaces each with a reference
+to `/api/sessions/{id}/events/{eventId}/images/{idx}` (`event_images.go`),
+which extracts the bytes from the event row on demand. The rewrite is at read
+time so it covers every session ever recorded without a migration; the row is
+never rewritten, so the URL is immutable and cached as such. Live events still
+stream the data URL inline — one image at a time is the size the transcript
+already handles. The endpoint serves only the raster types the session-files
+allowlist renders inline; anything else is a download, on the same argument.
+On the client, `useSessionImageSrc` is the one place that turns any of the
+three shapes (data URL, primary path, paired-machine path) into a loadable
+src, and `SESSION_FILE_PATH` recognises both session-content routes so a
+remote machine's images fetch with its bearer like its files do.
+
+The socket negotiates permessage-deflate (`EnableCompression`); a peer that
+does not offer it gets plain frames.
+
 ### Provider abstraction
 
 Sessions are driven through agentkit/runtime's neutral contract. Never import a

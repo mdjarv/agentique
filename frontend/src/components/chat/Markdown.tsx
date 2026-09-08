@@ -22,13 +22,9 @@ import { PromptCard, splitByPromptBlocks } from "~/components/chat/PromptCard";
 import { RunBlockButton } from "~/components/chat/RunBlockButton";
 import { useSessionMachineId } from "~/components/chat/SessionMachineContext";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useSessionImageSrc } from "~/hooks/useSessionImageSrc";
 import { useTheme } from "~/hooks/useTheme";
-import {
-  apiFetch,
-  rewriteRemoteLocalhost,
-  sessionFileMachineId,
-  sessionFilePath,
-} from "~/lib/machines/api";
+import { rewriteRemoteLocalhost } from "~/lib/machines/api";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import { cn } from "~/lib/utils";
 
@@ -228,35 +224,10 @@ function MarkdownImage({
   ...props
 }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
   const { node: _, ...rest } = props;
-  const machineId = typeof src === "string" ? sessionFileMachineId(src) : undefined;
-  const filePath = typeof src === "string" ? sessionFilePath(src) : undefined;
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const resolved = useSessionImageSrc(typeof src === "string" ? src : undefined);
 
-  useEffect(() => {
-    if (!machineId || !filePath) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    apiFetch(machineId, filePath)
-      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`${res.status}`))))
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setBlobUrl(objectUrl);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [machineId, filePath]);
-
-  if (!machineId) {
-    // A primary session's file: normalize an absolute-localhost variant to
-    // the relative form so it loads from any device (cookie auth applies).
-    return <ZoomableImage src={filePath ?? src} alt={alt ?? ""} {...rest} />;
-  }
-  if (!blobUrl) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
-  return <ZoomableImage src={blobUrl} alt={alt ?? ""} {...rest} />;
+  if (!resolved) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
+  return <ZoomableImage src={resolved} alt={alt ?? ""} {...rest} />;
 }
 
 /** An image in the transcript opens full-screen, where it can be zoomed and

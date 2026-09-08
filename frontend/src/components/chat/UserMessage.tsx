@@ -6,6 +6,7 @@ import { Markdown } from "~/components/chat/Markdown";
 import { extractBrainBlock } from "~/components/chat/PromptCard";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useSessionImageSrc } from "~/hooks/useSessionImageSrc";
 import { formatTurnTime } from "~/lib/format";
 import type { QueryOrigin } from "~/lib/generated-types";
 import type { Attachment } from "~/stores/chat-store";
@@ -17,6 +18,29 @@ interface UserMessageProps {
   timestamp?: number;
   /** Turn origin — schedule-origin prompts render a Clock + schedule-name badge. */
   origin?: QueryOrigin;
+}
+
+/** An attachment just sent still holds its data URL; one restored from
+ *  history holds a reference the owning machine serves. Either way the
+ *  lightbox opens on what the thumbnail actually loaded. */
+function AttachmentImage({
+  attachment,
+  onOpen,
+}: {
+  attachment: Attachment;
+  onOpen: (src: string) => void;
+}) {
+  const src = useSessionImageSrc(attachment.previewUrl ?? attachment.dataUrl);
+  if (!src) return null;
+  return (
+    <button
+      type="button"
+      className="p-0 border-none bg-transparent cursor-pointer"
+      onClick={() => onOpen(src)}
+    >
+      <img src={src} alt={attachment.name} className="h-20 max-w-[200px] object-cover rounded" />
+    </button>
+  );
 }
 
 export const UserMessage = memo(function UserMessage({
@@ -67,18 +91,7 @@ export const UserMessage = memo(function UserMessage({
               <div className="flex gap-1.5 flex-wrap mb-2">
                 {attachments.map((a) =>
                   a.mimeType.startsWith("image/") ? (
-                    <button
-                      key={a.id}
-                      type="button"
-                      className="p-0 border-none bg-transparent cursor-pointer"
-                      onClick={() => setLightboxSrc(a.dataUrl)}
-                    >
-                      <img
-                        src={a.previewUrl ?? a.dataUrl}
-                        alt={a.name}
-                        className="h-20 max-w-[200px] object-cover rounded"
-                      />
-                    </button>
+                    <AttachmentImage key={a.id} attachment={a} onOpen={setLightboxSrc} />
                   ) : (
                     <div
                       key={a.id}

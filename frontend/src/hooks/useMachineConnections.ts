@@ -113,7 +113,7 @@ async function loadMachine(machineId: string, client: WsClient): Promise<void> {
   }));
   useAppStore.getState().setMachineProjects(machineId, projects);
   for (const project of projects) {
-    subscribeAndLoad(client, project.id, true);
+    subscribeAndLoad(client, project.id, { force: true });
   }
   // Refresh the offline cache once the live project list has landed. Session
   // metas trickle in via the per-project loads above; the disconnect-time
