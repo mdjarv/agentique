@@ -161,13 +161,76 @@ A render quantum is 128 frames, so posting per quantum would mean 125 messages
 and 125 socket frames a second carrying 8 ms each — all overhead.
 
 Capture and playback use **separate AudioContexts**, and *neither* asks for a
-sample rate. Both take the hardware's and convert at the edge: playback builds
-each buffer at the rate the server announced, capture converts to 16 kHz inside
-the worklet.
+sample rate. Both take the hardware's and convert at the edge, each in its own
+worklet: capture converts to 16 kHz in `mic-worklet.js`, playback converts the
+server's rate to the context's in `playback-worklet.js`.
 
 `echoCancellation: true` is load-bearing, not a nicety: it is the only thing
 stopping the agent hearing itself through the speakers and interrupting itself.
-There is no server-side echo cancellation anywhere in this design.
+There is no server-side echo cancellation anywhere in this design. It is also
+what puts Android into communication mode, which is what starts the Bluetooth
+hands-free link — and that is why the order the call does things in matters,
+below.
+
+### The microphone opens first, and it is asked for by device
+
+The order of a call's first second is the fix for the car, so it is stated
+here in full: **microphone, then playback, then sound, then socket.**
+
+`getUserMedia` with echo cancellation is what makes Android bring up the
+hands-free profile (HFP/SCO). It used to run on `ready`, seconds after the
+gesture, by which time the dial tone and the ringback had an output stream
+open on the media profile (A2DP). The handset then had to suspend A2DP and
+raise SCO underneath a running context, and head units do that unreliably.
+When SCO failed the request quietly resolved to the handset's own microphone
+on the media route — capture at 48 kHz, output still A2DP, and the driver
+speaking into a phone in the door pocket. Sometimes it worked, which is the
+worst kind of fault to have in a car. `audioReport()` showed it exactly: both
+route readings at 48 kHz with a long output latency, capture at 48 kHz.
+
+Three things changed, in order of what they buy:
+
+**The Bluetooth input is asked for by id.** Chrome on Android enumerates inputs
+under fixed labels from its audio manager — "Default", "Speakerphone", "Wired
+headset", "Bluetooth headset", "USB audio" — so `MicCapture.start` enumerates
+first and, if a label matching `/bluetooth/i` exists, requests that device
+with `deviceId: { exact }` and the same echo-cancellation constraints.
+Selecting the device is what makes Chrome start SCO deterministically instead
+of leaving it to default resolution. A refused exact request falls back to the
+unconstrained one, because a microphone is better than none, and
+`CaptureRoute.requestedDevice` records what was asked for so the diagnostic can
+show the gap between that and the track it got. Labels are empty until a
+permission has been granted, so the first look on a fresh install names
+nothing; the check below looks again.
+
+**The route settles before any sound.** `VoiceCall.start` calls `getUserMedia`
+synchronously — inside the gesture, where a permission prompt is also allowed —
+and builds `PlaybackQueue` only once it has resolved. No output stream exists
+while the platform decides the route, and the playback context is born on the
+route SCO settled: its `sampleRate` reads 16000 or 8000 on HFP, which is the
+confirmation. The dial tone and the ringback play on that context, and the
+socket opens after them. The cost is that the recording indicator lights
+before `ready`, so it lights for a call the server then refuses; accepted.
+
+**The result is checked, and retried.** After the microphone opens the device
+list is read again and `judgeMicRoute` (`lib/voice/mic-route.ts`, pure, with
+its own table of tests) decides: a Bluetooth input is listed and the opened
+track is not it, or the track is Bluetooth but the capture context is at a
+media rate (above `HANDSFREE_RATE_CEILING`) while the output reads external
+(`readDistance`) — the link never came up. Either way the track *and* the
+playback context are released, so no output stream is open during the switch,
+and the open is repeated asking for that device, up to `MIC_ROUTE_RETRIES`
+times with `MIC_ROUTE_RETRY_PAUSE_MS` between. The status line says
+"Connecting to the car's microphone…" through the same `onActivity` path the
+health watchdog borrows, and clears once settled. A call that exhausts its
+retries opens anyway, on what it has: the diagnostic then says "Bluetooth
+input listed · 3 opens" beside a track named "Default", which is the finding.
+Without a Bluetooth input there is nothing to retry with, and a handset on its
+own microphone is the correct outcome rather than a fault.
+
+Frames are uploaded only once the call is live. The server drains the socket
+only when its engine is up, so anything sent while it is still gathering would
+arrive as one stale burst the moment it starts listening.
 
 ### Neither context may ask for a rate
 
@@ -202,28 +265,82 @@ a quantum boundary puts a 125 Hz artefact into the stream.
 profile; `uploadSampleRate` is what the socket carries. The gap between them is
 the reading, and nothing downstream may assume they are equal.
 
-### The playback context is created in the gesture
+### The playback context is created inside the activation
 
-`PlaybackQueue` is constructed and resumed inside the click that placed the
-call, before the socket is even opened — never when `ready` arrives.
+`PlaybackQueue` is constructed and resumed the moment `getUserMedia` resolves,
+still inside the activation the click opened, and before the socket is opened
+— never when `ready` arrives.
 
-A context created outside a user gesture starts suspended and stays suspended:
-`resume()` resolves without the context ever running. Every control frame still
-renders, so the transcript appears and the call looks healthy, and nothing is
-ever heard. That is a mobile autoplay policy doing exactly what it says, and on
-a call that takes a moment to open it is what silence is made of.
+A context created outside a user activation starts suspended and stays
+suspended: `resume()` resolves without the context ever running. Every control
+frame still renders, so the transcript appears and the call looks healthy, and
+nothing is ever heard. That is a mobile autoplay policy doing exactly what it
+says, and on a call that takes a moment to open it is what silence is made of.
 
-The engine's output rate was the reason it could not be built that early, and
-that constraint is gone. The context takes the **hardware's** rate, and each
-frame becomes a buffer at the rate the server announced
-(`ctx.createBuffer(1, n, sourceRate)`), which the browser resamples on playback.
-So `ready` is still where the rate is learned; learning it late now costs
-nothing.
+It used to be built synchronously in the click, before the microphone, on the
+reasoning that nothing could be awaited first. That put an output stream on
+the media profile before the hands-free link was asked for, which is the car
+fault above. A context built immediately after the `getUserMedia` promise
+resolves is still inside the activation window when the permission is
+remembered — the window is seconds, the open is hundreds of milliseconds — and
+when a prompt is shown, its Allow is itself a gesture. So the order is
+microphone first, and `ready()` still reports whether the context actually
+runs. If a post-`getUserMedia` context turns out not to start on some real
+device, the fallback is already designed and is a small change: build the
+context in the click, `suspend()` it at once so no output stream is open, open
+the microphone, then `resume()`.
+
+The engine's output rate is not a constraint on any of this. The context takes
+the **hardware's** rate — which on HFP is the confirmation that the route
+settled — and the worklet converts each frame from the rate the server
+announced. So `ready` is still where the rate is learned; learning it late
+costs nothing.
 
 A context that will not run is **said, never swallowed**: the queue reports it
 and the call shows a status line naming the gesture that fixes it, rather than
 sitting mute and looking like a broken server. It retries on the next
 interaction anywhere on the page and clears the line once one works.
+
+### Playback is one stream, resampled once
+
+`PlaybackQueue` used to build one `AudioBuffer` per ~30 ms server frame at the
+server's rate (24 kHz) and let the browser resample each into the context rate
+on playback. `AudioBufferSourceNode` resampling carries no state from one
+buffer to the next, so every frame boundary was a discontinuity, and thirty a
+second is a periodic click train heard as a buzz under the speech. Upsampling
+into a 48 kHz context hid it almost entirely; downsampling 24 → 16 kHz did
+not, which is exactly "the beep when the right codec works" reported from the
+car — and the microphone fix above makes the 16 kHz context the *normal* case,
+so the two ship together.
+
+So playback has a worklet of its own (`playback-worklet.js`, emitted as a real
+file like the capture one). It owns a ring buffer at the context rate and
+converts each incoming frame statefully on the way in, mirroring the capture
+worklet in the other direction: a box average over each output sample's window
+going down, linear interpolation going up, with the accumulator, the phase,
+the last sample and the read position all carried across frames. The output is
+one continuous stream at the context's own rate and the browser has nothing
+left to resample. The main thread posts each Int16 frame to the worklet port
+(transferred, not copied), `flush()` posts a clear, and the old drift guard and
+`nextStart` scheduling are gone: the worklet is pulled by the audio thread and
+the ring is the queue. Frames that arrive before the module has loaded wait in
+order rather than being lost. The ring grows rather than dropping the end of a
+reply an engine sent faster than real time.
+
+`PlaybackQueue`'s surface is unchanged — `enqueue`, `flush`, `isPlaying`,
+`ready`, `describe`, `tone`, `ring`, `close`, `contextTime`, `isRunning` — so
+`call.ts` and the audio-check probes did not move. `isPlaying` now means "the
+ring holds samples", which the worklet reports when it runs dry. Tones still
+use oscillator nodes on the same context.
+
+**Underruns are counted, and the count is on the report.** The worklet counts
+a gap as an underrun only when the ring runs dry and refills within a quarter
+second — a starved stream resumes in tens of milliseconds, where the end of a
+reply is followed by seconds of someone else talking — so the number is honest
+about audible stutter and silent about natural pauses. It is the one fault the
+health watchdog cannot see: frames arrived, the context ran, and the audio
+still broke up. `CallAudioReport.underruns` carries it and the diagnostic
+prints it.
 
 ### The call sounds like a call
 
@@ -233,25 +350,36 @@ decode between the click and the sound. Two rising notes when the call is
 placed, a ringback while it connects, one quieter blip when it goes live, two
 falling notes on every ending.
 
-The dial tone's second job is diagnosis. It plays from the gesture, through the
-very context playback will use, so an operator who hears it has been shown the
-audio path works before the model says a word — and one who hears nothing has
-learned something the silence would have hidden. The connected blip earns its
-place on latency: until the first word, "still connecting" and "connected,
-waiting for you" look identical.
+The dial tone's second job is diagnosis. It plays the moment the microphone
+route has settled, through the very context playback will use, so an operator
+who hears it has been shown the audio path works — on the route the call will
+actually use — before the model says a word, and one who hears nothing has
+learned something the silence would have hidden. It no longer plays in the
+click itself: a dial tone on a route the call then leaves is a false proof, and
+an output stream open during the profile switch is the fault above.
+
+**The connected blip yields to the greeting.** It earns its place on latency:
+until the first word, "still connecting" and "connected, waiting for you" look
+identical. But the server injects the pickup greeting the instant the call goes
+live, and a blip played at that same instant landed under the greeting's first
+word. So the blip waits `CONNECTED_BLIP_WAIT_MS` (one second): PCM arriving
+inside that window *is* the greeting, which is the better acknowledgement, and
+the blip is skipped; a silent window means the fact still needs saying, and the
+blip says it. The alternative — playing it before the live transition — was
+rejected because there is no earlier moment: `ready` is both the transition
+and the greeting's trigger.
 
 **The ringback is the same argument, held down.** Opening a call is a socket, a
 briefing and a speech-model handshake, and someone driving cannot look at the
 phone to see which of those is still going. A gentle dual-tone burst every two
 seconds says *connecting*, out loud, for exactly as long as that is true.
 
-It is also a continuous probe of the output path, and that is what it is really
-for. It plays through the context the model's audio will use, across the moment
-`getUserMedia` opens the microphone — which on Bluetooth hands-free is when the
-handset and the head unit switch from A2DP to HFP and the audio route is rebuilt
-underneath everything. A ring that dies there is the operator *hearing* the
-route break, at the instant it broke, instead of inferring it from a silence
-that arrives minutes later.
+It is also a continuous probe of the output path. It plays through the context
+the model's audio will use, from the moment the microphone route settled until
+`ready`, so a route that moves in between — one this app cannot hold — is
+*heard* breaking rather than inferred from a silence that arrives minutes
+later. It no longer straddles the profile switch itself, because nothing
+sounds until the switch is done.
 
 So the ring has one invariant: it never sounds over a live call and never
 outlives the call object. One owner in `VoiceCall`, stopped on every exit from
@@ -259,8 +387,17 @@ connecting — live, an `error` frame, the socket closing, a hangup, teardown �
 and the `error` frame stops it without waiting for the close behind it, because
 a call ringing over its own refusal says the opposite of what happened. Bursts
 are scheduled against `ctx.currentTime` when their timer fires, never queued
-ahead, and stopping silences the burst that is playing rather than waiting for
-it to end.
+ahead, and stopping silences every burst still outstanding rather than waiting
+for it to end.
+
+**The timer and the audio clock can disagree, and the clock wins.** While a
+route is rebuilt the context clock stalls and `setTimeout` keeps firing, so
+each burst in that window was scheduled at the same stalled `currentTime`;
+when the clock resumed they all played at once, and a stop that silenced only
+the latest burst's nodes let the rest ring over the live call. `startRingback`
+now holds every burst until its own end time has passed on the clock, skips a
+burst while the previous one's end is still ahead of `currentTime`, and stops
+all of them.
 
 One sound for every ending — the operator hanging up, the idle guard hanging up,
 the engine failing. A distinct failure tone would be a second vocabulary to
@@ -370,11 +507,13 @@ Every field degrades to a stated unknown, and `-1` means unreported. A diagnosti
 that quietly prints `0 ms` for a latency the browser withheld reads as "no
 latency at all", which is the opposite of the finding.
 
-The call takes **two** readings and keeps both (`CallAudioReport`): one in the
-gesture that placed it, before a microphone exists, and one immediately after the
-microphone opens. The interesting fact is the *difference* — the standing
-suspicion in this subsystem is a route that moves when the mic opens, and one
-reading cannot show a move.
+The call takes **two** readings and keeps both (`CallAudioReport`): one once
+the microphone has settled and playback is built on that route, and one at
+`ready`, when the engine answers. The interesting fact is the *difference* — a
+route that moves between those two is one this app cannot hold, and one reading
+cannot show a move. The report also carries the capture side: which device was
+asked for, whether a Bluetooth input was listed, how many opens it took, and
+the playback underrun count.
 
 **Three probes, one variable apart** (`lib/voice/audio-check.ts`). A live call is
 a poor instrument for this: it needs a server, a permission, a backend and
@@ -421,20 +560,22 @@ audio-path bench. Both hosts render the same two parts (`OutputProbes`,
 `CallRoutes`) and take their words from `AUDIO_CHECK_COPY`, so the page you can
 reach and the page you can type cannot describe the same check differently.
 
-### The worklet must be an emitted file
+### The worklets must be emitted files
 
 `audioWorklet.addModule()` is judged under `script-src`, which here is `'self'`
 plus index.html's hash — no `data:`, no `blob:`.
 
-Vite inlines small assets as `data:` URIs by default, and the worklet is small
-enough to qualify. That produced a build that worked in dev, where no CSP
+Vite inlines small assets as `data:` URIs by default, and both worklets are
+small enough to qualify. That produced a build that worked in dev, where no CSP
 applies, and was blocked in production. `build.assetsInlineLimit` in
-`vite.config.ts` forces this one file to be emitted; everything else keeps the
-default size rule.
+`vite.config.ts` forces every `*-worklet.js` to be emitted; everything else
+keeps the default size rule.
 
 The failure is invisible in dev and invisible behind an earlier microphone
 error, so it is worth re-checking after any Vite upgrade: build, then confirm
-`dist/assets/` contains a `mic-worklet-*.js`.
+`dist/assets/` contains both a `mic-worklet-*.js` and a
+`playback-worklet-*.js`. A blocked playback module is logged and the call
+keeps going; the health watchdog then reports the silence it causes.
 
 ## The engine seam
 
@@ -1147,13 +1288,22 @@ AGENTIQUE_VOICE_API_KEY=… go test ./internal/voice/ -run TestGeminiEngineLive 
 - The `vertex` backend is wired but unverified — it shares the engine, so only
   credentials and the model id differ.
 - Android specifics: wake lock, audio-focus interruption, and echo cancellation
-  over Bluetooth hands-free. The profile switch remains the biggest open risk —
-  the dial tone plays over A2DP, and `getUserMedia` then moves the handset and
-  the head unit onto HFP, rebuilding the route underneath a call that is already
-  running. Nothing here *fixes* that; the ringback and the health watchdog make
-  it audible and nameable, which is what the second car test was missing. Fixing
-  it, if it is ours to fix, is still meant to be worked out against the real
-  handset and head unit while the only moving part is an echo.
+  over Bluetooth hands-free.
+- **The profile switch: done in code, not yet proven in a car.** What is done:
+  the microphone opens before any output stream exists, the Bluetooth input is
+  asked for by device, the result is judged and retried twice, playback is
+  built on the settled route and resamples statefully so the 16 kHz context no
+  longer buzzes, and the ringback survives a stalled clock. Every rule is
+  under test against fakes and the `/dev/voice` echo loop. What still needs
+  the real handset and head unit: that a context built just after
+  `getUserMedia` resolves runs on that device (if not, the suspend-first
+  fallback described under "created inside the activation"); that Chrome's
+  "Bluetooth headset" label is what this head unit shows and that an exact
+  request for it brings SCO up; that two retries at 400 ms are enough of a
+  pause; and that the blip's one-second wait is right for the greeting's real
+  latency. `audioReport()` — Settings → Voice, "Where this call's audio went"
+  — is what to read after the drive: the "Asked for" line beside the
+  microphone line, the capture rate (16000 on HFP), and the underrun count.
 - **Nothing keeps the sink awake between replies.** A Bluetooth or projection
   sink suspends after a second or so of silence and swallows the first few
   hundred milliseconds of whatever follows. Every sound this app makes is

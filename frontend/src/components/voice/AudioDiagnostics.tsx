@@ -43,6 +43,7 @@ import {
   readProfile,
 } from "~/lib/voice/audio-route";
 import type { CallAudioReport } from "~/lib/voice/call";
+import type { CaptureRoute } from "~/lib/voice/capture";
 import { callAudioReport, useVoiceStore } from "~/stores/voice-store";
 
 const PROBE_ORDER: ProbePath[] = ["call", "buffered", "element"];
@@ -277,6 +278,12 @@ export function CallRoutes() {
         <dd className="font-mono">
           {report.pcmBytes.toLocaleString()} bytes at {report.outputSampleRate} Hz
         </dd>
+        <dt>Underruns</dt>
+        <dd className="font-mono">
+          {/* Gaps the playback ring ran into mid-reply: stutter the health
+              verdict cannot see, since frames arrived and the context ran. */}
+          {report.underruns}
+        </dd>
         <dt>Microphone</dt>
         <dd className="font-mono break-all">
           {report.capture.active
@@ -285,6 +292,13 @@ export function CallRoutes() {
               // upload rate is what the socket actually carries.
               `${report.capture.device || "unnamed"} · ${report.capture.contextSampleRate} Hz → ${report.capture.uploadSampleRate} Hz · echo cancellation ${report.capture.echoCancellation ? "on" : "off"}`
             : "not open"}
+        </dd>
+        <dt>Asked for</dt>
+        <dd className="font-mono break-all">
+          {/* Whether the car's microphone was requested by device, and how many
+              opens it took. The gap between this line and the one above is the
+              finding: asked for Bluetooth, given the handset. */}
+          {describeRequest(report.capture)}
         </dd>
       </dl>
     </div>
@@ -380,6 +394,21 @@ function OutputDeviceNote() {
       Outputs offered: {outputs.devices.map((d) => d.label || "unnamed").join(", ")}
     </p>
   );
+}
+
+/**
+ * What capture asked the browser for, in words.
+ *
+ * "Not asked" and "no Bluetooth input listed" are different findings — the
+ * first says the call chose the default, the second that there was nothing
+ * else to choose — so both are spelled rather than folded into a blank.
+ */
+function describeRequest(capture: CaptureRoute): string {
+  if (capture.opens === 0) return "not opened yet";
+  const device = capture.requestedDevice ? `${capture.requestedDevice} by id` : "the default input";
+  const listed = capture.bluetoothListed ? "Bluetooth input listed" : "no Bluetooth input listed";
+  const opens = capture.opens === 1 ? "1 open" : `${capture.opens} opens`;
+  return `${device} · ${listed} · ${opens}`;
 }
 
 /** Seconds as milliseconds, with the unreported case said rather than shown as 0. */

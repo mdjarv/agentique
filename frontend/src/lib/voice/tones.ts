@@ -259,24 +259,41 @@ export interface Ringback {
  * queued up ahead: bursts scheduled into the future would keep sounding after
  * the call went live, and the one thing a ringback must never do is play over a
  * live call.
+ *
+ * **The timer and the clock can disagree, and the clock wins.** While a
+ * Bluetooth profile switch rebuilds the route the context's clock stalls, and
+ * `setTimeout` keeps firing regardless — each burst scheduled at the same
+ * stalled `currentTime`. When the clock resumes they would all play at once,
+ * and a stop that silenced only the latest burst's nodes let the rest ring
+ * over the live call. So a burst is skipped while the previous one's end is
+ * still ahead of the clock, and every burst is held until its own end time
+ * has passed, so stop reaches all of them.
  */
 export function startRingback(ctx: AudioContext): Ringback {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let sounding: Sounding[] = [];
+  /** Every burst whose end the clock has not yet reached. */
+  let outstanding: { notes: Sounding[]; end: number }[] = [];
 
   const burst = () => {
     timer = undefined;
     if (stopped) return;
-    try {
-      sounding = playNotes(ctx, [
-        { freq: RING_LOW, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
-        { freq: RING_HIGH, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
-      ]);
-    } catch {
-      // A context that has gone away mid-ring ends the ring, never the call.
-      stopped = true;
-      return;
+    const now = ctx.currentTime;
+    outstanding = outstanding.filter((b) => b.end > now);
+    // The previous burst has not finished on the audio clock: the clock is
+    // stalled or behind the timer. Ringing over it would stack bursts.
+    if (outstanding.length === 0) {
+      try {
+        const notes = playNotes(ctx, [
+          { freq: RING_LOW, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
+          { freq: RING_HIGH, at: 0, duration: RING_BURST_SECONDS, peak: PEAK * 0.55 },
+        ]);
+        outstanding.push({ notes, end: now + RING_BURST_SECONDS });
+      } catch {
+        // A context that has gone away mid-ring ends the ring, never the call.
+        stopped = true;
+        return;
+      }
     }
     timer = setTimeout(burst, (RING_BURST_SECONDS + RING_GAP_SECONDS) * 1000);
   };
@@ -289,8 +306,11 @@ export function startRingback(ctx: AudioContext): Ringback {
       stopped = true;
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
-      silence(ctx, sounding);
-      sounding = [];
+      silence(
+        ctx,
+        outstanding.flatMap((b) => b.notes),
+      );
+      outstanding = [];
     },
   };
 }

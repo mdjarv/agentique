@@ -1,15 +1,108 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeAudioContext, installFakeAudio } from "./__tests__/fake-audio";
-import { VoiceCall, type VoiceCallHandlers, type VoiceCallState } from "./call";
+import {
+  FakeAudioContext,
+  FakeAudioWorkletNode,
+  installFakeAudio,
+  settleWorklets,
+} from "./__tests__/fake-audio";
+import type { AudioDevice } from "./audio-route";
+import {
+  CONNECTED_BLIP_WAIT_MS,
+  VoiceCall,
+  type VoiceCallHandlers,
+  type VoiceCallState,
+} from "./call";
+import type { CaptureRoute, MicCaptureOptions } from "./capture";
 import { publishMicLevel, resetMicLevel } from "./level";
+import { MIC_ROUTE_MESSAGE } from "./mic-route";
 
-// The microphone is not what these tests are about, and jsdom has none.
-vi.mock("./capture", () => ({
-  MicCapture: class {
-    async start(): Promise<void> {}
-    async stop(): Promise<void> {}
+/**
+ * A scripted microphone. jsdom has none, and what these tests care about is
+ * the order the call does things in and what it does with what it is given:
+ * each open records the device asked for and how many contexts existed at the
+ * time, and answers with the next scripted route.
+ */
+const mic = vi.hoisted(() => ({
+  /** Routes handed back by successive opens; the last one repeats. */
+  routes: [] as Partial<CaptureRoute>[],
+  /** One record per open: the device asked for, and the contexts built before it. */
+  starts: [] as {
+    device?: AudioDevice;
+    contextsBefore: number;
+    onFrame: (f: ArrayBuffer) => void;
+  }[],
+  /** What `listInputs` enumerates. */
+  inputs: [] as AudioDevice[],
+  reset() {
+    this.routes = [];
+    this.starts = [];
+    this.inputs = [];
   },
 }));
+
+vi.mock("./capture", () => {
+  const NO_CAPTURE: CaptureRoute = {
+    active: false,
+    device: "",
+    deviceId: "",
+    requestedDevice: "",
+    bluetoothListed: false,
+    opens: 0,
+    contextSampleRate: 0,
+    trackSampleRate: 0,
+    uploadSampleRate: 0,
+    echoCancellation: false,
+  };
+  return {
+    NO_CAPTURE,
+    MicCapture: class {
+      private route: CaptureRoute = NO_CAPTURE;
+      private opens = 0;
+      async start(opts: MicCaptureOptions): Promise<void> {
+        this.opens++;
+        mic.starts.push({
+          device: opts.device,
+          contextsBefore: FakeAudioContext.created.length,
+          onFrame: opts.onFrame,
+        });
+        const scripted = mic.routes[Math.min(this.opens - 1, mic.routes.length - 1)] ?? {};
+        this.route = { ...NO_CAPTURE, opens: this.opens, ...scripted };
+      }
+      describe(): CaptureRoute {
+        return this.route;
+      }
+      async stop(): Promise<void> {
+        this.route = { ...NO_CAPTURE, opens: this.opens };
+      }
+    },
+  };
+});
+
+vi.mock("./audio-route", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./audio-route")>()),
+  listInputs: async () => ({ supported: true, devices: mic.inputs }),
+}));
+
+const DEFAULT_INPUT: AudioDevice = { id: "default", label: "Default" };
+const BLUETOOTH_INPUT: AudioDevice = { id: "bt", label: "Bluetooth headset" };
+
+/** A track on the handset's own microphone, on a media route. */
+const HANDSET_TRACK: Partial<CaptureRoute> = {
+  active: true,
+  device: "Default",
+  deviceId: "default",
+  contextSampleRate: 48000,
+  uploadSampleRate: 16000,
+};
+
+/** The car's microphone, with the hands-free link up. */
+const CAR_TRACK: Partial<CaptureRoute> = {
+  active: true,
+  device: "Bluetooth headset",
+  deviceId: "bt",
+  contextSampleRate: 16000,
+  uploadSampleRate: 16000,
+};
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -71,9 +164,11 @@ function newCall(): Recorded {
 describe("VoiceCall audio", () => {
   beforeEach(() => {
     installFakeAudio();
+    mic.reset();
     FakeWebSocket.instances = [];
     (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
   // The bug this exists for: the context used to be created when `ready`
@@ -90,7 +185,22 @@ describe("VoiceCall audio", () => {
     expect(FakeAudioContext.last.options?.sampleRate).toBeUndefined();
   });
 
-  it("sounds the dial tone from the gesture, exactly once", async () => {
+  // The car fix: opening the microphone is what makes Android bring up the
+  // hands-free link, and an output stream already open on the media profile
+  // is what made that unreliable. So no context exists until the mic does,
+  // and the socket waits for both.
+  it("opens the microphone before any output stream exists, and the socket after", async () => {
+    const { call } = newCall();
+
+    await call.start("ws://test/voice");
+
+    expect(mic.starts).toHaveLength(1);
+    expect(mic.starts[0]?.contextsBefore).toBe(0);
+    expect(FakeAudioContext.created).toHaveLength(1);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("sounds the dial tone once the route has settled, exactly once", async () => {
     const { call } = newCall();
 
     await call.start("ws://test/voice");
@@ -101,29 +211,34 @@ describe("VoiceCall audio", () => {
     expect(freqs[1]).toBeGreaterThan(freqs[0] as number);
   });
 
-  it("acknowledges going live with one more note", async () => {
-    const { call, states } = newCall();
+  // The server drains the socket only once the engine is up, so anything
+  // uploaded before `ready` would arrive as one stale burst.
+  it("uploads microphone frames only once the call is live", async () => {
+    const { call } = newCall();
     await call.start("ws://test/voice");
+    const frame = new ArrayBuffer(1024);
+
+    mic.starts[0]?.onFrame(frame);
+    expect(FakeWebSocket.last.sent).toHaveLength(0);
 
     FakeWebSocket.last.onmessage?.(ready());
     await settle();
-
-    expect(states.at(-1)?.state).toBe("live");
-    expect(FakeAudioContext.last.oscillators).toHaveLength(3);
+    mic.starts[0]?.onFrame(frame);
+    expect(FakeWebSocket.last.sent).toEqual([frame]);
   });
 
-  it("builds playback buffers at the rate the server announced", async () => {
+  it("hands the server's audio to the worklet at the rate it announced", async () => {
     const { call } = newCall();
     await call.start("ws://test/voice");
     FakeWebSocket.last.onmessage?.(ready(24000));
     await settle();
+    await settleWorklets();
 
     const pcm = new ArrayBuffer(8);
     FakeWebSocket.last.onmessage?.({ data: pcm });
 
-    const ctx = FakeAudioContext.last;
-    expect(ctx.sampleRate).toBe(48000);
-    expect(ctx.buffers[0]?.sampleRate).toBe(24000);
+    expect(FakeAudioContext.last.sampleRate).toBe(48000);
+    expect(FakeAudioWorkletNode.last.port.posted).toEqual([{ type: "frame", rate: 24000, pcm }]);
   });
 
   // Whoever ended it — the operator, the idle guard, a broken engine — the line
@@ -233,10 +348,146 @@ async function advanceSpeaking(ms: number): Promise<void> {
   }
 }
 
+describe("VoiceCall connected blip", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    installFakeAudio();
+    mic.reset();
+    FakeWebSocket.instances = [];
+    (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Until the first word, "still connecting" and "connected, waiting for you"
+  // look identical. A silent window after going live still gets the blip.
+  it("acknowledges going live with one more note when no greeting arrives", async () => {
+    const { call, states } = newCall();
+    await call.start("ws://test/voice");
+
+    FakeWebSocket.last.onmessage?.(ready());
+    await advance(10);
+    expect(states.at(-1)?.state).toBe("live");
+    expect(FakeAudioContext.last.oscillators).toHaveLength(2);
+
+    await advance(CONNECTED_BLIP_WAIT_MS);
+    expect(FakeAudioContext.last.oscillators).toHaveLength(3);
+  });
+
+  // The greeting is injected the instant the call goes live, and a blip at
+  // the same instant landed under its first word. The greeting is the better
+  // acknowledgement, so it wins.
+  it("skips the blip when the greeting's audio arrives first", async () => {
+    const { call } = newCall();
+    await call.start("ws://test/voice");
+
+    FakeWebSocket.last.onmessage?.(ready());
+    await advance(300);
+    FakeWebSocket.last.onmessage?.({ data: new ArrayBuffer(320) });
+    await advance(CONNECTED_BLIP_WAIT_MS + 100);
+
+    expect(FakeAudioContext.last.oscillators).toHaveLength(2);
+  });
+});
+
+describe("VoiceCall microphone route", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    installFakeAudio();
+    mic.reset();
+    FakeWebSocket.instances = [];
+    (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs start() to completion, letting the retry pauses elapse. */
+  async function started(call: VoiceCall): Promise<void> {
+    const pending = call.start("ws://test/voice");
+    await advance(5000);
+    await pending;
+  }
+
+  /** The dial tone's two notes on a context, told apart from the ring by pitch. */
+  function dialNotes(ctx: FakeAudioContext): number {
+    return ctx.oscillators.filter((o) => o.frequency.value === 660 || o.frequency.value === 880)
+      .length;
+  }
+
+  // The intermittent car fault, and the retry that answers it: default
+  // resolution opened the handset while a Bluetooth input was listed, so the
+  // call releases everything, says so, and asks for that device by id.
+  it("re-opens with the Bluetooth input when the handset's microphone was opened instead", async () => {
+    mic.inputs = [DEFAULT_INPUT, BLUETOOTH_INPUT];
+    mic.routes = [HANDSET_TRACK, CAR_TRACK];
+    const { call, activity, states } = newCall();
+
+    await started(call);
+
+    expect(mic.starts).toHaveLength(2);
+    expect(mic.starts[1]?.device).toEqual(BLUETOOTH_INPUT);
+    // Said, then cleared once the route settled.
+    expect(activity).toEqual([MIC_ROUTE_MESSAGE, ""]);
+    // No output stream survived into the retry: the first context was closed
+    // and the second one is the one that sounds — one dial tone, on it.
+    expect(FakeAudioContext.created).toHaveLength(2);
+    expect(FakeAudioContext.created[0]?.closeCalls).toBe(1);
+    expect(FakeAudioContext.created[0]?.oscillators).toHaveLength(0);
+    expect(dialNotes(FakeAudioContext.last)).toBe(2);
+    expect(states.at(-1)?.state).toBe("connecting");
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("takes what it has after two retries rather than refusing the call", async () => {
+    mic.inputs = [DEFAULT_INPUT, BLUETOOTH_INPUT];
+    mic.routes = [HANDSET_TRACK];
+    const { call, states } = newCall();
+
+    await started(call);
+
+    expect(mic.starts).toHaveLength(3);
+    expect(states.at(-1)?.state).toBe("connecting");
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(dialNotes(FakeAudioContext.last)).toBe(2);
+    expect(call.audioReport().capture.opens).toBe(3);
+  });
+
+  it("opens once when the car's microphone comes up first time", async () => {
+    mic.inputs = [DEFAULT_INPUT, BLUETOOTH_INPUT];
+    mic.routes = [CAR_TRACK];
+    const { call, activity } = newCall();
+
+    await started(call);
+
+    expect(mic.starts).toHaveLength(1);
+    expect(activity).toHaveLength(0);
+    expect(FakeAudioContext.created).toHaveLength(1);
+  });
+
+  it("opens once on a handset with no Bluetooth input to ask for", async () => {
+    mic.inputs = [DEFAULT_INPUT];
+    mic.routes = [HANDSET_TRACK];
+    const { call, activity } = newCall();
+
+    await started(call);
+
+    expect(mic.starts).toHaveLength(1);
+    expect(activity).toHaveLength(0);
+  });
+});
+
 describe("VoiceCall ringback", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     installFakeAudio();
+    mic.reset();
     FakeWebSocket.instances = [];
     (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -335,6 +586,7 @@ describe("VoiceCall audio health", () => {
     vi.useFakeTimers();
     resetMicLevel();
     installFakeAudio();
+    mic.reset();
     FakeWebSocket.instances = [];
     (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
     vi.spyOn(console, "warn").mockImplementation(() => {});

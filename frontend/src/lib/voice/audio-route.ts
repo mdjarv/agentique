@@ -135,34 +135,43 @@ export const PROFILE_COPY: Record<ProfileReading, string> = {
   handsfree: "a hands-free/telephony route — a head unit may not play this",
 };
 
-/** One output device the browser is willing to name. */
-export interface OutputDevice {
+/** One audio device the browser is willing to name. */
+export interface AudioDevice {
   id: string;
   /** `""` before permission is granted, and on platforms that never label. */
   label: string;
 }
 
-export interface OutputDevices {
+/** @deprecated name kept for the diagnostic page; the shape is [AudioDevice]. */
+export type OutputDevice = AudioDevice;
+
+export interface AudioDevices {
   /** False when the browser has no device enumeration at all. */
   supported: boolean;
   /**
-   * Empty is a finding rather than a failure: Android Chrome enumerates no
-   * output devices, which is the same fact `sinkId` reports from the other
-   * side — there is nowhere else for this app to send the audio.
+   * For outputs, empty is a finding rather than a failure: Android Chrome
+   * enumerates no output devices, which is the same fact `sinkId` reports from
+   * the other side — there is nowhere else for this app to send the audio.
+   *
+   * For inputs, labels are empty until a microphone permission has been
+   * granted, so a list read before the first `getUserMedia` names nothing.
    */
-  devices: OutputDevice[];
+  devices: AudioDevice[];
 }
 
-const NO_DEVICES: OutputDevices = { supported: false, devices: [] };
+export type OutputDevices = AudioDevices;
+
+const NO_DEVICES: AudioDevices = { supported: false, devices: [] };
 
 /**
- * Lists the output devices the browser admits to, best effort.
+ * Lists the audio devices of one kind that the browser admits to, best effort.
  *
- * Never throws: this is a diagnostic, and one that fails to render because
- * enumeration was refused has reported nothing about the fault it was opened
- * to explain.
+ * Never throws: this feeds a diagnostic and a device choice, and either one
+ * failing because enumeration was refused reports nothing about the fault it
+ * was opened to explain. The refusal degrades to "unsupported", which every
+ * caller already handles.
  */
-export async function listOutputs(): Promise<OutputDevices> {
+async function listDevices(kind: MediaDeviceKind): Promise<AudioDevices> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
     return NO_DEVICES;
   }
@@ -170,11 +179,25 @@ export async function listOutputs(): Promise<OutputDevices> {
     const all = await navigator.mediaDevices.enumerateDevices();
     return {
       supported: true,
-      devices: all
-        .filter((d) => d.kind === "audiooutput")
-        .map((d) => ({ id: d.deviceId, label: d.label })),
+      devices: all.filter((d) => d.kind === kind).map((d) => ({ id: d.deviceId, label: d.label })),
     };
   } catch {
     return NO_DEVICES;
   }
+}
+
+/** The output devices, for the diagnostic's footnote. */
+export function listOutputs(): Promise<AudioDevices> {
+  return listDevices("audiooutput");
+}
+
+/**
+ * The input devices, for choosing the car's microphone.
+ *
+ * Android Chrome labels these from a fixed set ("Default", "Speakerphone",
+ * "Wired headset", "Bluetooth headset", "USB audio"), so the label is what a
+ * Bluetooth input is recognised by; see `mic-route.ts`.
+ */
+export function listInputs(): Promise<AudioDevices> {
+  return listDevices("audioinput");
 }

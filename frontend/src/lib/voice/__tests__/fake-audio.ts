@@ -94,8 +94,54 @@ export class FakeAudioBuffer {
   }
 }
 
+/** A worklet node's port as the main thread sees it: what it posted, and a way back. */
+export class FakeMessagePort {
+  readonly posted: unknown[] = [];
+  readonly transfers: unknown[][] = [];
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  closed = false;
+
+  postMessage(message: unknown, transfer: unknown[] = []): void {
+    this.posted.push(message);
+    this.transfers.push(transfer);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  /** What the worklet would say back. */
+  receive(data: unknown): void {
+    this.onmessage?.({ data });
+  }
+}
+
+export class FakeAudioWorkletNode extends FakeNode {
+  static created: FakeAudioWorkletNode[] = [];
+  readonly port = new FakeMessagePort();
+
+  constructor(
+    readonly context: FakeAudioContext,
+    readonly name: string,
+    readonly options?: AudioWorkletNodeOptions,
+  ) {
+    super();
+    FakeAudioWorkletNode.created.push(this);
+    context.workletNodes.push(this);
+  }
+
+  static get last(): FakeAudioWorkletNode {
+    const node = FakeAudioWorkletNode.created.at(-1);
+    if (!node) throw new Error("no AudioWorkletNode was created");
+    return node;
+  }
+}
+
 export class FakeAudioContext {
   static created: FakeAudioContext[] = [];
+
+  /** What `audioWorklet.addModule` does: resolve, or reject as a blocked load. */
+  static moduleBehaviour: "load" | "reject" = "load";
 
   /** What the browser would do with `resume()`: "run", "stay", or "reject". */
   static resumeBehaviour: "run" | "stay" | "reject" = "run";
@@ -112,8 +158,17 @@ export class FakeAudioContext {
   readonly gains: FakeGainNode[] = [];
   readonly sources: FakeBufferSourceNode[] = [];
   readonly buffers: FakeAudioBuffer[] = [];
+  readonly workletNodes: FakeAudioWorkletNode[] = [];
+  readonly modules: string[] = [];
   resumeCalls = 0;
   closeCalls = 0;
+
+  readonly audioWorklet = {
+    addModule: async (url: string): Promise<void> => {
+      if (FakeAudioContext.moduleBehaviour === "reject") throw new Error("blocked by CSP");
+      this.modules.push(url);
+    },
+  };
 
   constructor(readonly options?: AudioContextOptions) {
     this.state = FakeAudioContext.initialState;
@@ -122,7 +177,9 @@ export class FakeAudioContext {
 
   static reset(): void {
     FakeAudioContext.created = [];
+    FakeAudioWorkletNode.created = [];
     FakeAudioContext.resumeBehaviour = "run";
+    FakeAudioContext.moduleBehaviour = "load";
     FakeAudioContext.initialState = "suspended";
   }
 
@@ -172,6 +229,15 @@ export class FakeAudioContext {
 export function installFakeAudio(): void {
   FakeAudioContext.reset();
   (globalThis as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
+  (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
+}
+
+/** Lets the pending module loads settle, so worklet nodes exist. */
+export async function settleWorklets(): Promise<void> {
+  // Two hops: addModule resolves, then the `.then` that builds the node runs.
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 /** Anything here is only ever handed straight back to the code under test. */

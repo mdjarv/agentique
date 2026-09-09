@@ -1,4 +1,6 @@
+import { type AudioDevice, listInputs } from "./audio-route";
 import { frameLevel, publishMicLevel, resetMicLevel } from "./level";
+import { pickBluetoothInput } from "./mic-route";
 import workletUrl from "./mic-worklet.js?url";
 
 /** The rate the voice socket expects, fixed by the realtime speech API. */
@@ -18,6 +20,20 @@ export interface CaptureRoute {
   active: boolean;
   /** The track's label. `""` on a platform that will not name it. */
   device: string;
+  /** The track's device id, from what the browser granted. `""` when unreported. */
+  deviceId: string;
+  /**
+   * The label of the device that was asked for by id, or `""` when the
+   * request was left to the browser's default resolution.
+   *
+   * Kept separately from [device] because the gap between them is a finding:
+   * the Bluetooth input was asked for and the handset's own was opened.
+   */
+  requestedDevice: string;
+  /** Whether a Bluetooth input was enumerated when the microphone was opened. */
+  bluetoothListed: boolean;
+  /** How many times this capture has been opened, retries included. */
+  opens: number;
   /**
    * The rate the capture context settled on — the hardware's, never one we
    * asked for.
@@ -37,9 +53,13 @@ export interface CaptureRoute {
   echoCancellation: boolean;
 }
 
-const NO_CAPTURE: CaptureRoute = {
+export const NO_CAPTURE: CaptureRoute = {
   active: false,
   device: "",
+  deviceId: "",
+  requestedDevice: "",
+  bluetoothListed: false,
+  opens: 0,
   contextSampleRate: 0,
   trackSampleRate: 0,
   uploadSampleRate: 0,
@@ -51,7 +71,28 @@ export interface MicCaptureOptions {
   onFrame: (frame: ArrayBuffer) => void;
   /** Called if the microphone track ends on its own (unplugged, revoked, a call). */
   onEnded?: () => void;
+  /**
+   * The input to ask for by id. Absent means "the Bluetooth input if one is
+   * listed, else the browser's default" — the choice a call wants on its first
+   * open. A retry passes the device the judge named.
+   */
+  device?: AudioDevice;
 }
+
+/**
+ * The constraints every open asks for, whichever device carries them.
+ *
+ * Echo cancellation is not a nicety here: it is the only thing stopping the
+ * agent from hearing its own voice through the speakers and interrupting
+ * itself. There is no server-side echo cancellation. It is also what puts
+ * Android into communication mode, which is what starts the hands-free link.
+ */
+const BASE_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  channelCount: 1,
+};
 
 /**
  * Microphone capture, converted to the socket's sample rate in the worklet.
@@ -71,6 +112,15 @@ export interface MicCaptureOptions {
  *
  * So the context takes the hardware's rate and the worklet converts, which is
  * the one place the real rate is knowable.
+ *
+ * **The device is chosen, not left to resolution.** Chrome on Android lists
+ * inputs under fixed labels, and asking for the one labelled Bluetooth by exact
+ * id is what makes it start the hands-free link deterministically. Left to the
+ * default, the platform sometimes brings the link up and sometimes settles on
+ * the handset's own microphone — which is the intermittent silence from the
+ * car. An exact request the browser refuses falls back to the unconstrained
+ * one, because a microphone is better than none, and what was asked for is
+ * recorded so the diagnostic can show the gap.
  */
 export class MicCapture {
   private ctx: AudioContext | null = null;
@@ -79,18 +129,23 @@ export class MicCapture {
   private source: MediaStreamAudioSourceNode | null = null;
   private sink: GainNode | null = null;
 
+  private requestedDevice = "";
+  private bluetoothListed = false;
+  private opens = 0;
+
   async start(opts: MicCaptureOptions): Promise<void> {
-    // Echo cancellation is not a nicety here: it is the only thing stopping
-    // the agent from hearing its own voice through the speakers and
-    // interrupting itself. There is no server-side echo cancellation.
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1,
-      },
-    });
+    this.opens++;
+
+    // Enumerate first, every time: labels are empty until a permission has
+    // been granted, so the list a retry sees can name a device the first open
+    // could not.
+    const listed = await listInputs();
+    const bluetooth = pickBluetoothInput(listed.devices);
+    this.bluetoothListed = bluetooth !== null;
+    const wanted = opts.device ?? bluetooth ?? undefined;
+    this.requestedDevice = wanted?.label ?? "";
+
+    this.stream = await openStream(wanted);
 
     const track = this.stream.getAudioTracks()[0];
     if (track && opts.onEnded) {
@@ -137,11 +192,17 @@ export class MicCapture {
    */
   describe(): CaptureRoute {
     const track = this.stream?.getAudioTracks()[0];
-    if (!this.ctx || !track) return NO_CAPTURE;
+    if (!this.ctx || !track) {
+      return { ...NO_CAPTURE, opens: this.opens, bluetoothListed: this.bluetoothListed };
+    }
     const settings = track.getSettings();
     return {
       active: track.readyState === "live",
       device: track.label,
+      deviceId: settings.deviceId ?? "",
+      requestedDevice: this.requestedDevice,
+      bluetoothListed: this.bluetoothListed,
+      opens: this.opens,
       contextSampleRate: this.ctx.sampleRate,
       trackSampleRate: settings.sampleRate ?? 0,
       uploadSampleRate: INPUT_SAMPLE_RATE,
@@ -176,5 +237,28 @@ export class MicCapture {
         // Already closing — the tracks are released either way.
       }
     }
+  }
+}
+
+/**
+ * Opens the microphone, by exact device when one is named.
+ *
+ * An exact request can be refused for reasons that have nothing to do with
+ * permission — the device went away between the list and the ask, or the
+ * platform will not honour the id — and the unconstrained request is the
+ * answer to all of them. A permission refusal fails both the same way, and the
+ * second throw is the one the caller sees.
+ */
+async function openStream(device?: AudioDevice): Promise<MediaStream> {
+  if (!device) {
+    return navigator.mediaDevices.getUserMedia({ audio: BASE_CONSTRAINTS });
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { ...BASE_CONSTRAINTS, deviceId: { exact: device.id } },
+    });
+  } catch (err) {
+    console.warn("[voice] exact microphone refused, falling back", device.label, err);
+    return navigator.mediaDevices.getUserMedia({ audio: BASE_CONSTRAINTS });
   }
 }

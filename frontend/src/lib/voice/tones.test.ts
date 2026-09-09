@@ -116,24 +116,30 @@ describe("ringback", () => {
     expect(fake.oscillators).toHaveLength(0);
   });
 
+  /** Lets timers fire with the audio clock running alongside them, as it does on a live route. */
+  function tick(ms: number): void {
+    vi.advanceTimersByTime(ms);
+    fake.currentTime += ms / 1000;
+  }
+
   it("rings in bursts of two notes, with a gap between them", () => {
     startRingback(asAudioContext(fake));
 
-    vi.advanceTimersByTime(400);
+    tick(400);
     expect(fake.oscillators).toHaveLength(2);
 
     // Mid-gap: still two. The gap is silence, not a quieter ring.
-    vi.advanceTimersByTime(1000);
+    tick(1000);
     expect(fake.oscillators).toHaveLength(2);
 
-    vi.advanceTimersByTime(1500);
+    tick(1500);
     expect(fake.oscillators).toHaveLength(4);
   });
 
   it("keeps ringing for as long as nobody answers", () => {
     startRingback(asAudioContext(fake));
 
-    vi.advanceTimersByTime(30_000);
+    for (let i = 0; i < 30; i++) tick(1000);
 
     expect(fake.oscillators.length).toBeGreaterThan(8);
   });
@@ -187,6 +193,37 @@ describe("ringback", () => {
 
     const stops = fake.oscillators.map((o) => o.stoppedAt);
     expect(stops.every((at) => at !== null)).toBe(true);
+  });
+
+  // The profile switch stalls the context clock while setTimeout keeps firing.
+  // Every burst scheduled in that window landed at the same stalled time and
+  // all played at once when the clock resumed. The clock decides now: no new
+  // burst while the previous one has not ended on it.
+  it("skips bursts while the clock says the previous one is still sounding", () => {
+    startRingback(asAudioContext(fake));
+    vi.advanceTimersByTime(400);
+    expect(fake.oscillators).toHaveLength(2);
+
+    // Two more timer periods with the clock frozen: nothing stacks.
+    vi.advanceTimersByTime(4400);
+    expect(fake.oscillators).toHaveLength(2);
+
+    // The clock moves past the burst's end, and ringing resumes.
+    fake.currentTime += 3;
+    vi.advanceTimersByTime(2200);
+    expect(fake.oscillators).toHaveLength(4);
+  });
+
+  it("silences the burst that survived a stalled clock", () => {
+    const ring = startRingback(asAudioContext(fake));
+    vi.advanceTimersByTime(400);
+    vi.advanceTimersByTime(4400);
+
+    ring.stop();
+
+    for (const osc of fake.oscillators) {
+      expect(osc.stoppedAt as number).toBeLessThan(fake.currentTime + 0.4);
+    }
   });
 });
 

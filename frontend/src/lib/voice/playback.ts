@@ -1,33 +1,54 @@
 /**
- * Scheduled playback of streamed PCM.
+ * Playback of streamed PCM through one worklet.
  *
- * Engine audio arrives as a series of frames that have to play back-to-back
- * with no gap and no overlap. An <audio> element cannot do that, so each frame
- * becomes an AudioBufferSourceNode started at an explicitly computed time and
- * the queue tracks where the next one begins.
+ * Engine audio arrives as a series of ~30 ms frames that have to play
+ * back-to-back with no gap and no overlap. An <audio> element cannot do that,
+ * and one AudioBufferSourceNode per frame — the previous design — could, but
+ * left the browser to resample each buffer to the context rate on its own,
+ * with no state carried from one to the next. Every frame boundary was then a
+ * discontinuity, and thirty a second is a buzz under the speech. It hid
+ * inside a 48 kHz context and was plain in a 16 kHz one, which is the route a
+ * car's hands-free profile puts the call on.
+ *
+ * So frames are posted to `playback-worklet.js`, which resamples them
+ * statefully into a ring buffer at the context's own rate and plays it out as
+ * one continuous stream. There is no schedule to keep and no drift to guard:
+ * the worklet is pulled by the audio thread and the ring is the queue.
  */
 
 import { type AudioRoute, readRoute } from "./audio-route";
-
-/**
- * Cushion applied when the schedule has fallen behind the clock. Starting a
- * source in the past plays it immediately, so several late frames would all
- * fire at once and overlap into noise; this re-anchors slightly ahead instead.
- */
-const DRIFT_GUARD_SECONDS = 0.01;
+import workletUrl from "./playback-worklet.js?url";
 
 /** Gestures that count as "the operator touched the call" for a retry. */
 const GESTURE_EVENTS = ["pointerdown", "touchend", "keydown"] as const;
+
+/** One frame waiting for the worklet node to exist. */
+interface PendingFrame {
+  rate: number;
+  pcm: ArrayBuffer;
+}
+
+/** What the worklet says back. Anything else is ignored. */
+type WorkletMessage = { type: "drained" } | { type: "underrun"; count: number };
 
 export class PlaybackQueue {
   private ctx: AudioContext;
   private gain: GainNode;
 
-  /** Sources still scheduled or playing, so a flush can stop every one. */
-  private active: AudioBufferSourceNode[] = [];
+  /** The worklet node, once its module has loaded on the current context. */
+  private node: AudioWorkletNode | null = null;
 
-  /** Context time at which the next frame should start. */
-  private nextStart = 0;
+  /**
+   * Frames that arrived before the node existed. The module load is a fetch
+   * and a parse, and the first frames of a reply must not be lost to it.
+   */
+  private pending: PendingFrame[] = [];
+
+  /** Whether the ring buffer holds samples, as last reported. */
+  private playing = false;
+
+  /** Underruns the worklet has counted on this context. */
+  private underrunCount = 0;
 
   /** Removes the gesture retry listeners, when one is armed. */
   private disarm: (() => void) | null = null;
@@ -38,26 +59,26 @@ export class PlaybackQueue {
   private closed = false;
 
   /**
-   * Playback gets its own AudioContext, and it is built inside the gesture that
-   * started the call.
+   * Playback gets its own AudioContext, built at the hardware's rate.
    *
-   * Capture runs at 16 kHz and an engine returns audio at its own rate, so a
-   * single shared context would resample every played frame down to the capture
-   * rate and throw away the difference. Two contexts is the cost of both
-   * directions sounding right.
+   * Capture converts to 16 kHz in its own worklet and an engine returns audio
+   * at its own rate, so a single shared context would resample every played
+   * frame down to the capture rate and throw away the difference. Two contexts
+   * is the cost of both directions sounding right.
    *
    * The engine's rate is deliberately NOT forced on the context. It is not
-   * known at the moment the operator clicks, and waiting to learn it is what
-   * broke playback: a context constructed seconds after the gesture starts
-   * suspended and stays suspended, so control frames still rendered and nothing
-   * was ever heard. The context takes the hardware's rate instead and each
-   * buffer is created at the rate the server announced, which the browser
-   * resamples on playback.
+   * known when the context is built, and a requested rate is only a request
+   * anyway — see `capture.ts`. The context takes the hardware's rate and the
+   * worklet converts each frame into it, carrying its state across frames.
+   *
+   * The constructor is synchronous so it can be reached from inside a user
+   * gesture; the worklet module loads behind it and frames wait for it.
    */
   constructor() {
     this.ctx = new AudioContext();
     this.gain = this.ctx.createGain();
     this.gain.connect(this.ctx.destination);
+    this.attach(this.ctx);
   }
 
   /** Whether the browser is actually letting audio out of this context. */
@@ -87,6 +108,18 @@ export class PlaybackQueue {
    */
   describe(): AudioRoute {
     return readRoute(this.ctx);
+  }
+
+  /**
+   * Times the ring buffer ran dry mid-stream on this context.
+   *
+   * A gap the operator hears as a stutter and the health watchdog cannot see:
+   * frames arrived, the context ran, and the audio still broke up. The worklet
+   * counts only gaps followed by more audio within a quarter second, so the
+   * end of a reply is not an underrun.
+   */
+  get underruns(): number {
+    return this.underrunCount;
   }
 
   /**
@@ -176,14 +209,72 @@ export class PlaybackQueue {
     this.ctx = next;
     this.gain = next.createGain();
     this.gain.connect(next.destination);
-    this.active = [];
-    this.nextStart = 0;
+    this.node = null;
+    this.pending = [];
+    this.playing = false;
+    this.attach(next);
     void Promise.resolve()
       .then(() => (old.state === "closed" ? undefined : old.close()))
       .catch(() => {
         // The context we are walking away from. Its failure is not news.
       });
     return true;
+  }
+
+  /**
+   * Loads the worklet onto a context and wires its node, releasing any frames
+   * that arrived while it loaded.
+   *
+   * Guarded on the context still being current: a rebuild can replace it while
+   * the module is in flight, and a node built on the abandoned one would play
+   * into a context nobody hears.
+   */
+  private attach(ctx: AudioContext): void {
+    void ctx.audioWorklet
+      .addModule(workletUrl)
+      .then(() => {
+        if (this.closed || this.ctx !== ctx) return;
+        const node = new AudioWorkletNode(ctx, "playback-processor", {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        node.port.onmessage = (event: MessageEvent<WorkletMessage>) => this.onWorklet(event.data);
+        node.connect(this.gain);
+        this.node = node;
+        const waiting = this.pending;
+        this.pending = [];
+        for (const frame of waiting) this.post(frame);
+      })
+      .catch((err: unknown) => {
+        // Loud, because the symptom is a call with transcripts and no sound,
+        // and the likeliest cause is a build that inlined the module where the
+        // CSP cannot admit it (see vite.config.ts). Frames keep queueing; the
+        // health watchdog reports the silence.
+        console.warn("[voice] playback worklet failed to load", err);
+      });
+  }
+
+  private onWorklet(msg: WorkletMessage): void {
+    if (!msg || typeof msg !== "object") return;
+    switch (msg.type) {
+      case "drained":
+        this.playing = false;
+        return;
+      case "underrun":
+        this.underrunCount = msg.count;
+        return;
+      default:
+        return;
+    }
+  }
+
+  private post(frame: PendingFrame): void {
+    if (!this.node) {
+      this.pending.push(frame);
+      return;
+    }
+    this.node.port.postMessage({ type: "frame", rate: frame.rate, pcm: frame.pcm }, [frame.pcm]);
   }
 
   /**
@@ -224,74 +315,51 @@ export class PlaybackQueue {
   }
 
   /**
-   * Queues one frame of Int16 little-endian mono PCM, recorded at sampleRate.
+   * Hands one frame of Int16 little-endian mono PCM, recorded at sampleRate,
+   * to the worklet.
    *
-   * The rate is the server's announced one, not the context's: the browser
-   * resamples a buffer whose rate differs from the context it plays in, which
-   * is what lets the context be created before the engine has said anything.
+   * The rate is the server's announced one, not the context's: the worklet
+   * converts between them, which is what lets the context be created before
+   * the engine has said anything. The buffer is transferred, not copied — it
+   * came off the socket and nothing else reads it.
    */
   enqueue(pcm: ArrayBuffer, sampleRate: number): void {
     if (this.closed) return;
-    const samples = new Int16Array(pcm);
-    if (samples.length === 0) return;
+    if (pcm.byteLength < 2) return;
 
-    const floats = new Float32Array(samples.length);
-    for (let i = 0; i < samples.length; i++) {
-      // Divide by 32768 in both directions: the asymmetry of Int16 costs less
-      // than a scale that clips at +1.0.
-      floats[i] = (samples[i] ?? 0) / 32768;
-    }
-
-    // A rate the server never announced would throw and take the frame with it;
-    // the context's own is the only other honest guess.
+    // A rate the server never announced would be a division by zero in the
+    // worklet; the context's own is the only other honest guess.
     const rate = sampleRate > 0 ? sampleRate : this.ctx.sampleRate;
-    const buffer = this.ctx.createBuffer(1, floats.length, rate);
-    buffer.getChannelData(0).set(floats);
-
-    const source = this.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.gain);
-    source.onended = () => {
-      const i = this.active.indexOf(source);
-      if (i !== -1) this.active.splice(i, 1);
-    };
-    this.active.push(source);
-
-    const now = this.ctx.currentTime;
-    if (this.nextStart < now) this.nextStart = now + DRIFT_GUARD_SECONDS;
-    source.start(this.nextStart);
-    this.nextStart += buffer.duration;
+    this.playing = true;
+    this.post({ rate, pcm });
   }
 
   /**
-   * Stops everything queued and resets the schedule.
+   * Drops everything held and waiting.
    *
    * This is what makes barge-in work. Without it the engine stops generating
-   * the moment it is interrupted, but the browser keeps playing the seconds
-   * already queued — straight over the person who interrupted. Call it on
+   * the moment it is interrupted, but the ring keeps playing the seconds
+   * already held — straight over the person who interrupted. Call it on
    * every turn_complete, interrupted or not.
    */
   flush(): void {
-    for (const source of this.active) {
-      try {
-        source.stop();
-      } catch {
-        // Already stopped or never started — nothing to undo.
-      }
-    }
-    this.active = [];
-    this.nextStart = 0;
+    this.pending = [];
+    this.playing = false;
+    this.node?.port.postMessage({ type: "clear" });
   }
 
-  /** Whether anything is currently scheduled or playing. */
+  /** Whether the ring buffer holds samples — audio is, or is about to be, sounding. */
   get isPlaying(): boolean {
-    return this.active.length > 0;
+    return this.playing;
   }
 
   async close(): Promise<void> {
     this.closed = true;
     this.disarmGesture();
     this.flush();
+    this.node?.port.close();
+    this.node?.disconnect();
+    this.node = null;
     this.gain.disconnect();
     if (this.ctx.state !== "closed") {
       try {

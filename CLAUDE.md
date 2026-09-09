@@ -1270,37 +1270,50 @@ route (A2DP, projection, a laptop's speakers) is at 44.1 or 48 and does not. So
 capture built at 16 kHz worked on the telephony profile and only there — on a
 media route the worklet posted 48 kHz samples the socket labelled 16 kHz, three
 times too fast, and the microphone looked dead on exactly the routes that sound
-best. Both contexts take the hardware's rate and convert at the edge:
-`playback.ts` builds each buffer at the announced source rate, `mic-worklet.js`
-converts to `INPUT_SAMPLE_RATE` — box-averaging each output sample's window
-downward (the samples being skipped are already in hand, and it is the only
-anti-alias guard that fits in a render quantum), interpolating upward, both
-carrying state across render quanta or a reset writes a 125 Hz artefact into the
-stream. `CaptureRoute` reports **both** rates because the gap is the reading:
-`contextSampleRate` names the Bluetooth profile, `uploadSampleRate` is what the
-socket carries.
+best. Both contexts take the hardware's rate and convert at the edge, each in
+its own worklet: `mic-worklet.js` converts to `INPUT_SAMPLE_RATE`,
+`playback-worklet.js` converts the announced source rate to the context's —
+box-averaging each output sample's window downward (the samples being skipped
+are already in hand, and it is the only anti-alias guard that fits in a render
+quantum), interpolating upward, both carrying state across render quanta and
+frames, or a reset writes a periodic click into the stream. **Playback never
+resamples per buffer**: one `AudioBufferSourceNode` per frame let the browser
+resample each with no state carried across, and thirty boundaries a second was
+the buzz under the speech on the 16 kHz hands-free route. `CaptureRoute`
+reports **both** rates because the gap is the reading: `contextSampleRate`
+names the Bluetooth profile, `uploadSampleRate` is what the socket carries.
 
-**The playback AudioContext is created in the user gesture.** Built and resumed
-inside the click that placed the call, never when `ready` arrives: a context
-created outside a gesture stays suspended, so control frames render and nothing
-is ever heard. The engine's rate no longer gates that — the context takes the
-hardware's rate and each buffer is built at the announced source rate
-(`ctx.createBuffer(1, n, sourceRate)`). A context that will not run is reported
-in words, never left mute, and retried on the next gesture. The call's three
-tones (`lib/voice/tones.ts`) are synthesised, not assets, and the dial tone
-rides that same context on purpose: it is the unlock *and* the proof the audio
-path works. A context that resume alone will not revive is **rebuilt** on the
-next gesture, since a route switch wedges one in a way resume never fixes; the
-audio it missed is not replayed.
+**The microphone opens first, asked for by device, and nothing sounds until
+its route has settled.** `getUserMedia` with echo cancellation is what makes
+Android bring up the Bluetooth hands-free link, and an output stream already
+open on the media profile — the dial tone, the ring — is what made that
+unreliable: SCO failed underneath a running context and capture quietly fell to
+the handset's own microphone. So `VoiceCall.start` calls `getUserMedia`
+synchronously in the click, asking for the input labelled Bluetooth by exact
+id when one is listed (`mic-route.ts`), and builds `PlaybackQueue` only once it
+resolves — still inside the activation, and on the route SCO chose, whose rate
+(16 or 8 kHz) is the confirmation. `judgeMicRoute` then checks the track is the
+Bluetooth one on a hands-free rate and the call releases both the track and the
+context and re-opens by device, twice, saying so on the status line, before
+taking what it has. Frames upload only once live. A context that will not run
+is reported in words, never left mute, and retried on the next gesture; one
+that resume alone will not revive is **rebuilt** on the next gesture, since a
+route switch wedges one in a way resume never fixes, and the audio it missed is
+not replayed. The call's tones (`lib/voice/tones.ts`) are synthesised, not
+assets, and the dial tone rides the settled context on purpose: it is the proof
+the audio path works where the call will use it. The connected blip waits one
+second and yields to the greeting's audio when that arrives first.
 
 **The ringback never sounds over a live call and never outlives the call
 object.** One owner in `VoiceCall`, stopped on every exit from connecting —
 live, `error`, closed, hangup, teardown — and an `error` frame stops it without
 waiting for the close behind it. Bursts are scheduled against `ctx.currentTime`
 when their timer fires, never queued ahead, or a burst outlives the state it
-reports. It is a probe as much as a status: it is the same context playback
-uses, playing across the moment the microphone opens, which is when Bluetooth
-switches profile.
+reports; a burst is skipped while the previous one's end is still ahead of the
+clock, and stop silences every burst outstanding, because a stalled clock
+otherwise stacks them and a stop that reaches only the latest lets the rest
+ring over the live call. It is a probe as much as a status: it is the same
+context playback uses, running from the settled route until `ready`.
 
 **Silence has three causes and the call names one.** `lib/voice/health.ts` is a
 pure verdict over evidence the client already holds — mic level, engine

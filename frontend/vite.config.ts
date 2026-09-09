@@ -12,7 +12,9 @@ const useTls = process.env.VITE_TLS !== "false" && fs.existsSync(path.join(certP
 // Backend port: default 9201 (local dev). Override via VITE_BACKEND_PORT (e.g.
 // 19201 when targeting the installed agentique service from a remote dev slot).
 const backendPort = process.env.VITE_BACKEND_PORT ?? "9201";
-const backendOrigin = useTls ? `https://localhost:${backendPort}` : `http://localhost:${backendPort}`;
+const backendOrigin = useTls
+  ? `https://localhost:${backendPort}`
+  : `http://localhost:${backendPort}`;
 const backendWs = useTls ? `wss://localhost:${backendPort}` : `ws://localhost:${backendPort}`;
 
 // Public host for remote dev slots. When set, Vite HMR client connects via
@@ -92,7 +94,12 @@ export default defineConfig({
         icons: [
           { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          {
+            src: "/icon-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
           { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
         ],
       },
@@ -148,16 +155,17 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // Small assets are normally inlined as data: URIs. The audio worklet must
-    // not be: it is loaded with audioWorklet.addModule(), which the CSP judges
-    // under script-src, and that directive is 'self' plus one hash — no data:,
-    // no blob:. Inlined, the worklet is silently blocked in production while
-    // working fine in dev, where no CSP applies.
+    // Small assets are normally inlined as data: URIs. The audio worklets must
+    // not be: they are loaded with audioWorklet.addModule(), which the CSP
+    // judges under script-src, and that directive is 'self' plus one hash — no
+    // data:, no blob:. Inlined, a worklet is silently blocked in production
+    // while working fine in dev, where no CSP applies.
     //
     // Returning false forces a real emitted file, which 'self' admits. Every
-    // other asset keeps the default size rule.
+    // other asset keeps the default size rule. Both voice worklets (capture
+    // and playback) are named `*-worklet.js` so one rule covers them.
     assetsInlineLimit: (filePath: string) =>
-      filePath.includes("mic-worklet") ? false : undefined,
+      /[a-z]+-worklet\.js$/.test(filePath) ? false : undefined,
     // Mermaid (lazy-loaded via dynamic import) is ~2.7MB and will trigger this warning;
     // limit set so the warning fires only for that genuinely-large chunk.
     chunkSizeWarningLimit: 1000,
@@ -166,7 +174,11 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("/node_modules/")) return;
           if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor";
-          if (/\/node_modules\/(react-markdown|remark-gfm|remark-breaks|react-syntax-highlighter)\//.test(id)) {
+          if (
+            /\/node_modules\/(react-markdown|remark-gfm|remark-breaks|react-syntax-highlighter)\//.test(
+              id,
+            )
+          ) {
             return "markdown";
           }
           if (id.includes("/node_modules/mermaid/")) return "mermaid";
