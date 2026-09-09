@@ -680,6 +680,7 @@ The binary is both the server and a client to a running server.
 | `agentique auth <status\|sessions\|revoke\|rekey\|reset>` | Users, credentials, paired clients. |
 | `agentique projects` | List projects. |
 | `agentique sessions` | List sessions. |
+| `agentique sessions model [id]` | Which upstream model a session actually runs on: the requested slug, the concrete id the provider reported, when it was learned, and whether that reading is the session's own or the catalog's. See [docs/model-catalog.md](docs/model-catalog.md). |
 | `agentique worktrees` | List sessions with active worktrees. |
 | `agentique logs <id>` | A session's turn history. |
 | `agentique follow <id>` | Stream live events for a session. |

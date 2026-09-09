@@ -848,6 +848,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/sessions", sh.HandleList)
 	mux.HandleFunc("GET /api/sessions/events", sh.HandleEvents)
 	mux.HandleFunc("GET /api/sessions/{id}", sh.HandleGet)
+	mux.HandleFunc("GET /api/sessions/{id}/model", sh.HandleModel)
 	mux.HandleFunc("GET /api/sessions/{id}/history", sh.HandleHistory)
 	mux.HandleFunc("POST /api/sessions/{id}/stop", sh.HandleStop)
 	mux.HandleFunc("POST /api/sessions/{id}/query", sh.HandleQuery)
@@ -1194,7 +1195,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if voiceRegistry != nil {
 		voiceReporter = voiceRegistry
 	}
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator, voiceReporter)
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator, voiceReporter,
+		sessionModelInspector{svc: svc})
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)

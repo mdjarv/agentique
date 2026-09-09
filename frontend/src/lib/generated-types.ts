@@ -203,6 +203,7 @@ export interface SessionInfo {
   capabilities?: WireCapabilities;
   model: string;
   resolvedModel?: string;
+  resolvedAt?: string;
   permissionMode: string;
   autoApproveMode: string;
   effort?: string;

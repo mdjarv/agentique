@@ -21,10 +21,12 @@ UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
 UPDATE sessions SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: UpdateSessionModel :exec
-UPDATE sessions SET model = ?, resolved_model = '', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+-- Changing the requested slug discards what the old one resolved to, stamp and
+-- all: the pair describes a reading, and half a reading is worse than none.
+UPDATE sessions SET model = ?, resolved_model = '', resolved_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: UpdateSessionResolvedModel :exec
-UPDATE sessions SET resolved_model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+UPDATE sessions SET resolved_model = ?, resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
 -- name: UpdateSessionPermissionMode :exec
 UPDATE sessions SET permission_mode = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;

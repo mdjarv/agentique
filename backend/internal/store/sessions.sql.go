@@ -47,7 +47,7 @@ func (q *Queries) CountActiveSessionsByProject(ctx context.Context, projectID st
 
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve_mode, effort, max_budget, max_turns, behavior_presets, agent_profile_id, parent_session_id, provider)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at
 `
 
 type CreateSessionParams struct {
@@ -127,6 +127,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.PinOrder,
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
@@ -141,7 +142,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getActiveSessionByAgentProfile = `-- name: GetActiveSessionByAgentProfile :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at FROM sessions
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions
 WHERE agent_profile_id = ?
   AND archived_at IS NULL
   AND state NOT IN ('done', 'stopped', 'failed')
@@ -185,12 +186,13 @@ func (q *Queries) GetActiveSessionByAgentProfile(ctx context.Context, agentProfi
 		&i.PinOrder,
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -230,12 +232,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.PinOrder,
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
 
 const listAllSessions = `-- name: ListAllSessions :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at FROM sessions ORDER BY updated_at DESC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
@@ -281,6 +284,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 			&i.PinOrder,
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
+			&i.ResolvedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -296,7 +300,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 }
 
 const listChildSessions = `-- name: ListChildSessions :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at FROM sessions WHERE parent_session_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE parent_session_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error) {
@@ -342,6 +346,7 @@ func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.Nul
 			&i.PinOrder,
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
+			&i.ResolvedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -357,7 +362,7 @@ func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.Nul
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -403,6 +408,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.PinOrder,
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
+			&i.ResolvedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -566,7 +572,7 @@ func (q *Queries) UpdateSessionLastQueryAt(ctx context.Context, id string) error
 }
 
 const updateSessionModel = `-- name: UpdateSessionModel :exec
-UPDATE sessions SET model = ?, resolved_model = '', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+UPDATE sessions SET model = ?, resolved_model = '', resolved_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `
 
 type UpdateSessionModelParams struct {
@@ -574,6 +580,8 @@ type UpdateSessionModelParams struct {
 	ID    string `json:"id"`
 }
 
+// Changing the requested slug discards what the old one resolved to, stamp and
+// all: the pair describes a reading, and half a reading is worse than none.
 func (q *Queries) UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error {
 	_, err := q.db.ExecContext(ctx, updateSessionModel, arg.Model, arg.ID)
 	return err
@@ -622,7 +630,7 @@ func (q *Queries) UpdateSessionPermissionMode(ctx context.Context, arg UpdateSes
 }
 
 const updateSessionPinned = `-- name: UpdateSessionPinned :one
-UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at
+UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at
 `
 
 type UpdateSessionPinnedParams struct {
@@ -668,12 +676,13 @@ func (q *Queries) UpdateSessionPinned(ctx context.Context, arg UpdateSessionPinn
 		&i.PinOrder,
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
+		&i.ResolvedAt,
 	)
 	return i, err
 }
 
 const updateSessionResolvedModel = `-- name: UpdateSessionResolvedModel :exec
-UPDATE sessions SET resolved_model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+UPDATE sessions SET resolved_model = ?, resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `
 
 type UpdateSessionResolvedModelParams struct {

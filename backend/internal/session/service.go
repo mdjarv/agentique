@@ -73,27 +73,31 @@ type WirePendingQuestion struct {
 
 // SessionInfo is the wire type for session metadata sent to clients.
 type SessionInfo struct {
-	ID                string            `json:"id"`
-	ProjectID         string            `json:"projectId"`
-	Name              string            `json:"name"`
-	State             string            `json:"state"`
-	Connected         bool              `json:"connected"`
-	Provider          string            `json:"provider,omitempty"`
-	Capabilities      *WireCapabilities `json:"capabilities,omitempty"`
-	Model             string            `json:"model"`
-	ResolvedModel     string            `json:"resolvedModel,omitempty"`
-	PermissionMode    string            `json:"permissionMode"`
-	AutoApproveMode   string            `json:"autoApproveMode"`
-	Effort            string            `json:"effort,omitempty"`
-	MaxBudget         float64           `json:"maxBudget,omitempty"`
-	MaxTurns          int               `json:"maxTurns,omitempty"`
-	TotalCost         float64           `json:"totalCost"`
-	TurnCount         int               `json:"turnCount"`
-	WorktreePath      string            `json:"worktreePath,omitempty"`
-	WorktreeBranch    string            `json:"worktreeBranch,omitempty"`
-	WorktreeMerged    bool              `json:"worktreeMerged,omitempty"`
-	ArchivedAt        string            `json:"archivedAt,omitempty"`
-	UnseenCompletedAt *string           `json:"unseenCompletedAt,omitempty"`
+	ID            string            `json:"id"`
+	ProjectID     string            `json:"projectId"`
+	Name          string            `json:"name"`
+	State         string            `json:"state"`
+	Connected     bool              `json:"connected"`
+	Provider      string            `json:"provider,omitempty"`
+	Capabilities  *WireCapabilities `json:"capabilities,omitempty"`
+	Model         string            `json:"model"`
+	ResolvedModel string            `json:"resolvedModel,omitempty"`
+	// ResolvedAt dates ResolvedModel (UTC RFC3339 seconds). Absent until the
+	// provider has reported a model for this session, which is also when
+	// ResolvedModel is absent: one init event writes both.
+	ResolvedAt        string  `json:"resolvedAt,omitempty"`
+	PermissionMode    string  `json:"permissionMode"`
+	AutoApproveMode   string  `json:"autoApproveMode"`
+	Effort            string  `json:"effort,omitempty"`
+	MaxBudget         float64 `json:"maxBudget,omitempty"`
+	MaxTurns          int     `json:"maxTurns,omitempty"`
+	TotalCost         float64 `json:"totalCost"`
+	TurnCount         int     `json:"turnCount"`
+	WorktreePath      string  `json:"worktreePath,omitempty"`
+	WorktreeBranch    string  `json:"worktreeBranch,omitempty"`
+	WorktreeMerged    bool    `json:"worktreeMerged,omitempty"`
+	ArchivedAt        string  `json:"archivedAt,omitempty"`
+	UnseenCompletedAt *string `json:"unseenCompletedAt,omitempty"`
 	// EvictedAt is set only when this session's `stopped` is agentique's doing —
 	// the idle sweep reclaimed its CLI. Absent for every other reason a session
 	// is stopped, which is what lets a client tell "nothing happened here" from
@@ -1135,6 +1139,7 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		Capabilities:    &caps,
 		Model:           ss.Model,
 		ResolvedModel:   ss.ResolvedModel,
+		ResolvedAt:      nullStr(ss.ResolvedAt),
 		PermissionMode:  ss.PermissionMode,
 		AutoApproveMode: ss.AutoApproveMode,
 		Effort:          ss.Effort,

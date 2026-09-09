@@ -231,14 +231,22 @@ export function SessionIdentity({
           </div>
         )}
 
-        {/* Model */}
+        {/* Model. The label is a stable family name ("Opus 5"), which is the
+            one thing that cannot answer "what actually ran" — an alias moves
+            between releases. So the exact upstream id is stated in text below
+            it rather than hidden in a tooltip, and its absence is stated too:
+            the provider reports it on the session's first init event. */}
         {modelName && (
           <div className="space-y-1">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Model
             </span>
-            <div className="text-xs text-muted-foreground" title={meta.resolvedModel}>
-              {modelName}
+            <div className="text-xs text-muted-foreground">{modelName}</div>
+            <div
+              className="text-[11px] font-mono text-muted-foreground/70 break-all"
+              title={meta.resolvedAt ? `Reported by the provider at ${meta.resolvedAt}` : undefined}
+            >
+              {meta.resolvedModel || "not yet resolved"}
             </div>
           </div>
         )}

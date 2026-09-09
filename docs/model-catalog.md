@@ -59,6 +59,41 @@ carry the persisted `resolvedModel` after reload or reconnect. Changing a
 session's configured model clears the old resolved value and returns the
 display to its family name.
 
+### Inspecting what a session actually ran on
+
+One resolver, three surfaces. `session.ModelInspector`
+(`internal/session/model_inspect.go`) answers the question once and everything
+else reads its `ModelReport`, because an answer that differs between the CLI and
+an agent's tool call is worse than no answer.
+
+It takes the strongest evidence available, in this order:
+
+| Evidence | `source` |
+|---|---|
+| the live pipeline's `ResolvedModel()` | `init_event` |
+| `sessions.resolved_model` (the row an earlier run of this session wrote) | `init_event` |
+| `model_resolutions` for the same provider and slug | `catalog` |
+| nothing | `unresolved` |
+
+`catalog` is deliberately distinguished: it says what the slug resolves to for
+somebody else, not what this session ran. `unresolved` is a stated answer, never
+a blank field. `sessions.resolved_at` dates the reading (UTC RFC3339 seconds);
+it is written by the same init event that writes `resolved_model` and cleared
+with it when the requested slug changes, so the pair is never half a reading.
+
+The three surfaces:
+
+- **`SessionModel` MCP tool** — an agent asking what it is running on. The
+  `sessionId` argument defaults to the calling session. Read-only, so it
+  auto-approves like `SetSessionName`.
+- **`agentique sessions model [session-id]`** — a table of active sessions, or
+  all six fields for one (a session-id prefix is enough). It reads
+  `GET /api/sessions/{id}/model` on the running server rather than the database,
+  which is what includes a live session's own pipeline.
+- **The session details popover** — states the exact upstream id under the
+  family label, and "not yet resolved" before the provider has reported one.
+  Deliberately not in sidebar or deck rows.
+
 ### cli — new families without a release
 
 `additionalModelOptionsCache` is where the CLI records models the account can

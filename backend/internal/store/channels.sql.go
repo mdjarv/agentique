@@ -113,7 +113,7 @@ func (q *Queries) ListAgentMessagesByChannel(ctx context.Context, channelID stri
 }
 
 const listChannelMemberSessions = `-- name: ListChannelMemberSessions :many
-SELECT s.id, s.project_id, s.name, s.work_dir, s.worktree_path, s.worktree_branch, s.state, s.created_at, s.updated_at, s.claude_session_id, s.worktree_base_sha, s.model, s.worktree_merged, s.permission_mode, s.auto_approve, s.pr_url, s.effort, s.max_budget, s.max_turns, s.last_query_at, s.archived_at, s.behavior_presets, s.channel_id, s.channel_role, s.auto_approve_mode, s.agent_profile_id, s.parent_session_id, s.provider, s.resolved_model, s.pinned, s.pin_order, s.unseen_completed_at, s.evicted_at, cm.role AS member_role FROM sessions s
+SELECT s.id, s.project_id, s.name, s.work_dir, s.worktree_path, s.worktree_branch, s.state, s.created_at, s.updated_at, s.claude_session_id, s.worktree_base_sha, s.model, s.worktree_merged, s.permission_mode, s.auto_approve, s.pr_url, s.effort, s.max_budget, s.max_turns, s.last_query_at, s.archived_at, s.behavior_presets, s.channel_id, s.channel_role, s.auto_approve_mode, s.agent_profile_id, s.parent_session_id, s.provider, s.resolved_model, s.pinned, s.pin_order, s.unseen_completed_at, s.evicted_at, s.resolved_at, cm.role AS member_role FROM sessions s
 JOIN channel_members cm ON cm.session_id = s.id
 WHERE cm.channel_id = ?
 ORDER BY cm.joined_at ASC
@@ -153,6 +153,7 @@ type ListChannelMemberSessionsRow struct {
 	PinOrder          int64          `json:"pin_order"`
 	UnseenCompletedAt sql.NullString `json:"unseen_completed_at"`
 	EvictedAt         sql.NullString `json:"evicted_at"`
+	ResolvedAt        sql.NullString `json:"resolved_at"`
 	MemberRole        string         `json:"member_role"`
 }
 
@@ -199,6 +200,7 @@ func (q *Queries) ListChannelMemberSessions(ctx context.Context, channelID strin
 			&i.PinOrder,
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
+			&i.ResolvedAt,
 			&i.MemberRole,
 		); err != nil {
 			return nil, err

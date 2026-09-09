@@ -41,6 +41,7 @@ const (
 	ToolScheduleReport = "ScheduleReport"
 	ToolScheduleNext   = "ScheduleNext"
 	ToolVoiceReport    = "VoiceReport"
+	ToolSessionModel   = "SessionModel"
 
 	// VoiceReportToolFullName is the name the drafted prompt tells a worker to
 	// call when someone is listening on a live voice call.
@@ -51,6 +52,9 @@ const (
 	ReleaseDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolReleaseDev
 	ListDevURLsToolFullName    = "mcp__" + ServerName + "__" + ToolListDevURLs
 	SetSessionNameToolFullName = "mcp__" + ServerName + "__" + ToolSetSessionName
+	// SessionModelToolFullName is read-only, so it auto-approves like
+	// SetSessionName.
+	SessionModelToolFullName = "mcp__" + ServerName + "__" + ToolSessionModel
 	// KillDevPortToolFullName is NOT auto-approved: killing a process is
 	// destructive, so the user must confirm each invocation.
 	KillDevPortToolFullName = "mcp__" + ServerName + "__" + ToolKillDevPort
@@ -105,11 +109,33 @@ type VoiceReporter interface {
 	Report(sessionID, kind, headline string) (string, error)
 }
 
+// SessionModelReport is the JSON the SessionModel tool answers with: which
+// upstream model a session is actually running on, and how strong that reading
+// is. Field-identical to session.ModelReport, kept separate because the session
+// package imports this one (Manager.SetMCPHTTP) and the dependency cannot run
+// both ways — the wiring site adapts.
+type SessionModelReport struct {
+	SessionID       string `json:"sessionId"`
+	Provider        string `json:"provider"`
+	RequestedSlug   string `json:"requestedSlug"`
+	ResolvedModelID string `json:"resolvedModelId,omitempty"`
+	ResolvedAt      string `json:"resolvedAt,omitempty"`
+	Source          string `json:"source"`
+}
+
+// SessionModelInspector answers which upstream model a session runs on.
+// Implemented by an adapter over session.Service. May be nil — SessionModel is
+// then not registered.
+type SessionModelInspector interface {
+	InspectSessionModel(ctx context.Context, sessionID string) (SessionModelReport, error)
+}
+
 // NewHandler returns the configured /mcp http.Handler. renamer may be nil in
 // tests that don't exercise SetSessionName — calls to that tool will then
 // return an error result. mem may be nil to omit the brain memory tools;
-// sched may be nil to omit ScheduleCreate; voice may be nil to omit VoiceReport.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, voice VoiceReporter) http.Handler {
+// sched may be nil to omit ScheduleCreate; voice may be nil to omit VoiceReport;
+// models may be nil to omit SessionModel.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, voice VoiceReporter, models SessionModelInspector) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
 	register(h, akmcp.Tool{
@@ -230,6 +256,33 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 			return akmcp.TextResult("Suggestion surfaced to the user as a launchable card.")
 		}),
 	})
+
+	type sessionModelArgs struct {
+		SessionID string `json:"sessionId"`
+	}
+	if models != nil {
+		register(h, akmcp.Tool{
+			Name: ToolSessionModel,
+			Description: "Report which upstream model an Agentique session is actually running on. " +
+				"The requested model is an alias (\"opus\", \"sonnet\") that moves between releases, so it " +
+				"does not name the model that answered — this does. Omit `sessionId` for the session you " +
+				"are running in; pass one to inspect another session. Answers JSON: sessionId, provider, " +
+				"requestedSlug, resolvedModelId, resolvedAt, and source — `init_event` (that session's own " +
+				"run reported the id), `catalog` (the session never reported one, so this is what the same " +
+				"slug resolved to elsewhere — a hint, not this session's history), or `unresolved` (nothing " +
+				"has reported a model for this slug yet). Read-only.",
+			InputSchema: akmcp.ObjectProp{
+				Properties: map[string]akmcp.Property{
+					"sessionId": akmcp.StringProp{
+						Description: "Session to inspect. Omit for the calling session.",
+					},
+				},
+			},
+			Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args sessionModelArgs) akmcp.Result {
+				return sessionModelImpl(ctx, models, sid, args.SessionID)
+			}),
+		})
+	}
 
 	if mem != nil {
 		registerMemoryTools(h, mem)
@@ -591,6 +644,28 @@ func setSessionNameImpl(ctx context.Context, renamer SessionRenamer, sessionID, 
 		return akmcp.ErrorResultf("rename failed: %v", err)
 	}
 	return akmcp.TextResultf("Session renamed to %q.", name)
+}
+
+// sessionModelImpl answers the SessionModel tool. The argument defaults to the
+// calling session, which is the common case: an agent asking what it is.
+func sessionModelImpl(ctx context.Context, models SessionModelInspector, callerID, argID string) akmcp.Result {
+	target := strings.TrimSpace(argID)
+	if target == "" {
+		target = callerID
+	}
+	if target == "" {
+		return akmcp.ErrorResult("no session to inspect: this call carries no session identity, so pass { sessionId: \"<id>\" }.")
+	}
+
+	report, err := models.InspectSessionModel(ctx, target)
+	if err != nil {
+		return akmcp.ErrorResultf("session model lookup failed: %v", err)
+	}
+	body, err := json.Marshal(report)
+	if err != nil {
+		return akmcp.ErrorResultf("encode session model report: %v", err)
+	}
+	return akmcp.TextResult(string(body))
 }
 
 func summarizeSlotState(infos []devurls.SlotInfo) string {

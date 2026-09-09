@@ -594,7 +594,11 @@ export const useChatStore = create<ChatState>((set) => ({
   setSessionPinned: (sessionId, pinned, pinOrder) =>
     set((s) => updateMeta(s, sessionId, { pinned, pinOrder })),
   setSessionModel: (sessionId, model) =>
-    set((s) => updateMeta(s, sessionId, { model, resolvedModel: undefined })),
+    // The stamp goes with the id it dates: the server clears both when the
+    // requested slug changes, and half a reading is worse than none.
+    set((s) =>
+      updateMeta(s, sessionId, { model, resolvedModel: undefined, resolvedAt: undefined }),
+    ),
   setSessionResolvedModel: (sessionId, resolvedModel) =>
     set((s) => updateMeta(s, sessionId, { resolvedModel })),
 

@@ -74,6 +74,9 @@ type Querier interface {
 	GetInviteToken(ctx context.Context, tokenHash string) (InviteToken, error)
 	GetMachine(ctx context.Context, machineID string) (Machine, error)
 	GetMessage(ctx context.Context, id string) (Message, error)
+	// One learned mapping, for a session whose own run never reported a model: the
+	// last_seen_at that comes back is what dates the answer.
+	GetModelResolution(ctx context.Context, arg GetModelResolutionParams) (ModelResolution, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetPromptTemplate(ctx context.Context, id string) (PromptTemplate, error)
@@ -208,6 +211,8 @@ type Querier interface {
 	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error
 	UpdateSessionBehaviorPresets(ctx context.Context, arg UpdateSessionBehaviorPresetsParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
+	// Changing the requested slug discards what the old one resolved to, stamp and
+	// all: the pair describes a reading, and half a reading is worse than none.
 	UpdateSessionModel(ctx context.Context, arg UpdateSessionModelParams) error
 	UpdateSessionName(ctx context.Context, arg UpdateSessionNameParams) error
 	UpdateSessionPRUrl(ctx context.Context, arg UpdateSessionPRUrlParams) error

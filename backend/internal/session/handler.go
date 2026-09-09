@@ -60,6 +60,26 @@ func (h *Handler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	httperror.JSON(w, http.StatusOK, info)
 }
 
+// HandleModel reports which upstream model a session is actually running on.
+// A developer-inspection endpoint: it is what `agentique sessions model` reads,
+// and it asks the running server rather than the database so a live session's
+// pipeline answers for itself.
+func (h *Handler) HandleModel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		httperror.RespondError(w, httperror.BadRequest("id is required"))
+		return
+	}
+
+	report, err := h.svc.InspectSessionModel(r.Context(), id)
+	if err != nil {
+		httperror.RespondError(w, httperror.NotFound("session not found"))
+		return
+	}
+
+	httperror.JSON(w, http.StatusOK, report)
+}
+
 // HandleEvents streams session events as SSE.
 // Filters by ?project=<id> if provided.
 func (h *Handler) HandleEvents(w http.ResponseWriter, r *http.Request) {

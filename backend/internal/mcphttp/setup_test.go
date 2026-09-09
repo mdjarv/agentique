@@ -2,8 +2,11 @@ package mcphttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +14,21 @@ import (
 	"github.com/allbin/agentkit/devurls"
 	akmcp "github.com/allbin/agentkit/mcphttp"
 )
+
+// toolNames lists what a built handler actually offers, which is how the
+// optional tools are tested: registration is the switch.
+func toolNames(t *testing.T, h http.Handler) []string {
+	t.Helper()
+	handler, ok := h.(*akmcp.Handler)
+	if !ok {
+		t.Fatalf("NewHandler returned %T, want *mcphttp.Handler", h)
+	}
+	names := make([]string, 0, len(handler.Tools()))
+	for _, tool := range handler.Tools() {
+		names = append(names, tool.Name)
+	}
+	return names
+}
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
@@ -128,4 +146,100 @@ func TestDevURLKillExternalPort(t *testing.T) {
 	}
 	// On Linux owner should be populated; on other platforms it may be nil.
 	t.Logf("FindPortOwner: owner=%v", owner)
+}
+
+// fakeModelInspector records which session the SessionModel tool asked about.
+type fakeModelInspector struct {
+	report SessionModelReport
+	err    error
+	asked  []string
+}
+
+func (f *fakeModelInspector) InspectSessionModel(_ context.Context, sessionID string) (SessionModelReport, error) {
+	f.asked = append(f.asked, sessionID)
+	return f.report, f.err
+}
+
+// TestSessionModelDefaultsToCaller covers the common call: an agent asking what
+// it is running on, with no argument.
+func TestSessionModelDefaultsToCaller(t *testing.T) {
+	insp := &fakeModelInspector{report: SessionModelReport{
+		SessionID:       "sess-1",
+		Provider:        "claude",
+		RequestedSlug:   "opus",
+		ResolvedModelID: "claude-opus-5",
+		ResolvedAt:      "2026-09-09T10:00:00Z",
+		Source:          "init_event",
+	}}
+
+	res := sessionModelImpl(context.Background(), insp, "sess-1", "")
+	if res.IsError {
+		t.Fatalf("sessionModelImpl reported error: %s", resultText(res))
+	}
+	if len(insp.asked) != 1 || insp.asked[0] != "sess-1" {
+		t.Fatalf("inspected %v, want [sess-1]", insp.asked)
+	}
+
+	var got SessionModelReport
+	if err := json.Unmarshal([]byte(resultText(res)), &got); err != nil {
+		t.Fatalf("result is not JSON (%v): %s", err, resultText(res))
+	}
+	if got != insp.report {
+		t.Fatalf("report = %+v, want %+v", got, insp.report)
+	}
+}
+
+// An explicit argument wins, so one session can inspect another.
+func TestSessionModelArgumentOverridesCaller(t *testing.T) {
+	insp := &fakeModelInspector{report: SessionModelReport{SessionID: "sess-2", Source: "unresolved"}}
+
+	res := sessionModelImpl(context.Background(), insp, "sess-1", "  sess-2  ")
+	if res.IsError {
+		t.Fatalf("sessionModelImpl reported error: %s", resultText(res))
+	}
+	if len(insp.asked) != 1 || insp.asked[0] != "sess-2" {
+		t.Fatalf("inspected %v, want [sess-2]", insp.asked)
+	}
+	if !strings.Contains(resultText(res), `"source":"unresolved"`) {
+		t.Fatalf("unresolved source missing from result: %s", resultText(res))
+	}
+}
+
+func TestSessionModelReportsLookupFailure(t *testing.T) {
+	insp := &fakeModelInspector{err: errors.New("session not found")}
+
+	res := sessionModelImpl(context.Background(), insp, "sess-1", "")
+	if !res.IsError {
+		t.Fatalf("expected an error result, got: %s", resultText(res))
+	}
+	if !strings.Contains(resultText(res), "session not found") {
+		t.Fatalf("error text missing the cause: %s", resultText(res))
+	}
+}
+
+// With neither a caller identity nor an argument there is nothing to inspect,
+// and saying so beats inspecting the empty string.
+func TestSessionModelWithoutAnySessionRefuses(t *testing.T) {
+	insp := &fakeModelInspector{}
+
+	res := sessionModelImpl(context.Background(), insp, "", "")
+	if !res.IsError {
+		t.Fatalf("expected an error result, got: %s", resultText(res))
+	}
+	if len(insp.asked) != 0 {
+		t.Fatalf("inspector consulted with no session: %v", insp.asked)
+	}
+}
+
+// The tool is optional: a handler built without an inspector must not offer it.
+func TestSessionModelToolRegistrationIsOptional(t *testing.T) {
+	tokens := NewTokenStore()
+	dev := devurls.NewStore(nil)
+
+	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, nil)); slices.Contains(got, ToolSessionModel) {
+		t.Errorf("SessionModel registered without an inspector: %v", got)
+	}
+	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, &fakeModelInspector{})); !slices.Contains(got, ToolSessionModel) {
+		t.Errorf("SessionModel missing with an inspector: %v", got)
+	}
 }

@@ -56,6 +56,9 @@ const (
 	// AgentiqueScheduleNextTool paces a self-paced loop (clamped delays,
 	// session-scoped runs; stop parks visibly). Auto-allowed.
 	AgentiqueScheduleNextTool = "mcp__" + AgentiqueMCPServerName + "__ScheduleNext"
+	// AgentiqueSessionModelTool reports which upstream model a session runs on.
+	// A pure read of agentique's own metadata, so it auto-allows.
+	AgentiqueSessionModelTool = "mcp__" + AgentiqueMCPServerName + "__SessionModel"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

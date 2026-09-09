@@ -9,6 +9,29 @@ import (
 	"context"
 )
 
+const getModelResolution = `-- name: GetModelResolution :one
+SELECT provider, slug, resolved_id, last_seen_at FROM model_resolutions WHERE provider = ? AND slug = ?
+`
+
+type GetModelResolutionParams struct {
+	Provider string `json:"provider"`
+	Slug     string `json:"slug"`
+}
+
+// One learned mapping, for a session whose own run never reported a model: the
+// last_seen_at that comes back is what dates the answer.
+func (q *Queries) GetModelResolution(ctx context.Context, arg GetModelResolutionParams) (ModelResolution, error) {
+	row := q.db.QueryRowContext(ctx, getModelResolution, arg.Provider, arg.Slug)
+	var i ModelResolution
+	err := row.Scan(
+		&i.Provider,
+		&i.Slug,
+		&i.ResolvedID,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
 const listModelResolutions = `-- name: ListModelResolutions :many
 SELECT provider, slug, resolved_id, last_seen_at FROM model_resolutions ORDER BY provider, slug
 `

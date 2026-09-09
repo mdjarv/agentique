@@ -425,6 +425,7 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueScheduleCreateTool: allow,
 		AgentiqueScheduleReportTool: allow,
 		AgentiqueScheduleNextTool:   allow,
+		AgentiqueSessionModelTool:   allow,
 	}
 	// fullAuto (runtime.AutoApproveAll) short-circuits the approval pump, so the
 	// lazy Chrome launch in handlePendingChange never runs for it. Register a
@@ -622,6 +623,17 @@ func buildPipelineConfig(s *Session, p sessionParams) PipelineConfig {
 // ClaudeSessionID returns the Claude CLI session ID, if available.
 func (s *Session) ClaudeSessionID() string {
 	return s.pipeline.ClaudeSessionID()
+}
+
+// ResolvedModel returns the concrete upstream model id this live session's
+// provider named in its init event, or "" before that event arrives. It is the
+// current reading by construction, which is why ModelInspector prefers it over
+// the row the same event writes.
+func (s *Session) ResolvedModel() string {
+	if s.pipeline == nil {
+		return ""
+	}
+	return s.pipeline.ResolvedModel()
 }
 
 // BrowserPort returns the allocated Chrome debugging port for this session.

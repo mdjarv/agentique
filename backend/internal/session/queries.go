@@ -66,6 +66,7 @@ type serviceQueries interface {
 	AllSessionSummaries(ctx context.Context) ([]store.AllSessionSummariesRow, error)
 	DeleteSession(ctx context.Context, id string) error
 	UpdateSessionModel(ctx context.Context, arg store.UpdateSessionModelParams) error
+	GetModelResolution(ctx context.Context, arg store.GetModelResolutionParams) (store.ModelResolution, error)
 	UpdateSessionAutoApproveMode(ctx context.Context, arg store.UpdateSessionAutoApproveModeParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
 	UpdateSessionPinned(ctx context.Context, arg store.UpdateSessionPinnedParams) (store.Session, error)

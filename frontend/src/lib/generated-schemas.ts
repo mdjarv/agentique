@@ -205,6 +205,7 @@ export const SessionInfoSchema = z.object({
   capabilities: WireCapabilitiesSchema.optional(),
   model: z.string(),
   resolvedModel: z.string().optional(),
+  resolvedAt: z.string().optional(),
   permissionMode: z.string(),
   autoApproveMode: z.string(),
   effort: z.string().optional(),
