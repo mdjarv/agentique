@@ -106,10 +106,23 @@ export function DrivingCall({ view, onExit }: { view: CallView; onExit: () => vo
               rather than the strip's chip, because at a glance this is the
               fact worth the second-largest type on the screen. */}
           {view.focusName ? (
-            <FocusChip
-              name={view.focusName}
-              className="max-w-full px-3 py-1 text-xl leading-tight"
-            />
+            <div className="flex w-full min-w-0 flex-col items-center gap-1">
+              <FocusChip
+                name={view.focusName}
+                className="max-w-full px-3 py-1 text-xl leading-tight"
+              />
+              {/* The other half of the address. A session name is generated
+                  from a first prompt and blurs into every other one; the
+                  project is the word the driver is actually holding in their
+                  head, and the mistake worth catching at a glance is a prompt
+                  aimed at the wrong repository. Under the name rather than
+                  inside the chip, so neither truncates the other. */}
+              {view.focusProject ? (
+                <span className="max-w-full truncate text-base text-muted-foreground">
+                  in {view.focusProject}
+                </span>
+              ) : null}
+            </div>
           ) : (
             <span className="text-xl text-muted-foreground-faint">No session yet</span>
           )}

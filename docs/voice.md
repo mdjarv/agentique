@@ -1263,7 +1263,12 @@ driver actually has and drops everything else:
    driver cannot check any other way: the arc moves when the microphone does, so
    a dead line is visible without reading a word.
 2. **Where will this land** — the focused session, in the second-largest type on
-   screen. It is what "send it" hits.
+   screen, with its project on a quieter line under it. It is what "send it"
+   hits, and an address with two parts: a session name is generated from a first
+   prompt and blurs into every other one, where the project is the word the
+   driver is holding in their head. Under rather than inside the chip, so
+   neither half truncates the other. The server's spoken sentences carry both
+   for the same reason (`displayFor`).
 3. **What is it doing** — the same `CallLineText` every surface renders, at a
    size that survives a glance.
 

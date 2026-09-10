@@ -8,6 +8,8 @@
  */
 import { useMemo } from "react";
 import type { HaloState } from "~/components/voice/HaloOrb";
+import { useProjectPresentation } from "~/hooks/useProjectPresentation";
+import { projectLabel } from "~/lib/project-label";
 import { callStatusLine } from "~/lib/voice/copy";
 import { useChatStore } from "~/stores/chat-store";
 import {
@@ -102,6 +104,15 @@ export interface CallView {
   log: VoiceLogEntry[];
   stop: () => void;
   dismiss: () => void;
+  /**
+   * The project the focused session is in, or null.
+   *
+   * Where a prompt lands is an address with two parts, and the session half is
+   * generated text that blurs into every other session's. The project is the
+   * word the operator is holding in their head — which is why the server's own
+   * spoken sentences carry it too (`displayFor`).
+   */
+  focusProject: string | null;
   /** Calls again, on the session this call was last working with. */
   restart: () => void;
 }
@@ -120,6 +131,15 @@ export function useCallView(): CallView {
   const focusName = useChatStore((s) =>
     focusSessionId ? (s.sessions[focusSessionId]?.meta.name ?? null) : null,
   );
+  // A session-scoped surface holds a physical project id, so it resolves
+  // through the representative rather than reading that row (docs/multi-machine.md).
+  const focusProjectId = useChatStore((s) =>
+    focusSessionId ? (s.sessions[focusSessionId]?.meta.projectId ?? undefined) : undefined,
+  );
+  const { project: focusProjectRow } = useProjectPresentation(focusProjectId);
+  const focusProject = focusProjectRow
+    ? projectLabel(focusProjectRow.name, focusProjectRow.slug)
+    : null;
 
   // Derived outside the selector: `.filter()` inside one hands back a new
   // reference every call.
@@ -147,6 +167,7 @@ export function useCallView(): CallView {
     active: status !== "idle",
     ended: status === "ended",
     focusName,
+    focusProject,
     activityLabel,
     interim,
     line,

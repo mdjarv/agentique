@@ -1444,8 +1444,10 @@ on someone still listening.
 **Hands-free is a different screen, not a bigger strip.** `DrivingCall` replaces
 the phone's strip while `ui-store.handsFree` is set, and answers three questions
 — is it hearing me (the orb at 132px, whose halo is the only proof of the mic a
-driver can check), where will this land (the focused session, second-largest type
-on screen), what is it doing — then offers **one** 92px control, drawn at the
+driver can check), where will this land (the focused session in second-largest
+type, with its **project** on a quieter line under it — the name is generated
+from a first prompt and blurs into every other one, and aiming at the wrong
+repository is the mistake worth catching at a glance), what is it doing — then offers **one** 92px control, drawn at the
 same size and place live or ended, because a call can end between the look and
 the press. Fills are solid, not the app's 10% tint, which is unfindable through
 glass; nothing scrolls, because a scroll needs a second look and the call speaks
