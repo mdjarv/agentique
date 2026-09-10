@@ -905,13 +905,17 @@ func (c *call) greet() {
 // greetingFocusName is what the greeting should call the session this call
 // opened on, or "" for a call that opened on nothing — which is a different
 // greeting, not a missing word.
+//
+// The full spoken address, project and all ([displayFor]), because the greeting
+// is the first and sometimes only place the model is told where it is pointed —
+// and a read-back that names a session without its project is the half of the
+// address that blurs.
 func (c *call) greetingFocusName(ctx context.Context) string {
-	focus := c.currentFocus()
-	if focus == "" {
+	if c.currentFocus() == "" {
 		return ""
 	}
-	if row, ok := c.lookupRow(ctx, focus); ok && row.Name != "" {
-		return row.Name
+	if row := c.focusRow(ctx); row.Name != "" {
+		return displayFor(row)
 	}
 	return unnamedFocusLabel
 }

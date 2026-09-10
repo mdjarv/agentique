@@ -121,8 +121,11 @@ func TestGeminiToolCallLive(t *testing.T) {
 		// initial focus the drafter is right to ask where a new session should
 		// live, and this test would be asserting the wrong behaviour — see
 		// TestGeminiCreatesTheSessionItDispatchesToLive for that path.
-		InitialFocus:   "Live Voice Dialog",
-		ProjectContext: "The session is called \"Live Voice Dialog\".\nA Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts.",
+		InitialFocus: "Live Voice Dialog",
+		// Shaped like the real one (voiceDispatcher.ProjectContext), which names
+		// the project as well as the session — without it the model has half an
+		// address and reads a session name back as its own project.
+		ProjectContext: "The session is called \"Live Voice Dialog\".\nThe project is agentique.\nA Go backend with a React frontend. The WebSocket reconnect logic lives in frontend/src/lib/ws-client.ts.",
 	}), slog.Default())
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -156,6 +159,19 @@ func TestGeminiToolCallLive(t *testing.T) {
 			if toolCall.ID == "" {
 				t.Error("tool call has no id — the response could not be matched to it")
 			}
+			// The claim the server checks the focus against. A model that
+			// omits it, or fills it from its intention rather than from what
+			// it said, hands back the invisible target the argument exists to
+			// remove — and neither can be seen from inside the package.
+			target, _ := toolCall.Args["target"].(string)
+			if strings.TrimSpace(target) == "" {
+				t.Errorf("run_prompt named no target: %v", toolCall.Args)
+			} else if judged := judgeTarget(target, SessionRow{
+				Name: "Live Voice Dialog", ProjectName: "agentique", ProjectSlug: "agentique",
+			}, nil, nil); !judged.OK {
+				t.Errorf("run_prompt named %q, which the server refuses as %s", target, judged.Reason)
+			}
+
 			// Staying is the default now, so an omitted stay_on_line is the
 			// expected shape. What must never happen is a false nobody asked
 			// for: the operator is still on the call.
@@ -184,6 +200,199 @@ func TestGeminiToolCallLive(t *testing.T) {
 		}
 	}
 	t.Fatalf("no run_prompt tool call after %d turns of agreement", maxTurns)
+}
+
+// The incident, replayed against the real model.
+//
+// A call opened on a session in riff; the operator dictated a prompt that began
+// "debug the live voice calls in Agentique"; the model called neither
+// create_session nor focus_session, and the work went to riff. The coding agent
+// that received it worked out on its own that it had been handed somebody
+// else's job.
+//
+// Two things must hold, and only the service can say whether they do. The model
+// should reach for create_session rather than run_prompt — that is what the
+// instruction now asks for. And if it reaches for run_prompt anyway, the target
+// it names must be the one it said out loud, so the server refuses rather than
+// sending.
+func TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Gemini test: skipped by -short")
+	}
+	key := os.Getenv("AGENTIQUE_VOICE_API_KEY")
+	if key == "" {
+		t.Skip("live Gemini test: set AGENTIQUE_VOICE_API_KEY to run")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+
+	// The call is pointed at riff, and only at riff.
+	focus := SessionRow{
+		ID: "riff-1", Name: "Live Melodikrysset Sessions",
+		ProjectName: "riff", ProjectSlug: "riff",
+	}
+	// The other session the assistant may be offered. Focusing it is a
+	// legitimate answer — it is in the right project — so the test has to move
+	// its focus the way the server does, or it reports a refusal production
+	// would never make and passes for the wrong reason.
+	agentique := SessionRow{
+		ID: "ag-1", Name: "Voice Reliability",
+		ProjectName: "Agentique", ProjectSlug: "agentique",
+	}
+	knownProjects := func() []ProjectRow {
+		return []ProjectRow{
+			{ID: "p1", Name: "riff", Slug: "riff"},
+			{ID: "p2", Name: "Agentique", Slug: "agentique"},
+		}
+	}
+
+	engine, err := newGeminiEngine(ctx, Options{
+		Backend: BackendAIStudio,
+		APIKey:  key,
+		Model:   os.Getenv("AGENTIQUE_VOICE_MODEL"),
+	}, SystemInstruction(Briefing{
+		InitialFocus: focus.Name,
+		ProjectContext: "The session is called " + quoted("Live Melodikrysset Sessions") +
+			", in the project riff.\nA music quiz web app: crossword generation, Spotify links.",
+		Orientation: "Two sessions. " + quoted("Live Melodikrysset Sessions") + " in riff, idle. " +
+			quoted("Voice Reliability") + " in Agentique, idle.",
+	}), slog.Default())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer engine.Close()
+
+	if err := engine.SendText("Debug the live voice calls in Agentique. In the car it picks the " +
+		"wrong codec, so voice commands stop working, and it is intermittent."); err != nil {
+		t.Fatalf("send text: %v", err)
+	}
+
+	const maxTurns = 6
+	for turn := 1; turn <= maxTurns; turn++ {
+		said, toolCall := waitForTurn(t, engine, 45*time.Second)
+		if toolCall == nil {
+			if said == "" {
+				t.Fatalf("turn %d: the drafter said nothing", turn)
+			}
+			t.Logf("turn %d said: %s", turn, said)
+			// Answer what was actually asked. The instruction tells it to ask
+			// rather than guess when the work names a repository it is not
+			// aimed at, so a canned "yes" to a which-session question proves
+			// nothing — and the assertion that matters holds either way: the
+			// prompt must never land in riff.
+			if err := engine.SendText(replyTo(said)); err != nil {
+				t.Fatalf("confirm: %v", err)
+			}
+			continue
+		}
+
+		switch toolCall.Name {
+		case ToolFocusSession:
+			// The server would move the focus here, so the test does too. A
+			// prompt sent after this is judged against where the call now is.
+			if id, _ := toolCall.Args["session_id"].(string); id == agentique.ID {
+				focus = agentique
+			}
+			t.Logf("turn %d: focus_session(%v) — now on %s", turn, toolCall.Args, displayFor(focus))
+			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
+				"session_id": toolCall.Args["session_id"],
+				"name":       displayFor(focus),
+				"focused":    true,
+				"focused_on": displayFor(focus),
+				"note":       "Confirm out loud that you are now on " + displayFor(focus) + ".",
+			}); err != nil {
+				t.Fatalf("RespondTool: %v", err)
+			}
+
+		case ToolCreateSession:
+			// The designed path: work naming another repository starts a
+			// session there rather than borrowing this one.
+			project, _ := toolCall.Args["project"].(string)
+			projectID, _ := toolCall.Args["project_id"].(string)
+			t.Logf("turn %d: create_session (project=%q id=%q)", turn, project, projectID)
+			if !strings.Contains(strings.ToLower(project+projectID), "agentique") &&
+				projectID != "p2" {
+				t.Errorf("create_session aimed at %q/%q, want Agentique", project, projectID)
+			}
+			return
+
+		case ToolRunPrompt:
+			// The recovery path: not what the instruction asks for, but the
+			// target must still be what it said, so the server can refuse.
+			target, _ := toolCall.Args["target"].(string)
+			judged := judgeTarget(target, focus, []SessionRow{agentique}, knownProjects)
+			if judged.OK {
+				// Accepting is only correct if the call was actually moved into
+				// Agentique first, which focus_session above is what does.
+				if focus.ID != agentique.ID {
+					t.Fatalf("turn %d: run_prompt named %q against a focus of %s, and the server "+
+						"would ACCEPT — Agentique's work is about to land in a riff session",
+						turn, target, displayFor(focus))
+				}
+				t.Logf("turn %d: run_prompt named %q, accepted — the call was moved to %s first",
+					turn, target, displayFor(focus))
+				return
+			}
+			t.Logf("turn %d: run_prompt named %q against a focus of %s, refused as %s — "+
+				"the guard held", turn, target, displayFor(focus), judged.Reason)
+			return
+
+		default:
+			// Looking around first is fine and expected. Every answer names
+			// the focus, exactly as the server's own do.
+			t.Logf("turn %d: %s(%v)", turn, toolCall.Name, toolCall.Args)
+			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
+				"projects": []map[string]any{
+					{"project_id": "p1", "name": "riff"},
+					{"project_id": "p2", "name": "Agentique"},
+				},
+				"sessions": []map[string]any{
+					{"session_id": "riff-1", "name": "Live Melodikrysset Sessions in riff"},
+					{"session_id": "ag-1", "name": "Voice Reliability in Agentique"},
+				},
+				"focused_on": "Live Melodikrysset Sessions in riff",
+				"note":       "Let them choose out loud; never pick for them.",
+			}); err != nil {
+				t.Fatalf("RespondTool: %v", err)
+			}
+		}
+	}
+	t.Fatalf("no create_session or run_prompt after %d turns", maxTurns)
+}
+
+// quoted wraps a name in the double quotes a person would speak it with. A
+// helper only so the test's own string literals stay readable.
+func quoted(s string) string { return `"` + s + `"` }
+
+// replyTo is the operator's side of the conversation: agree, and answer a
+// which-session question the way a person would rather than repeating a yes
+// that does not fit the question.
+func replyTo(said string) string {
+	lower := strings.ToLower(said)
+	// A read-back is a question with one answer, and it is checked first: it
+	// mentions "new session" too, so a which-session reply here would read as
+	// another clarification and the model would read the draft back again.
+	for _, marker := range []string{"sound right", "sound good", "sound correct",
+		"is that correct", "should i start", "shall i", "say yes", "ready to start"} {
+		if strings.Contains(lower, marker) {
+			return "Yes, go ahead."
+		}
+	}
+	// It may ask what to put in the prompt before it drafts one, which is the
+	// instruction working — so answer with detail rather than another yes, or
+	// the conversation loops until the turn budget runs out.
+	for _, marker := range []string{"what prompt", "what detail", "what specific",
+		"should we include", "what should", "more context", "tell me more"} {
+		if strings.Contains(lower, marker) {
+			return "It picks the high quality codec instead of the hands-free one, but only " +
+				"sometimes. Look at the codec negotiation and fix it. Go ahead and start it."
+		}
+	}
+	if strings.Contains(lower, "new") {
+		return "A new one, in Agentique."
+	}
+	return "Yes, that is right, go ahead."
 }
 
 // waitForTurn collects the engine's speech until its turn completes, or returns

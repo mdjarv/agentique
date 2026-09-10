@@ -968,6 +968,26 @@ account for afterwards. `refuse` pairs a grep-able reason with the sentence the
 listener hears, and `call.recordRefusal` logs the first and strips it before
 the second reaches the model.
 
+The instruction's half of this is one short section, and its shape is load-
+bearing: **normally you already know where the work goes — the session you are
+aimed at**, and there is exactly one thing to notice before drafting, which is
+work naming a repository you are *not* aimed at. Written the other way round —
+"settle this before you draft, every time" — the model started asking which
+project it was in on an ordinary handoff, with the answer sitting in its own
+context. `TestGeminiToolCallLive` catches that: it agrees once and expects a
+dispatch, so an assistant that asks a question nobody needed runs out of turns.
+
+The greeting names the full address too (`greetingFocusName` reads `displayFor`),
+because it is the first and sometimes only place the model is told where it is
+pointed. Without the project there, it read a session name back as its own
+project — "To Live Voice Dialog, in Live Voice Dialog".
+
+Both live tests are env-gated and verified against the service rather than
+reasoned about: `TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive`
+replays the incident and tracks the focus the way the server does, so an
+assistant that legitimately focuses the Agentique session first is accepted and
+one that sends into riff is a hard failure.
+
 **Tools answer from what the server already holds.** The speech model is paused
 until a tool call is answered, so a slow handler is audible dead air. The tool
 set is fixed at engine open (`LiveConnectConfig`); there is no adding one

@@ -246,20 +246,19 @@ func SystemInstruction(brief Briefing) string {
 	// question out loud, before the prompt is drafted, is the half of the fix
 	// that lives here; the tool refusing a target that disagrees is the other.
 	b.WriteString("# Which session is this for\n\n")
-	b.WriteString("Settle this BEFORE you draft, every time. A prompt in the wrong session is the one ")
-	b.WriteString("mistake here that costs real work, and it is invisible to someone who cannot look ")
-	b.WriteString("at the screen.\n\n")
-	b.WriteString("Every tool result tells you what the call is aimed at, in `focused_on`. **That is ")
-	b.WriteString("the truth and your memory is not** — it is where the next prompt will go, whatever ")
-	b.WriteString("you have been talking about. Read it before you send.\n\n")
-	b.WriteString("**If the work names a different repository from the one you are aimed at, you are ")
-	b.WriteString("not handing over — you are starting a session.** \"Debug the voice calls in ")
-	b.WriteString("Agentique\", said while you are on a session in another project, is the new-session ")
-	b.WriteString(fmt.Sprintf("flow: `%s`, not `%s`. Never send a prompt about one project into a "+
-		"session in another because that is where the call happens to be pointing.\n\n",
+	b.WriteString("**Normally you already know: the session you are aimed at.** Every tool result ")
+	b.WriteString("says which that is, in `focused_on`. Do not ask them where the work should go, ")
+	b.WriteString("and never ask which project you are in — you are told. Draft, read it back, send.\n\n")
+	b.WriteString("There is exactly one thing to notice before you draft. **If the work names a ")
+	b.WriteString("different repository from the one you are aimed at, you are not handing over — ")
+	b.WriteString("you are starting a session.** \"Debug the voice calls in Agentique\", said while ")
+	b.WriteString(fmt.Sprintf("you are on a session in riff, is the new-session flow: `%s`, not "+
+		"`%s`. Never send a prompt about one project into a session in another because that is "+
+		"where the call happens to be pointing. That is the one mistake here that costs real work, "+
+		"and it is invisible to someone who cannot look at the screen.\n\n",
 		ToolCreateSession, ToolRunPrompt))
-	b.WriteString("If you are not sure which they mean, ask. One short question costs a few seconds; ")
-	b.WriteString("the wrong session costs the work.\n\n")
+	b.WriteString("`focused_on` is the truth and your memory is not. If it names a session you were ")
+	b.WriteString("not expecting, say so and stop — do not send into it.\n\n")
 
 	b.WriteString("# Handing over\n\n")
 	b.WriteString(fmt.Sprintf("When you have enough, call `%s` with the prompt you have written. It ", ToolRunPrompt))
