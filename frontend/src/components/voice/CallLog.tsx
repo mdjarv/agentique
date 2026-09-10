@@ -5,7 +5,7 @@
  * — render this, because a call log that reads differently depending on where
  * you opened it is two logs.
  */
-import { FileText, Mic } from "lucide-react";
+import { Crosshair, FileText, Mic } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useChatStore } from "~/stores/chat-store";
 import type { VoiceLogEntry, VoiceStatus } from "~/stores/voice-store";
@@ -84,15 +84,10 @@ function LogLine({ entry }: { entry: VoiceLogEntry }) {
     return <SummaryCard entry={entry} />;
   }
   if (entry.source === "dispatched") {
-    return (
-      <li className="rounded-lg bg-agent/5 px-2.5 py-1.5 ring-1 ring-agent/25">
-        <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-agent">
-          <Mic className="size-3" />
-          Sent to the session
-        </div>
-        <p className="text-[12.5px] leading-snug">{entry.text}</p>
-      </li>
-    );
+    return <DispatchCard entry={entry} />;
+  }
+  if (entry.source === "focus") {
+    return <FocusLine entry={entry} />;
   }
   return (
     <li className="rounded-lg bg-muted/30 px-2.5 py-1.5 ring-1 ring-border/60">
@@ -100,6 +95,56 @@ function LogLine({ entry }: { entry: VoiceLogEntry }) {
         {entry.source === "notice" ? (entry.kind ?? "update") : `report · ${entry.kind ?? ""}`}
       </div>
       <p className="text-[12.5px] leading-snug text-muted-foreground">{entry.text}</p>
+    </li>
+  );
+}
+
+/**
+ * The name of the session a line is about, or null while the client has not
+ * seen it yet — a session the call just created arrives here a moment after the
+ * frame that named it.
+ */
+function useLoggedSessionName(sessionId: string | undefined): string | null {
+  return useChatStore((s) => (sessionId ? (s.sessions[sessionId]?.meta.name ?? null) : null));
+}
+
+/**
+ * What was sent, and where.
+ *
+ * The heading used to read "Sent to the session", which names nothing — the
+ * screen half of the one fault this log exists to make legible, a prompt that
+ * went somewhere nobody asked for. It names the session now, and says plainly
+ * when it cannot.
+ */
+function DispatchCard({ entry }: { entry: VoiceLogEntry }) {
+  const sessionName = useLoggedSessionName(entry.sessionId);
+  return (
+    <li className="rounded-lg bg-agent/5 px-2.5 py-1.5 ring-1 ring-agent/25">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-agent">
+        <Mic className="size-3 shrink-0" />
+        <span className="truncate">
+          Sent{sessionName ? ` · ${sessionName}` : " to the focused session"}
+        </span>
+      </div>
+      <p className="text-[12.5px] leading-snug">{entry.text}</p>
+    </li>
+  );
+}
+
+/**
+ * The call changed where it is pointed.
+ *
+ * Quieter than a dispatch, because nothing was sent — but it is the other half
+ * of the record. A log carrying every send and no switch cannot answer whether
+ * the call was ever aimed anywhere else, which is the first question asked of
+ * it when a prompt lands in the wrong place.
+ */
+function FocusLine({ entry }: { entry: VoiceLogEntry }) {
+  const sessionName = useLoggedSessionName(entry.sessionId);
+  return (
+    <li className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground-faint">
+      <Crosshair className="size-3 shrink-0" />
+      <span className="truncate">Now on {sessionName ?? "another session"}</span>
     </li>
   );
 }
@@ -116,9 +161,7 @@ function LogLine({ entry }: { entry: VoiceLogEntry }) {
  * markdown rendering, no links, just the words as they arrived.
  */
 function SummaryCard({ entry }: { entry: VoiceLogEntry }) {
-  const sessionName = useChatStore((s) =>
-    entry.sessionId ? (s.sessions[entry.sessionId]?.meta.name ?? null) : null,
-  );
+  const sessionName = useLoggedSessionName(entry.sessionId);
   return (
     <li className="rounded-lg bg-muted/45 px-3 py-2 ring-1 ring-border/70">
       <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

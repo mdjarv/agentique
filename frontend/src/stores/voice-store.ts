@@ -28,11 +28,17 @@ import { useMachineStore } from "~/stores/machine-store";
 export interface VoiceLogEntry {
   id: number;
   /** Where it came from — decides how it should be read, and how much to trust it. */
-  source: "you" | "agent" | "dispatched" | "report" | "notice" | "summary";
+  source: "you" | "agent" | "dispatched" | "report" | "notice" | "summary" | "focus";
   text: string;
   /** report/notice kind, when there is one. */
   kind?: string;
-  /** The session a summary is about, when it named one. */
+  /**
+   * The session this line is about, resolved to a name at render time.
+   *
+   * A dispatch carries one because "sent to the session" names nothing, and the
+   * one failure this log exists to make legible is a prompt that went to the
+   * wrong one. A focus line carries one because it IS the session.
+   */
   sessionId?: string;
 }
 
@@ -145,7 +151,11 @@ function append(
   text: string,
   extra?: { kind?: string; sessionId?: string },
 ): void {
-  if (!text) return;
+  // A line with no words is nothing to log — an empty final transcript, a
+  // summary that found nothing. `focus` is the one source with no words by
+  // construction: its whole content is the session it names, which the log
+  // resolves at render time.
+  if (!text && source !== "focus") return;
   useVoiceStore.setState((s) => {
     const entry: VoiceLogEntry = { id: nextLogId++, source, text, ...extra };
     const next = [...s.log, entry];
@@ -326,14 +336,21 @@ export const voiceCallHandlers: VoiceCallHandlers = {
   // logged as its own source because it is an answer, not a status line.
   onSummary: (s) => append("summary", s.headline ?? "", { sessionId: s.sessionId }),
 
-  onDispatched: (d) => append("dispatched", d.headline ?? ""),
+  // The target rides along: a dispatch card that does not say where it went is
+  // the screen half of the fault the server now refuses.
+  onDispatched: (d) => append("dispatched", d.headline ?? "", { sessionId: d.sessionId }),
   onReport: (r) => append("report", r.headline ?? "", { kind: r.kind }),
   onNotice: (n) => append("notice", n.headline ?? "", { kind: n.kind }),
 
+  // Focus is logged as well as followed. Where the call is pointed decides
+  // where the next prompt lands, and a log that records every send but no
+  // switch cannot answer the one question asked of it afterwards: was it ever
+  // aimed anywhere else?
   onFocus: (f) => {
     const sessionId = f.sessionId ?? "";
     if (!sessionId) return;
     useVoiceStore.setState((s) => ({ focusSessionId: sessionId, focusSeq: s.focusSeq + 1 }));
+    append("focus", "", { sessionId });
   },
 };
 

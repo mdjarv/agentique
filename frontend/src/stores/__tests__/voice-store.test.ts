@@ -193,5 +193,28 @@ describe("voice-store frames", () => {
       h.onFocus?.({ type: "focus" });
       expect(useVoiceStore.getState().focusSeq).toBe(0);
     });
+
+    // A log carrying every send and no switch cannot answer the first question
+    // asked of it when a prompt lands in the wrong place: was the call ever
+    // aimed anywhere else?
+    it("records the switch in the log", () => {
+      h.onFocus?.({ type: "focus", sessionId: "s1" });
+      const entry = useVoiceStore.getState().log.at(-1);
+      expect(entry?.source).toBe("focus");
+      expect(entry?.sessionId).toBe("s1");
+    });
+  });
+
+  // "Sent to the session" names nothing, which is the screen half of a prompt
+  // going somewhere nobody asked for. The target rides along so the card can
+  // say which.
+  describe("dispatched", () => {
+    it("keeps the session the prompt went to", () => {
+      h.onDispatched?.({ type: "dispatched", headline: "fix the reconnect", sessionId: "s2" });
+      const entry = useVoiceStore.getState().log.at(-1);
+      expect(entry?.source).toBe("dispatched");
+      expect(entry?.text).toBe("fix the reconnect");
+      expect(entry?.sessionId).toBe("s2");
+    });
   });
 });
