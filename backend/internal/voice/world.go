@@ -177,6 +177,22 @@ func (c *call) offeredRow(sessionID string) (SessionRow, bool) {
 	return row, ok
 }
 
+// knownRows is every session the server has named to the model on this call.
+//
+// It is the pool a mistaken target is drawn from: the assistant can only name
+// what it has been told about, so a wrong target is nearly always one of these
+// rather than an invention. Ordering is a map's, which is fine — the only
+// consumer ranks them.
+func (c *call) knownRows() []SessionRow {
+	c.offeredMu.Lock()
+	defer c.offeredMu.Unlock()
+	rows := make([]SessionRow, 0, len(c.offered))
+	for _, row := range c.offered {
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 // lookupRow finds what the call knows about a session: this machine's database
 // first, then the browser's snapshot, then whatever was already offered.
 func (c *call) lookupRow(ctx context.Context, sessionID string) (SessionRow, bool) {

@@ -227,8 +227,11 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 	if c.currentFocus() != "s1" {
 		t.Errorf("focus = %q, want s1", c.currentFocus())
 	}
-	if got["name"] != "Live Voice Dialog" {
-		t.Errorf("focus returned %v, want the brief to name the session", got)
+	// Name and project together: a session name alone is generated text that
+	// blurs into every other one, and the project is what the listener is
+	// actually holding in their head.
+	if got["name"] != "Live Voice Dialog in agentique" {
+		t.Errorf("focus returned %v, want the brief to name the session and its project", got)
 	}
 	if can, _ := got["can_start_work"].(bool); !can {
 		t.Error("a local session in full auto can be worked in")
@@ -264,7 +267,7 @@ func TestRemoteSessionsCanBeSeenButNotWorkedIn(t *testing.T) {
 	}
 
 	run := c.runTool(ToolCallEvent{Name: ToolRunPrompt, Args: map[string]any{
-		"prompt": "fix the tests", "stay_on_line": true,
+		"prompt": "fix the tests", "target": "Remote Work", "stay_on_line": true,
 	}})
 	msg, _ := run["error"].(string)
 	if msg == "" {
@@ -331,6 +334,63 @@ func TestCreateSessionRequiresAnOfferedProject(t *testing.T) {
 	}
 	if c.currentFocus() != "" {
 		t.Error("a refused create still moved the call")
+	}
+}
+
+// A project the operator named out loud is enough. Requiring a list first made
+// a round trip out of "make one in webtickets", and every round trip in this
+// flow is a place to fall out of it — which is how a prompt ends up in whatever
+// session the call happened to be pointing at.
+func TestCreateSessionTakesAProjectTheOperatorSaid(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project": "web tickets"})
+	if msg, refused := got["error"].(string); refused {
+		t.Fatalf("refused a project the operator named: %s", msg)
+	}
+	created := dir.creations()
+	if len(created) != 1 || created[0].projectID != "p2" {
+		t.Fatalf("created %v, want one session in webtickets", created)
+	}
+	// Nothing was listed, so the guard on ids has to be satisfied by the
+	// resolution itself rather than by a call the assistant might not make.
+	if _, offered := c.offeredProject("p2"); !offered {
+		t.Error("resolving a spoken project did not record that the server named it")
+	}
+}
+
+// Naming is not describing. Two projects that could both be it get a question
+// and no session, the same rule find_session follows for sessions.
+func TestCreateSessionNeverPicksBetweenProjects(t *testing.T) {
+	dir := directoryWithTwo()
+	dir.projects = append(dir.projects, ProjectRow{ID: "p3", Name: "agentique-ui", Slug: "agentique-ui"})
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project": "agentique"})
+	msg, _ := got["error"].(string)
+	if msg == "" {
+		t.Fatalf("picked between two projects: %v", got)
+	}
+	if !strings.Contains(msg, "agentique-ui") {
+		t.Errorf("refusal = %q, want it to name the contenders so they can choose", msg)
+	}
+	if len(dir.creations()) != 0 {
+		t.Error("an ambiguous project still created a session")
+	}
+}
+
+// A project nobody has is a question, not a silent nothing.
+func TestCreateSessionRefusesAProjectThatIsNotHere(t *testing.T) {
+	dir := directoryWithTwo()
+	c := newToolCall(dir, &recordingDispatcher{}, "")
+
+	got := c.toolCreateSession(context.Background(), map[string]any{"project": "seisiun"})
+	if msg, _ := got["error"].(string); msg == "" {
+		t.Fatalf("created a session in a project that does not exist: %v", got)
+	}
+	if len(dir.creations()) != 0 {
+		t.Error("an unrecognised project still created a session")
 	}
 }
 

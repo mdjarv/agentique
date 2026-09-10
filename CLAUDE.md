@@ -1456,13 +1456,45 @@ and the preference describes the journey rather than the call.
 **The call is the app's, not a session's.** `?sessionId=` is only the *initial*
 focus; the call outlives navigation (it is owned by `voice-store`, never a
 component), and the sidebar dock / mobile caption strip are its surfaces. **Dispatch is
-focus-only and the screen follows the voice**: `run_prompt` has no session
-parameter — to send anywhere the model must `focus_session` first, which emits
-the `focus` frame and navigates the calling tab, so the target is on screen
-before any yes, and the read-back names it. Manual navigation never retargets
-the call; a `viewing` frame is data the model may *ask* about, never a switch.
+focus-only and the screen follows the voice**: `run_prompt` sends only to the
+focus — to aim anywhere the model must `focus_session` first, which emits the
+`focus` frame and navigates the calling tab, so the target is on screen before
+any yes, and the read-back names it. Manual navigation never retargets the
+call; a `viewing` frame is data the model may *ask* about, never a switch.
 Focus changes go one way for the same reason "no" never means "stop": an idle
 click must not move where "send it" lands.
+
+**Taking no target was never the safety property; being able to disagree is.**
+A tool with nothing to compare cannot *notice* a wrong target, so it failed
+open to whatever the focus held — which is the one thing on a call nobody can
+see, and a prompt about one project went into a session in another. `run_prompt`
+therefore takes a required `target`: the name the assistant just said out loud,
+checked against the focus by `judgeTarget`. A **name**, not an id — an id is a
+token the model copies correctly while believing something else, where the name
+is the string the operator's yes was given against, so checking it checks the
+read-back. It never re-aims: that would hand back the invisible target.
+
+The rule is asymmetric because a wrong send loses work invisibly and a wrong
+refusal costs a sentence. One salient word of the session's name or its project
+accepts; a better match elsewhere, a project the focus is not in, a blank, or
+nothing recognised each refuse in their own words, naming where the call
+actually is. Ambiguity asks and never picks. **A check that cannot be performed
+must not refuse**, so an undescribable focus — the single-session call, wired to
+no directory — accepts anything, missing target included.
+
+`displayFor` **always places a session in its project**. Names are generated
+from a first prompt and blur together; the project is the word the operator
+holds in their head, and it is what makes a confirmation auditable by ear.
+Every tool answer carries `focused_on` for the same reason: focus moves as a
+side effect of two tools and was never reported again, so belief drifted from
+it in silence. That lookup is also what fills in the session the call opened
+on, known by id alone until something asks.
+
+**Every refusal is logged, in one place.** `refuse` pairs a grep-able reason
+with the sentence the listener hears; `recordRefusal` writes the first and
+strips it before the second reaches the model. Dispatch already followed this
+rule and every other tool refused silently, which made a call that went nowhere
+impossible to account for afterwards.
 
 **Tools answer from what the server already holds.** A tool call pauses the
 speech model, so a slow handler is audible dead air. Anything computed (a
@@ -1482,7 +1514,13 @@ mode. Creation is deferred to the one yes that sends the prompt, and the
 dispatch read-back names the new session — so nothing exists until the operator
 has agreed to the work that goes in it. A spoken model name resolves through the
 picker's own catalog (`Catalog.ResolveFamily`); unresolvable names the families
-that exist and creates nothing, never a guessed model id.
+that exist and creates nothing, never a guessed model id. The **project** may be
+named the same way, by the words the operator used, resolved with the matcher
+`find_session` already uses: requiring `list_projects` first made a round trip
+out of "make me one in webtickets", and every round trip here is a place to fall
+out of the flow — which is how work ends up in whatever session the call was
+already pointing at. One match is a name; several is a description and gets a
+question.
 
 **Creating and sending are one tool call.** `create_session` takes the `prompt`
 and dispatches it itself, through the same `dispatchPrompt` `run_prompt` uses,

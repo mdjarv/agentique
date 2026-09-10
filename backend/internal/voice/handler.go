@@ -218,7 +218,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// Fixed message on the socket, detail in the log — the 500 rule.
 			log.Warn("voice auth session tracking failed", "error", err, "remote", r.RemoteAddr)
-			refuse(ws, "not authorized")
+			refuseCall(ws, "not authorized")
 			return
 		}
 		defer untrack()
@@ -235,7 +235,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The detail goes to the log; the browser gets a fixed message, the
 		// same rule an unclassified 500 follows.
 		log.Error("voice engine start failed", "error", err)
-		refuse(ws, "the voice backend is unavailable")
+		refuseCall(ws, "the voice backend is unavailable")
 		return
 	}
 
@@ -348,14 +348,14 @@ func (h *Handler) dialEngine(ctx context.Context, instruction string, persona Pe
 	}
 }
 
-// refuse says on an already-open socket why the call is not happening, and
+// refuseCall says on an already-open socket why the call is not happening, and
 // hangs up.
 //
 // The `error` frame carries the reason rather than a `closed` frame because the
 // client keeps a terminal detail across the socket closing behind it: the
 // operator reads why, not just that. Best effort throughout — there is nothing
 // left to do about a write that fails here.
-func refuse(ws *websocket.Conn, reason string) {
+func refuseCall(ws *websocket.Conn, reason string) {
 	_ = ws.SetWriteDeadline(time.Now().Add(writeTimeout))
 	_ = ws.WriteJSON(serverMessage{Type: msgError, Message: reason})
 	_ = ws.WriteControl(websocket.CloseMessage,

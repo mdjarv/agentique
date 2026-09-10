@@ -896,18 +896,77 @@ set** — the sessions it has dispatched into. `?sessionId=` on the socket URL i
 only the *initial* focus; a call opened without one starts unfocused and can
 still answer questions.
 
-**Dispatch is focus-only, and the screen follows the voice.** `run_prompt` has
-no session parameter: to send anywhere the model must call `focus_session`
-first, which moves the call's focus, sends the `focus` control frame, and the
-calling tab navigates there (`useVoiceFocusNavigation`). So the target is on
-screen before any yes can be given, and the read-back names it ("To Live Voice
-Dialog: …"). This is the safety contract extended to a target chosen by voice
-rather than fixed by the URL. It is one-way: manual navigation never retargets
-the call — the client sends a `viewing` frame, which the server injects as a
-data-framed note the model may *ask* about ("switch to what you're looking
-at?"), and never acts on silently. `focus_session` accepts only ids the call
-was actually offered (a find/list result, the initial focus, a viewing note),
-so the model cannot focus an id it hallucinated.
+**Dispatch is focus-only, and the screen follows the voice.** `run_prompt`
+takes no session to send *to*: to aim anywhere the model must call
+`focus_session` first, which moves the call's focus, sends the `focus` control
+frame, and the calling tab navigates there (`useVoiceFocusNavigation`). So the
+target is on screen before any yes can be given, and the read-back names it
+("To Live Voice Dialog, in agentique: …"). This is the safety contract extended
+to a target chosen by voice rather than fixed by the URL. It is one-way: manual
+navigation never retargets the call — the client sends a `viewing` frame, which
+the server injects as a data-framed note the model may *ask* about ("switch to
+what you're looking at?"), and never acts on silently. `focus_session` accepts
+only ids the call was actually offered (a find/list result, the initial focus,
+a viewing note), so the model cannot focus an id it hallucinated.
+
+### The target is claimed, checked, and refused
+
+Taking no target was originally read as the safety property: a tool that cannot
+be pointed anywhere cannot be pointed at the wrong place. That was backwards.
+With nothing to compare, the server could not *notice* a wrong target — it
+failed open, every time, to whatever the focus happened to hold, and the focus
+is the one thing on this call nobody can see.
+
+It happened. A call opened on a riff session, the operator dictated a prompt
+that began "debug the live voice calls in Agentique", the model called neither
+`create_session` nor `focus_session`, and `run_prompt` sent the work to riff.
+The coding agent that received it worked out on its own that it had been handed
+somebody else's job. The journal for that call shows two dispatches to the
+opening focus and no create and no focus between them.
+
+So `run_prompt` now takes a required `target`: **the name the assistant just
+said out loud**, and `judgeTarget` is where that claim meets the focus. A name
+rather than an id on purpose — an id is a token the model can copy correctly
+while believing something else, where the name is the same string the
+operator's yes was given against, so checking it checks the *read-back* rather
+than a parallel fact. The tool still sends only to the focus; re-aiming from
+inside a send would hand back the invisible target this removes.
+
+The rule is asymmetric, because the two mistakes cost differently. A wrong send
+loses real work and is invisible from a car; a wrong refusal costs a sentence
+and a retry. So it accepts generously — one salient word of the session's own
+name or of its project is enough, which is how "the riff one" and "Live
+Melodikrysset Sessions" are the same claim — and refuses loudly, in four
+flavours that each name where the call actually is: nothing said
+(`target-missing`, recovered silently by calling again), a better match
+elsewhere (`target-elsewhere`, pointing at `focus_session`), a project the
+focus is not in (`target-other-project`, pointing at `create_session` — the
+shape the incident took), and nothing recognised (`target-unrecognised`, which
+asks). Ambiguity never picks, here as everywhere else in this package.
+
+**A check that cannot be performed must not refuse.** A call wired to no
+directory knows one session and can reach no other, so an undescribable focus
+accepts anything, missing target included.
+
+**`displayFor` always places a session in its project**, and that is the half
+the listener uses. Session names are auto-generated from a first prompt, so
+they blur together; the project is the word the operator is holding in their
+head. "Live Melodikrysset Sessions" was true and useless to somebody who had
+just asked about Agentique.
+
+**Every tool answer carries `focused_on`.** The assistant's picture of where it
+is pointed lives only in its own transcript, and nothing corrected it: focus
+moves as a side effect of two tools and is never reported again. Stamping it on
+every answer re-grounds belief on each exchange rather than at the one moment
+it is too late. The same lookup fills in the session the call opened on, which
+the server otherwise knows by id alone — the most common dispatch target on any
+call being the one row it could say least about.
+
+**Every refusal is logged, in one place.** Dispatch logged its own; every other
+tool refused in silence, which made a call that went nowhere impossible to
+account for afterwards. `refuse` pairs a grep-able reason with the sentence the
+listener hears, and `call.recordRefusal` logs the first and strips it before
+the second reaches the model.
 
 **Tools answer from what the server already holds.** The speech model is paused
 until a tool call is answered, so a slow handler is audible dead air. The tool
@@ -926,8 +985,12 @@ likely next question is already answered.
 `list_projects` answers "where could this go" — LOCAL projects only, ranked by
 the most recent work in them, narrowable by the same normalized matcher
 `find_session` uses (a slug said as two words, "web tickets", reaches
-`webtickets`). Its ids join the offered set, and `create_session` accepts only
-those, exactly as `focus_session` does for sessions. Creation goes through
+`webtickets`). Its ids join the offered set, and `create_session` accepts
+those, exactly as `focus_session` does for sessions — **or the project's name,
+resolved by the same matcher**. Requiring the list first made a round trip out
+of "make me one in webtickets", and every round trip in this flow is a place to
+fall out of it; one match is a name and joins the offered set, several is a
+description and gets a question. Creation goes through
 `session.Service.CreateSession`, the same call the composer's new-session flow
 makes through the `session.create` WS handler, with the same worktree default —
 a second creation path would be a second set of rules about worktrees, quotas

@@ -167,10 +167,10 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString("but **not until they have said yes**, and not as a separate conversation.\n\n")
 	b.WriteString("Work out the two things you need while you are drafting, as part of the same ")
 	b.WriteString("conversation:\n\n")
-	b.WriteString(fmt.Sprintf("- **Which project.** If they said it, take it and use `%s` to turn it ",
+	b.WriteString(fmt.Sprintf("- **Which project.** If they said it, pass what they said as `project` "+
+		"— you do not need to list anything first. If they did not say, ask once, plainly. `%s` is "+
+		"there for reading them the few there are when they want to choose out loud.\n",
 		ToolListProjects))
-	b.WriteString("into an id. If they did not, ask once, plainly. If more than one could be it, ask ")
-	b.WriteString("which — never pick.\n")
 	b.WriteString("- **The prompt**, exactly as you would for any session.\n\n")
 	b.WriteString("**Settings are stated, never asked about.** Say \"with the defaults\" as part of ")
 	b.WriteString("the read-back, or the model family if they named one — \"on Fable\". Do not make ")
@@ -240,16 +240,43 @@ func SystemInstruction(brief Briefing) string {
 		b.WriteString("call: it is not a tutorial.\n\n")
 	}
 
+	// Where a prompt lands used to be decided by ambient state nobody stated:
+	// run_prompt took no target, so it went to the focus whatever the assistant
+	// believed, and belief and focus drifted apart in silence. Asking the
+	// question out loud, before the prompt is drafted, is the half of the fix
+	// that lives here; the tool refusing a target that disagrees is the other.
+	b.WriteString("# Which session is this for\n\n")
+	b.WriteString("Settle this BEFORE you draft, every time. A prompt in the wrong session is the one ")
+	b.WriteString("mistake here that costs real work, and it is invisible to someone who cannot look ")
+	b.WriteString("at the screen.\n\n")
+	b.WriteString("Every tool result tells you what the call is aimed at, in `focused_on`. **That is ")
+	b.WriteString("the truth and your memory is not** — it is where the next prompt will go, whatever ")
+	b.WriteString("you have been talking about. Read it before you send.\n\n")
+	b.WriteString("**If the work names a different repository from the one you are aimed at, you are ")
+	b.WriteString("not handing over — you are starting a session.** \"Debug the voice calls in ")
+	b.WriteString("Agentique\", said while you are on a session in another project, is the new-session ")
+	b.WriteString(fmt.Sprintf("flow: `%s`, not `%s`. Never send a prompt about one project into a "+
+		"session in another because that is where the call happens to be pointing.\n\n",
+		ToolCreateSession, ToolRunPrompt))
+	b.WriteString("If you are not sure which they mean, ask. One short question costs a few seconds; ")
+	b.WriteString("the wrong session costs the work.\n\n")
+
 	b.WriteString("# Handing over\n\n")
 	b.WriteString(fmt.Sprintf("When you have enough, call `%s` with the prompt you have written. It ", ToolRunPrompt))
 	b.WriteString("goes to the session you are focused on.\n\n")
 	b.WriteString("Before you call it you MUST:\n\n")
-	b.WriteString("1. Read the prompt back, close to verbatim, **naming the session it is going to**: ")
-	b.WriteString("\"To Live Voice Dialog: add a retry around the reconnect. Sound right?\" The name ")
-	b.WriteString("is not decoration — they cannot see which session you are on, and the wrong one is ")
-	b.WriteString("the one mistake here that costs real work.\n")
+	b.WriteString("1. Read the prompt back, close to verbatim, **naming the session it is going to and ")
+	b.WriteString("the project it is in**: \"To Live Voice Dialog, in agentique: add a retry around ")
+	b.WriteString("the reconnect. Sound right?\" Both halves matter — session names are generated ")
+	b.WriteString("from a first prompt and blur together, where the project is the word they are ")
+	b.WriteString("actually holding in their head. They cannot see which session you are on.\n")
 	b.WriteString("2. Wait for an explicit yes. **Silence is not consent.** If they say anything ")
-	b.WriteString("other than a clear affirmative, treat it as a correction and redraft.\n\n")
+	b.WriteString("other than a clear affirmative, treat it as a correction and redraft.\n")
+	b.WriteString("3. Pass what you just said as `target` — the name you read back, in the words you ")
+	b.WriteString("said it. It is checked against the session actually on screen, and a send that ")
+	b.WriteString("disagrees is refused rather than going to the wrong place. Write what you SAID, ")
+	b.WriteString("not what you meant: a target copied from your intention hides exactly the mistake ")
+	b.WriteString("this catches.\n\n")
 	// Staying is the default because they are already on the call. Asking every
 	// time turned the one question that matters — is this the right prompt, for
 	// the right session — into two, and the second one has an obvious answer.
@@ -403,6 +430,18 @@ func runPromptSchema() *genai.Schema {
 				Description: "The full prompt for the coding agent. Written to be read, not " +
 					"heard: name files and symbols, and say what done looks like.",
 			},
+			// The check on where this lands. See judgeTarget: the tool still
+			// sends to the focus, and this is the claim the focus is compared
+			// against, so a send that disagrees with what was said out loud is
+			// refused instead of going quietly to the wrong session.
+			"target": {
+				Type: genai.TypeString,
+				Description: "Where you just told them this is going, in their words: the session's " +
+					"name, or the project it is in. Whatever you said in the read-back, repeated " +
+					"here. It is checked against the session actually on screen and the send is " +
+					"refused if the two disagree, so never fill it in from what you meant to do — " +
+					"write what you said.",
+			},
 			// Optional, and absent means staying. They are on the call already;
 			// the interesting answer is the one where they leave, and that one
 			// they say out loud without being asked.
@@ -413,7 +452,7 @@ func runPromptSchema() *genai.Schema {
 					"the screen later. Never ask them which — they called you.",
 			},
 		},
-		Required: []string{"prompt"},
+		Required: []string{"prompt", "target"},
 	}
 }
 
@@ -505,10 +544,18 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 			Parameters: &genai.Schema{
 				Type: genai.TypeObject,
 				Properties: map[string]*genai.Schema{
+					"project": {
+						Type: genai.TypeString,
+						Description: "What the user called the project, as close to their words as " +
+							"you can. This is enough on its own — you do not have to list projects " +
+							"first. If more than one could be it, nothing is created and you are " +
+							"asked which.",
+					},
 					"project_id": {
 						Type: genai.TypeString,
 						Description: "The project id exactly as " + ToolListProjects + " returned " +
-							"it. Never invent one.",
+							"it, when you have one. Never invent one; say the name in `project` " +
+							"instead.",
 					},
 					"model": {
 						Type: genai.TypeString,
@@ -531,7 +578,6 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 							"default. Pass false ONLY if they said they are hanging up.",
 					},
 				},
-				Required: []string{"project_id"},
 			},
 		},
 		{

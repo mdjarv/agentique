@@ -559,7 +559,9 @@ func TestToolCallsRunInTheOrderTheModelAskedFor(t *testing.T) {
 
 	// One batch, in the order a model writes it.
 	c.queueToolCall(ToolCallEvent{ID: "1", Name: ToolCreateSession, Args: map[string]any{"project_id": "p1"}})
-	c.queueToolCall(ToolCallEvent{ID: "2", Name: ToolRunPrompt, Args: map[string]any{"prompt": "start on the docs"}})
+	c.queueToolCall(ToolCallEvent{ID: "2", Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "start on the docs", "target": "agentique",
+	}})
 
 	deadline := time.Now().Add(5 * time.Second)
 	for len(engine.order()) < 2 && time.Now().Before(deadline) {

@@ -562,7 +562,37 @@ func (c *call) handleToolCall(ev ToolCallEvent) {
 	// the model only reaches for one because somebody asked it something.
 	c.noteInteraction()
 
-	c.answerToolCall(ev, c.runTool(ev))
+	result := c.runTool(ev)
+	c.recordRefusal(ev.Name, result)
+	c.answerToolCall(ev, result)
+}
+
+// recordRefusal writes down every refusal, and strips the reason on its way out.
+//
+// "Nothing happened and there is no log line" is the same picture for a dozen
+// different causes — a project the assistant never listed, a model nobody has, a
+// session on the wrong machine, a create that failed. Dispatch already logged
+// its own; every other tool refused in silence, which made a call that went
+// nowhere impossible to account for afterwards. So the rule moves here, where it
+// covers all of them and cannot be forgotten by the next tool.
+//
+// [reasonKey] never reaches the model: it is a token for the log, and the
+// sentence the listener hears is the `error` beside it.
+func (c *call) recordRefusal(tool string, result map[string]any) {
+	if result == nil {
+		return
+	}
+	reason, _ := result[reasonKey].(string)
+	delete(result, reasonKey)
+
+	say, refused := result["error"].(string)
+	if !refused {
+		return
+	}
+	if reason == "" {
+		reason = "unspecified"
+	}
+	c.log.Warn("voice tool refused", "tool", tool, "reason", reason, "said", say)
 }
 
 // answerToolCall writes one tool result back to the engine.
@@ -589,6 +619,11 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
 	defer cancel()
 
+	return c.stampFocus(ctx, c.dispatchTool(ctx, ev))
+}
+
+// dispatchTool routes one call to the tool that answers it.
+func (c *call) dispatchTool(ctx context.Context, ev ToolCallEvent) map[string]any {
 	switch ev.Name {
 	case ToolRunPrompt:
 		return c.runPrompt(ctx, ev)
@@ -607,27 +642,92 @@ func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	case ToolHangUp:
 		return c.toolHangUp()
 	default:
-		return map[string]any{"error": fmt.Sprintf("unknown tool %q", ev.Name)}
+		return refuse("unknown-tool", fmt.Sprintf("unknown tool %q", ev.Name))
 	}
+}
+
+// stampFocus puts the call's real target on every answer.
+//
+// The assistant's picture of where it is pointed lives in one place — its own
+// transcript — and over a long call that drifts, silently, from the focus the
+// server holds. There is no event that corrects it: focus moves as a side effect
+// of two tools and is never reported again. So every answer carries it, at the
+// cost of one lookup on a path that already reads the database, and belief is
+// re-grounded on every exchange rather than at the one moment it is too late.
+//
+// The lookup is also what fills in the session the call opened on, which the
+// server otherwise knows by id alone.
+func (c *call) stampFocus(ctx context.Context, out map[string]any) map[string]any {
+	if out == nil {
+		return out
+	}
+	focus := c.currentFocus()
+	if focus == "" {
+		out["focused_on"] = "nothing — no session is aimed at yet, so there is nowhere to send"
+		return out
+	}
+	out["focused_on"] = displayFor(c.focusRow(ctx))
+	return out
+}
+
+// focusRow is the best description the call has of the session it is aimed at.
+//
+// It offers what it finds, so the placeholder the socket opens with — an id and
+// nothing else, because the operator chose it by pressing a button rather than
+// from a list — is replaced by a real row the first time anything asks. Without
+// that, the single most common dispatch target on any call is the one row the
+// server can say least about.
+func (c *call) focusRow(ctx context.Context) SessionRow {
+	focus := c.currentFocus()
+	if focus == "" {
+		return SessionRow{}
+	}
+	if row, ok := c.lookupRow(ctx, focus); ok {
+		c.offer(row)
+		return row
+	}
+	return c.bestKnownRow(ctx, focus)
 }
 
 // runPrompt hands a drafted prompt to the call's focused session.
 //
-// It acts on the focus and nothing else. Which session that is has already been
-// said out loud — the read-back names it — so the tool never takes a session
-// argument and cannot be pointed somewhere the listener did not hear.
+// It still acts on the focus and nothing else — the focus is a screen the
+// operator can see and a name the assistant has said, and re-aiming from inside
+// a send would give back the invisible target this exists to remove. What the
+// tool now takes is the assistant's *claim* about where that is, so the two can
+// be compared: see [judgeTarget] for why a claim it can disagree with is the
+// whole of the fix.
 func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 	target := c.currentFocus()
 	if c.dispatcher == nil {
-		c.log.Warn("voice prompt refused", "reason", "no dispatcher")
-		return map[string]any{"error": "This call is not attached to a session, so there is nothing to hand work to."}
+		return refuse("no-dispatcher",
+			"This call is not attached to a session, so there is nothing to hand work to.")
 	}
 	if target == "" {
-		c.log.Warn("voice prompt refused", "reason", "no focus")
-		return map[string]any{"error": "Nothing is focused yet — ask which session first."}
+		return refuse("no-focus", "Nothing is focused yet — ask which session first.")
 	}
+
+	if verdict := c.judgeSpokenTarget(ctx, stringArg(ev.Args, "target")); !verdict.OK {
+		return refuse(verdict.Reason, verdict.Say)
+	}
+
 	prompt, _ := ev.Args["prompt"].(string)
 	return c.dispatchPrompt(ctx, target, prompt, stayOnLineArg(ev.Args))
+}
+
+// judgeSpokenTarget checks the assistant's claim about where a prompt is going
+// against the session the call is actually aimed at.
+//
+// The project list is passed as a thunk because it is a database read that only
+// the refusing branch needs, and refusing is the rare path.
+func (c *call) judgeSpokenTarget(ctx context.Context, spoken string) targetJudgement {
+	projects := func() []ProjectRow {
+		if c.directory == nil {
+			return nil
+		}
+		return c.directory.ListProjects(ctx)
+	}
+	return judgeTarget(spoken, c.focusRow(ctx), c.knownRows(), projects)
 }
 
 // stayOnLineArg reads whether the operator is staying on the call.
@@ -660,16 +760,14 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 		if known, ok := c.lookupRow(ctx, target); ok {
 			row = known
 		}
-		c.log.Warn("voice prompt refused", "reason", "not local", "session", target)
-		return map[string]any{"error": fmt.Sprintf("%q runs on %s, so work cannot be started there "+
+		return refuse("not-local", fmt.Sprintf("%s runs on %s, so work cannot be started there "+
 			"from this call. Tell the user that, and offer to hand this to a session on this "+
-			"machine instead.", displayFor(row), machineWords(row))}
+			"machine instead.", displayFor(row), machineWords(row)))
 	}
 
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		c.log.Warn("voice prompt refused", "reason", "empty prompt", "session", target)
-		return map[string]any{"error": "The prompt was empty. Say what the agent should do."}
+		return refuse("empty-prompt", "The prompt was empty. Say what the agent should do.")
 	}
 
 	// Live voice has no spoken approval, so a session that would stop and ask
@@ -677,12 +775,11 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 	ok, why, err := c.dispatcher.AutoRunnable(ctx, target)
 	if err != nil {
 		c.log.Warn("voice auto-mode check failed", "session", target, "error", err)
-		return map[string]any{"error": "Could not reach that session."}
+		return refuse("session-unreachable", "Could not reach that session.")
 	}
 	if !ok {
-		c.log.Warn("voice prompt refused", "reason", "not auto-runnable", "session", target)
-		return map[string]any{"error": "That session is not in auto mode, so it would stop and ask for " +
-			"approval that cannot be given over a call. Tell the user to switch it to full auto on screen. " + why}
+		return refuse("not-auto-runnable", "That session is not in auto mode, so it would stop and ask for "+
+			"approval that cannot be given over a call. Tell the user to switch it to full auto on screen. "+why)
 	}
 
 	// The prompt goes to the browser whether or not it is spoken, so there is
@@ -709,7 +806,7 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 		if !wasFollowing {
 			c.unfollow(target)
 		}
-		return map[string]any{"error": "That could not be sent."}
+		return refuse("dispatch-failed", "That could not be sent.")
 	}
 	if briefing {
 		c.markBriefed(target)
