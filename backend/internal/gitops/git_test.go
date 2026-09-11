@@ -1,6 +1,7 @@
 package gitops
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,81 @@ func TestMergeBranch(t *testing.T) {
 	// Verify the feature file exists on main.
 	if _, err := os.Stat(filepath.Join(repoDir, "feature.txt")); err != nil {
 		t.Fatalf("expected feature.txt to exist after merge: %v", err)
+	}
+}
+
+// A dirty working tree is not a reason to refuse a fast-forward. This is the
+// case the sync dock is built on: behind by a commit, with a scratch file or a
+// build artifact lying around that the incoming commit never touches.
+func TestMergeBranch_FastForwardsPastUnrelatedDirt(t *testing.T) {
+	repoDir := initGitRepo(t)
+
+	testGitRun(t, repoDir, "checkout", "-b", "feature")
+	writeFile(t, repoDir, "feature.txt", "feature content")
+	testGitRun(t, repoDir, "add", ".")
+	testGitRun(t, repoDir, "commit", "-m", "feature commit")
+	testGitRun(t, repoDir, "checkout", "main")
+
+	// One untracked file and one modified tracked file, neither of them named
+	// by the incoming commit.
+	writeFile(t, repoDir, "scratch.log", "noise")
+	writeFile(t, repoDir, "README", "hello, edited")
+
+	if _, err := MergeBranch(repoDir, "feature"); err != nil {
+		t.Fatalf("MergeBranch with unrelated dirt: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "feature.txt")); err != nil {
+		t.Fatalf("expected the fast-forward to land: %v", err)
+	}
+
+	// The dirt survives the merge untouched.
+	readme, err := os.ReadFile(filepath.Join(repoDir, "README"))
+	if err != nil || string(readme) != "hello, edited" {
+		t.Fatalf("local edit lost: %q (%v)", string(readme), err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "scratch.log")); err != nil {
+		t.Fatalf("untracked file lost: %v", err)
+	}
+}
+
+// When the dirt *is* in the way, the refusal is its own error — the branches
+// are in line, so "rebase required" would be the wrong thing to tell anyone —
+// and it carries git's own message, which names the files.
+func TestMergeBranch_LocalChangesInTheWay(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		dirty func(dir string)
+	}{
+		{"untracked collision", func(dir string) { writeFile(t, dir, "feature.txt", "mine") }},
+		{"modified tracked collision", func(dir string) { writeFile(t, dir, "README", "mine") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoDir := initGitRepo(t)
+
+			testGitRun(t, repoDir, "checkout", "-b", "feature")
+			writeFile(t, repoDir, "feature.txt", "feature content")
+			writeFile(t, repoDir, "README", "hello, upstream")
+			testGitRun(t, repoDir, "add", ".")
+			testGitRun(t, repoDir, "commit", "-m", "feature commit")
+			testGitRun(t, repoDir, "checkout", "main")
+
+			before := testGitOutput(t, repoDir, "rev-parse", "HEAD")
+			tc.dirty(repoDir)
+
+			_, err := MergeBranch(repoDir, "feature")
+			if !errors.Is(err, ErrLocalChangesInTheWay) {
+				t.Fatalf("got %v, want ErrLocalChangesInTheWay", err)
+			}
+			if errors.Is(err, ErrNotFastForward) {
+				t.Fatal("a blocked fast-forward is not a divergence")
+			}
+
+			// Nothing was written: the branch has not moved and the local
+			// content is intact, which is what makes offering the button safe.
+			if after := testGitOutput(t, repoDir, "rev-parse", "HEAD"); after != before {
+				t.Fatalf("HEAD moved on a refused merge: %s -> %s", before, after)
+			}
+		})
 	}
 }
 

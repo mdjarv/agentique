@@ -273,8 +273,11 @@ func (g *GitService) Pull(ctx context.Context, projectID string) (ProjectGitStat
 		return ProjectGitStatus{}, fmt.Errorf("no upstream tracking branch configured")
 	}
 
+	// MergeBranch names its own cause — diverged, or a file in the way — so the
+	// wrapper must not assert one. It used to guess "not fast-forwardable?" at
+	// every failure, which was the wrong reading of the commonest one.
 	if _, err := g.git.MergeBranch(project.Path, upstream); err != nil {
-		return ProjectGitStatus{}, fmt.Errorf("pull failed (not fast-forwardable?): %w", err)
+		return ProjectGitStatus{}, fmt.Errorf("pull failed: %w", err)
 	}
 
 	slog.Info("project pull", "project_id", projectID, "upstream", upstream)

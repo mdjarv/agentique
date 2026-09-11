@@ -69,11 +69,18 @@ describe("deriveAction", () => {
     expect(deriveAction(status({ aheadRemote: 2 }))).toBe("push");
   });
 
-  // Both messy cases must stay off the one-click path: a pull that has to
-  // replay local commits, and one that would trample uncommitted work.
-  it("calls diverged and dirty-while-behind a rebase", () => {
+  // Commits on both sides are the one thing a pull cannot settle on its own.
+  it("calls diverged a rebase", () => {
     expect(deriveAction(status({ aheadRemote: 1, behindRemote: 2 }))).toBe("rebase");
-    expect(deriveAction(status({ behindRemote: 2, uncommittedCount: 4 }))).toBe("rebase");
+  });
+
+  // Dirt is not divergence. `rebase ↑0↓1` named a verb with nothing to replay,
+  // and parked the commonest checkout there is under "needs you". Whether the
+  // dirt is in the way is git's question, and `--ff-only` answers it without
+  // writing anything when the answer is no.
+  it("calls behind-with-dirt a pull, not a rebase", () => {
+    expect(deriveAction(status({ behindRemote: 2, uncommittedCount: 4 }))).toBe("pull");
+    expect(deriveAction(status({ behindRemote: 1, uncommittedCount: 40 }))).toBe("pull");
   });
 
   it("still calls ahead-with-dirt a push — the commits are already made", () => {

@@ -61,6 +61,13 @@ func MergeBranch(projectDir, branch string) (string, error) {
 		if strings.Contains(msg, "Not possible to fast-forward") {
 			return "", ErrNotFastForward
 		}
+		// A fast-forward that collides with the working tree is refused before
+		// anything is written, and it is a different problem from divergence:
+		// the branches are in line, some file in the way is not. Git names the
+		// files, so carry its message through rather than restating it.
+		if strings.Contains(msg, "would be overwritten by merge") {
+			return "", fmt.Errorf("%w:\n%s", ErrLocalChangesInTheWay, msg)
+		}
 		return "", fmt.Errorf("git merge failed: %w: %s", err, msg)
 	}
 
@@ -128,6 +135,12 @@ var ErrDirtyWorktree = errors.New("project has uncommitted changes — commit or
 
 // ErrNotFastForward is returned when a --ff-only merge fails because branches have diverged.
 var ErrNotFastForward = errors.New("branches have diverged — rebase required")
+
+// ErrLocalChangesInTheWay is returned when a merge that could otherwise
+// fast-forward is refused because the incoming commits touch files the working
+// tree has modified or holds untracked. Nothing was written; the named files
+// need committing, stashing or removing first.
+var ErrLocalChangesInTheWay = errors.New("local changes are in the way — commit, stash or remove them first")
 
 // UncommittedDiff returns the diff of uncommitted changes (staged + unstaged vs HEAD)
 // and a short status summary. Used for generating commit messages.

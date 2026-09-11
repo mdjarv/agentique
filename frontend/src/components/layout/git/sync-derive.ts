@@ -15,9 +15,10 @@ import type { Project } from "~/lib/types";
 /**
  * What the row's one button does.
  * - `push`   — ahead only. Mechanical.
- * - `pull`   — behind, clean, nothing local to replay. Mechanical (`--ff-only`).
- * - `rebase` — diverged, or behind with uncommitted work. Never run from the
- *   dock: it opens a session with a rebase prompt instead.
+ * - `pull`   — behind with nothing of our own to replay. Mechanical
+ *   (`--ff-only`), dirty working tree included.
+ * - `rebase` — diverged: commits on both sides. Never run from the dock; it
+ *   opens a session with a rebase prompt instead.
  */
 export type SyncAction = "push" | "pull" | "rebase";
 
@@ -88,10 +89,24 @@ export interface SyncRowInput {
   colorFg: string;
 }
 
-/** A pull that would have to replay local work, or stash it, is not mechanical. */
+/**
+ * A pull that would have to replay local *commits* is not mechanical; a dirty
+ * working tree is not that pull.
+ *
+ * Only `aheadRemote` makes a checkout diverged. Uncommitted work used to count
+ * too, which was wrong twice over. It labelled the row `rebase ↑0↓1` — a verb
+ * with nothing to replay, since ahead is zero — and it filed the commonest
+ * checkout there is (behind by one, with a build artifact or a scratch file
+ * lying around) under "needs you", where the dock will not touch it and the
+ * bulk Pull button skips it.
+ *
+ * Whether the dirt is actually in the way is git's question, not ours, and
+ * `merge --ff-only` answers it without risk: it advances the branch when the
+ * incoming commits do not touch the dirty paths, and otherwise refuses having
+ * changed nothing. Guessing here only ever guessed against the common case.
+ */
 export function deriveAction(status: ProjectGitStatus): SyncAction {
-  const messy = status.behindRemote > 0 && (status.aheadRemote > 0 || status.uncommittedCount > 0);
-  if (messy) return "rebase";
+  if (status.aheadRemote > 0 && status.behindRemote > 0) return "rebase";
   return status.aheadRemote > 0 ? "push" : "pull";
 }
 
