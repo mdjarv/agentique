@@ -47,6 +47,9 @@ type conn struct {
 	maxMessageBytes int64
 	mu              sync.Mutex
 	closeOnce       sync.Once
+	// Counts every goroutine the conn starts, so run() cannot return while one
+	// is still live. See spawn.
+	wg sync.WaitGroup
 
 	// One multi-topic subscription per conn. Membership is owned by the
 	// Subscription itself (AddTopic/RemoveTopic), so each Publish or
@@ -95,22 +98,53 @@ func (c *conn) subscribeProject(projectID string) {
 	c.sub.AddTopic(projectID)
 }
 
+// unsubscribe drops the conn's bus subscription.
+//
+// The field is assigned once in newConn and never reassigned. Nilling it bought
+// nothing the library was not already doing — `AddTopic` no-ops on a closed
+// subscription, under the bus lock, and `Unsubscribe` is idempotent — and it
+// cost two defects: a nil dereference for any dispatch still in flight during
+// teardown, and an unsynchronised field written by the conn goroutine while the
+// dispatch loop read it.
 func (c *conn) unsubscribe() {
-	if c.sub != nil {
-		c.sub.Unsubscribe()
-		c.sub = nil
-	}
+	c.sub.Unsubscribe()
 }
 
+// run drives the conn and owns its teardown. The order is the point: cancel
+// first, so the loops stop taking work; wait for everything the conn spawned;
+// unsubscribe last.
+//
+// Tearing down the other way round dismantled the conn underneath its own
+// goroutines. `unsubscribe` ran before `close`, so the dispatch loop — still
+// draining a backlog the read loop had already queued — reached
+// `subscribeProject` after the subscription was gone. One client dropping
+// mid-burst panicked the process.
 func (c *conn) run() {
 	defer func() {
-		c.unsubscribe()
 		c.close()
+		c.wg.Wait()
+		c.unsubscribe()
 	}()
 
-	go c.writeLoop()
-	go c.dispatchLoop()
+	c.spawn(c.writeLoop)
+	c.spawn(c.dispatchLoop)
 	c.readLoop()
+}
+
+// spawn runs fn on its own goroutine, counted so that run() cannot return while
+// it is live. Every goroutine a conn starts goes through here, including the
+// ones that outlive the loop that started them: a read-lane handler and the
+// msggen family both continue after `dispatchLoop` has moved on.
+//
+// A caller is always itself counted — the dispatch loop, or a read-lane
+// goroutine the dispatch loop counted first — so an Add can never land after
+// the Wait.
+func (c *conn) spawn(fn func()) {
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		fn()
+	}()
 }
 
 func (c *conn) close() {
@@ -253,7 +287,7 @@ func (c *conn) dispatchConcurrently(msg ClientMessage) {
 	case <-c.ctx.Done():
 		return
 	}
-	go func() {
+	c.spawn(func() {
 		defer func() { <-c.readSlots }()
 		// The same per-request panic guard handleRequestAsync carries: a
 		// panic on a bare goroutine kills the process.
@@ -264,7 +298,7 @@ func (c *conn) dispatchConcurrently(msg ClientMessage) {
 			}
 		}()
 		c.dispatch(msg)
-	}()
+	})
 }
 
 // writeLoop owns all socket writes. Exiting on a write error must go through

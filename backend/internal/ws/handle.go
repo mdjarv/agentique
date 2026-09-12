@@ -40,8 +40,10 @@ func handleRequestQuiet[P any, R any](c *conn, msg ClientMessage, fn func(contex
 // contract with their neighbours. Sends (respond/push) are goroutine-safe.
 // The recover mirrors the per-request panic guard net/http gives a
 // synchronous handler for free; without it a panic here kills the process.
+// It goes through c.spawn like every other goroutine the conn starts, so a
+// teardown waits for it rather than racing it.
 func handleRequestAsync[P any, R any](c *conn, msg ClientMessage, fn func(context.Context, P) (R, error)) {
-	go func() {
+	c.spawn(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Error("ws handler panic", "type", msg.Type, "requestID", msg.ID, "panic", r)
@@ -49,7 +51,7 @@ func handleRequestAsync[P any, R any](c *conn, msg ClientMessage, fn func(contex
 			}
 		}()
 		handleRequest(c, msg, fn)
-	}()
+	})
 }
 
 func doHandleRequest[P any, R any](c *conn, msg ClientMessage, fn func(context.Context, P) (R, error), errLevel slog.Level) {
