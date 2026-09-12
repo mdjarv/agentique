@@ -763,6 +763,14 @@ just dev-tls        # both with TLS, needs certs/server.{crt,key}
 In development the frontend opens its WebSocket straight at `:9201` rather than
 through the Vite proxy.
 
+`just dev-mock` is also the demo build: `frontend/src/mocks/` holds a whole
+invented world — seven projects, sessions in every state, transcripts with tool
+calls and a subagent fan-out, plus storage, subscription usage, scheduled loops,
+templates, teams and the brain. Every page renders without a server, and no real
+database is touched, which makes it the surface to screenshot or present from.
+Fixture content is the contract's shape, so a change to a wire type belongs in
+`mocks/demo-data.ts` too.
+
 | Command | Purpose |
 |---|---|
 | `just build` | Production build: one binary with the frontend embedded. |
