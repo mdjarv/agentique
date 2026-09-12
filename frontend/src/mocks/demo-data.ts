@@ -39,7 +39,7 @@ export const MOCK_DISK: DiskStats = {
   totalBytes: 1000 * GB,
   freeBytes: 337 * GB,
   usedBytes: 663 * GB,
-  usagePercent: 0.663,
+  usagePercent: 66.3,
 };
 
 export const MOCK_STORAGE_USAGE: StorageUsage = {
@@ -133,9 +133,9 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
       ],
     },
     {
-      projectId: PROJECT_IDS.cornerstore,
-      name: "Cornerstore",
-      slug: "cornerstore",
+      projectId: PROJECT_IDS.webtickets,
+      name: "webtickets",
+      slug: "webtickets",
       color: "green",
       icon: "",
       totalBytes: 6.2 * GB,
@@ -144,7 +144,7 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
           sessionId: SESSION_IDS.paymentFlow,
           name: "Payment flow redesign",
           state: "blocked",
-          worktreePath: "~/.local/share/agentique/worktrees/cornerstore/session-payment-flow",
+          worktreePath: "~/.local/share/agentique/worktrees/webtickets/session-payment-flow",
           bytes: 3.3 * GB,
           updatedAt: minutesAgo(18),
           archivedAt: "",
@@ -159,9 +159,9 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
         },
         {
           sessionId: SESSION_IDS.imageGallery,
-          name: "Image gallery component",
+          name: "Event image gallery",
           state: "idle",
-          worktreePath: "~/.local/share/agentique/worktrees/cornerstore/session-image-gallery",
+          worktreePath: "~/.local/share/agentique/worktrees/webtickets/session-image-gallery",
           bytes: 2.8 * GB,
           updatedAt: hoursAgo(2),
           archivedAt: "",
@@ -177,18 +177,18 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
       ],
     },
     {
-      projectId: PROJECT_IDS.gridwatch,
-      name: "Gridwatch",
-      slug: "gridwatch",
+      projectId: PROJECT_IDS.claudecliGo,
+      name: "claudecli-go",
+      slug: "claudecli-go",
       color: "amber",
       icon: "",
       totalBytes: 5.1 * GB,
       sessions: [
         {
           sessionId: SESSION_IDS.sensorDashboard,
-          name: "Sensor dashboard widgets",
+          name: "Forward subagent text events",
           state: "running",
-          worktreePath: "~/.local/share/agentique/worktrees/gridwatch/session-sensor-widgets",
+          worktreePath: "~/.local/share/agentique/worktrees/claudecli-go/session-forward-subagent",
           bytes: 3.0 * GB,
           updatedAt: minutesAgo(2),
           archivedAt: "",
@@ -203,9 +203,10 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
         },
         {
           sessionId: SESSION_IDS.alertRules,
-          name: "Alert rule configuration",
+          name: "Permission prompt round-trip",
           state: "blocked",
-          worktreePath: "~/.local/share/agentique/worktrees/gridwatch/session-alert-rules",
+          worktreePath:
+            "~/.local/share/agentique/worktrees/claudecli-go/session-permission-roundtrip",
           bytes: 2.0 * GB,
           updatedAt: minutesAgo(6),
           archivedAt: "",
@@ -226,7 +227,7 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
       sessionId: "",
       name: "session-legacy-import",
       state: "",
-      worktreePath: "~/.local/share/agentique/worktrees/orchard-api/session-legacy-import",
+      worktreePath: "~/.local/share/agentique/worktrees/alltix-api/session-legacy-import",
       bytes: 1.4 * GB,
       updatedAt: daysAgo(26),
       archivedAt: "",
@@ -254,7 +255,7 @@ export const MOCK_STORAGE_USAGE: StorageUsage = {
     },
     {
       kind: "browser-profile",
-      path: "~/.local/share/agentique/browser/session-sensor-widgets",
+      path: "~/.local/share/agentique/browser/session-forward-subagent",
       sessionId: SESSION_IDS.sensorDashboard,
       bytes: 96 * MB,
     },
@@ -364,7 +365,7 @@ export const MOCK_SCHEDULES: ScheduleInfo[] = [
   },
   {
     id: SCHEDULE_IDS.ciWatch,
-    projectId: PROJECT_IDS.gridwatch,
+    projectId: PROJECT_IDS.claudecliGo,
     sessionId: SESSION_IDS.alertRules,
     name: "Watch the release branch",
     prompt:
@@ -386,7 +387,7 @@ export const MOCK_SCHEDULES: ScheduleInfo[] = [
   },
   {
     id: SCHEDULE_IDS.flakyTests,
-    projectId: PROJECT_IDS.orchardApi,
+    projectId: PROJECT_IDS.alltixApi,
     sessionId: SESSION_IDS.schedulerTests,
     name: "Re-run the flaky scheduler suite",
     prompt:
@@ -809,8 +810,8 @@ export const MOCK_MEMORIES: Memory[] = [
   ),
   memory(
     "m-0006",
-    "cornerstore",
-    "Checkout totals are computed server-side; the client's figure is a preview and never reaches the order row.",
+    "webtickets",
+    "Ticket totals are computed server-side. The client figure is a preview and never reaches the order row.",
     "design",
     {
       evidence: "code_verified",
@@ -823,15 +824,15 @@ export const MOCK_MEMORIES: Memory[] = [
   ),
   memory(
     "m-0007",
-    "cornerstore",
-    "The image pipeline writes AVIF and falls back to WebP. Safari 16 users see WebP, so visual regressions must be checked in both.",
+    "webtickets",
+    "Event images are served as AVIF with a WebP fallback. Safari 16 gets WebP, so a visual regression has to be checked in both.",
     "gotcha",
     { uses: 5, helped: 2, confidenceScore: 0.64, area: "media" },
   ),
   memory(
     "m-0008",
-    "gridwatch",
-    "Sensor timestamps arrive in local time from three of the eleven gateways. Normalise at ingest, never at render.",
+    "claudecli-go",
+    "Older claudecli builds stamp taskType only on task_started. Judge a run once from its sticky type, never per event.",
     "gotcha",
     {
       evidence: "corroborated",
@@ -840,13 +841,13 @@ export const MOCK_MEMORIES: Memory[] = [
       confidenceScore: 0.83,
       uses: 11,
       helped: 6,
-      area: "ingest",
+      area: "subagents",
     },
   ),
   memory(
     "m-0009",
-    "gridwatch",
-    "Alert rules evaluate on a 30s tick. A rule that reads its own previous verdict deadlocks the evaluator.",
+    "claudecli-go",
+    "Partial messages must be enabled at the connector for Claude to push context-usage readings at all; codex pushes regardless.",
     "gotcha",
     {
       evidence: "code_verified",
@@ -854,13 +855,13 @@ export const MOCK_MEMORIES: Memory[] = [
       confidenceScore: 0.79,
       uses: 6,
       helped: 3,
-      area: "alerting",
+      area: "context meter",
     },
   ),
   memory(
     "m-0010",
-    "gridwatch",
-    "The dashboard grid may be virtualised — worth checking whether widgets below the fold still poll.",
+    "claudecli-go",
+    "The adapter may already coalesce consecutive text deltas — worth checking before adding a debounce on our side.",
     "hypothesis",
     {
       confidence: "ambiguous",
@@ -874,8 +875,8 @@ export const MOCK_MEMORIES: Memory[] = [
   ),
   memory(
     "m-0011",
-    "orchard-api",
-    "Stock is reserved inside the order transaction. An eventually-consistent reservation cannot promise the crate.",
+    "alltix-api",
+    "Seat inventory is reserved inside the order transaction. An eventually-consistent reservation cannot promise the seat.",
     "design",
     {
       source: "human",
@@ -891,8 +892,8 @@ export const MOCK_MEMORIES: Memory[] = [
   ),
   memory(
     "m-0012",
-    "orchard-api",
-    "Vitest runs against a real Postgres in CI and against pglite locally, so a test that depends on a Postgres extension passes locally and fails in CI.",
+    "alltix-api",
+    "Integration tests run against a real Postgres in CI and pglite locally, so anything depending on a Postgres extension passes locally and fails in CI.",
     "gotcha",
     { uses: 4, helped: 2, confidenceScore: 0.58, area: "testing" },
   ),
@@ -974,8 +975,8 @@ export const MOCK_MEMORIES: Memory[] = [
   ),
   memory(
     "m-0018",
-    "cornerstore",
-    "Legacy coupon codes are uppercased at the edge; the admin UI still sends them mixed-case.",
+    "webtickets",
+    "Legacy discount codes are uppercased at the edge; the operator UI still sends them mixed-case.",
     "gotcha",
     {
       lifecycle: "superseded",
