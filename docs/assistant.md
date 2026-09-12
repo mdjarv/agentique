@@ -202,8 +202,11 @@ policy layer, and the policy is what changes:
   are in-band, which is the human confirmation the design ranks above
   corroboration and could never get from a session.
 - The Brain page becomes the assistant's memory page, review queue and flags
-  where they are. `[brain] enabled` without `[assistant] enabled` logs a line
-  naming the switch and builds nothing.
+  where they are, reached from the thread. `[brain] enabled` stays the switch
+  for the store, its routes and its page; the assistant is its only reader,
+  so `[brain] enabled` with the assistant off logs a line at boot saying that
+  memory is stored and browsable and nothing recalls it. Nothing refuses to
+  boot over it.
 
 **Proposals are where the yes lives.** `assistant_proposals`: a verb, a target,
 arguments, the rationale, the server facts it was judged on, and a status
@@ -460,6 +463,86 @@ builder's call, and should be recorded in this document when it is made.
   and mirrors each call's turns into the conversation with
   `metadata.surface = "voice"`. Its greeting reads `SinceLast("voice")`.
   Nothing visible from a call changes.
+
+## The M2 contract
+
+Memory. The brain becomes the assistant's long-term memory and stops reaching
+coding sessions. The names below are the ones a build uses; anything not
+named is the builder's call, recorded under Build notes.
+
+**What goes.** Session-side recall and session-side memory writing are
+removed, not switched off: the `if cfg.BrainRecall` block in `server.go`, the
+`Manager.Memory*` hooks and their composers (`memoryPreamble`,
+`memoryContract`, `memoryRecallPreamble`, `wireRecall`), `Session.recallFn`,
+`recalledIDs`, `SetRecallFn`, `injectRecall`, the `SkipRecall` parameter on
+`CreateParams` and `CreateSessionParams`, `brain.RecallPreamble`, the
+session-end learning path (`SetOnSessionEnd`, `HandleSessionComplete`,
+`Manager.OnSessionComplete`, `LearnFromTranscript`,
+`ApplyOutcomesFromTranscript`, the outcome judge, the brain job queue and its
+`brain_jobs` use — the table stays; a migration is not worth an empty one),
+the session-facing memory MCP tools (`registerMemoryTools`, `MemoryStore`,
+`brain.MCPAdapter`, and the `mem` parameter of `mcphttp.NewHandler`), and the
+tests that covered them (`recall_inject_test.go`, `recall_wiring_test.go`, the
+MCP adapter tests in `brain_test.go`, `outcome_test.go`,
+`capture_ingest_test.go` where it exercises transcripts). The `[brain]` keys
+`recall`, `learn-model`, `outcome-model` and `retry-max`, and
+`AGENTIQUE_BRAIN_RECALL`, become no-ops: a config that carries one logs a
+line at boot naming the key and why, and never refuses to boot. The
+`<brain>` envelope renderer (`BrainCard`, the peel in `UserMessage`) stays,
+because old transcripts carry it.
+
+**What the assistant gets.** A `Memory` collaborator on `assistant.Service`
+(`WithMemory`), an interface in the assistant package implemented in the
+server package over `brain.Service`:
+
+- `Index(ctx) ([]IndexLine, error)`: one line per area with its size and
+  scopes, from `memory.PreviewAreas`, plus one line per scope with its count.
+  This is what the head's preamble carries, under "What you remember": the
+  pinned set and the index, never the bodies.
+- `Pinned(ctx) ([]Fact, error)`: pinned records across every scope.
+- `Search(ctx, query string, k int) ([]Fact, error)`: `brain.Recall` over
+  every scope, `k` clamped server-side.
+- `Remember(ctx, text, category, provenance) (Fact, error)`: `brain.Add` into
+  the global scope, or a project scope when the head names a project.
+- `Confirm(ctx, id) error` and `Flag(ctx, id, reason) error`: the
+  conversational outcome signal, over `brain.Confirm` and `brain.Flag`.
+- `Capture(ctx, scope, text, source) error`: a staged capture for
+  consolidation to judge.
+
+`Fact` is `{ID, Text, Category, Source, Scope, Pinned, Confidence}`. The head's
+preamble renders the index and the pinned set and says, in words, that
+everything else is behind `recall` and when to reach for it: before answering
+about a project, a decision or a preference.
+
+**Verbs.** Read: `recall(query)`. Contained: `remember(text, category,
+provenance)` where `provenance` is the enum `operator` (the operator said it,
+`memory.SourceHuman`) or `assistant` (the head concluded it from server facts,
+`memory.SourceAgent`), and `category` is the closed `memory.Category` set;
+`confirm_memory(id)`; `flag_memory(id, reason)`. The instruction tells the
+head to `remember` only what the operator stated or confirmed, and to
+`confirm_memory` when the operator agrees with a recalled fact and
+`flag_memory` when they contradict it. Nothing else writes facts. Every write
+is journaled (`note`-shaped, notable) so the conversation carries a record.
+
+**Provenance.** `memory.Source` gains `SourceReported = "reported"`: a capture
+whose text came from a session's report or an untrusted journal entry. A
+notable journal entry becomes a capture when it is written (`note` verb, and
+any entry marked notable), with `SourceReported` when the entry is untrusted
+and `SourceCapture` otherwise, into the project scope when the entry has one.
+No background extraction over the conversation: what the operator says is
+remembered through the visible `remember` call or not at all.
+
+**Frontend.** The Brain page moves under the assistant: route
+`/assistant/memory` renders it with the title "Memory" and the assistant's
+header; `/brain` stays as a redirect. The thread's header gains a Memory
+control (the Brain glyph, when `features.brain` is on) beside the call. The
+⋯ menu's Brain row goes, on the one-home rule. The brain flare moves to the
+assistant's row: on `brain.updated` the orb's track pulses once, as the menu
+trigger used to. `features.brain` is unchanged and still gates the page.
+
+**Docs.** `docs/brain.md`'s "Recall" and "Agent surface" sections say what is
+true now; CLAUDE.md's brain paragraph replaces per-turn delta recall with the
+pull rule; `README.md`'s `[brain]` block drops the removed keys.
 
 ## Build notes
 
