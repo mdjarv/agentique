@@ -126,7 +126,28 @@ interface AssistantState {
   loading: boolean;
   /** Why the thread is empty, when it is empty for a reason. */
   error: string | null;
+  /**
+   * Journal entries the thread has never been shown. The rail row's notch is
+   * `unseen > 0`; the number itself is only ever spoken to a screen reader.
+   * Seeded from `assistant.unseen` at connect, bumped by each journal push
+   * that lands while the thread is not on screen, zeroed by a look.
+   */
+  unseen: number;
+  /** True while the thread page is mounted: a push that lands then is seen. */
+  viewing: boolean;
+  /**
+   * How the page tells the server it has looked, installed while it is on
+   * screen. A journal push that lands then is acknowledged through this, so
+   * the stamp keeps pace with the strip without the page polling its own
+   * store. Null when no thread is mounted.
+   */
+  look: (() => void) | null;
 
+  setUnseen: (unseen: number) => void;
+  setViewing: (viewing: boolean) => void;
+  setLook: (look: (() => void) | null) => void;
+  /** The thread has shown what it holds: the notch goes. */
+  markSeen: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   /** The newest page: replaces what is held. */
@@ -157,7 +178,14 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   loaded: false,
   loading: false,
   error: null,
+  unseen: 0,
+  viewing: false,
+  look: null,
 
+  setUnseen: (unseen) => set({ unseen: Math.max(0, unseen) }),
+  setViewing: (viewing) => set({ viewing }),
+  setLook: (look) => set({ look }),
+  markSeen: () => set((s) => (s.unseen === 0 ? s : { unseen: 0 })),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
@@ -197,7 +225,18 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       streaming: (s.streaming ?? "") + text,
     })),
 
-  addJournalEntry: (entry) => set((s) => ({ journal: mergeJournal(s.journal, [entry]) })),
+  addJournalEntry: (entry) =>
+    set((s) => {
+      const journal = mergeJournal(s.journal, [entry]);
+      // A push the merge already held is not news twice, and one that lands
+      // while the thread is on screen is seen as it arrives — the page stamps
+      // the look; this only keeps the count honest for the row.
+      const isNew = journal !== s.journal;
+      return {
+        journal,
+        unseen: isNew && !s.viewing ? s.unseen + 1 : s.unseen,
+      };
+    }),
 
   clearStreaming: () => set({ streaming: null }),
 
@@ -210,6 +249,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       loaded: false,
       loading: false,
       error: null,
+      unseen: 0,
+      viewing: false,
+      look: null,
     }),
 }));
 
@@ -228,3 +270,5 @@ export const selectAssistantLoaded = (s: AssistantState) => s.loaded;
 export const selectAssistantLoading = (s: AssistantState) => s.loading;
 export const selectAssistantError = (s: AssistantState) => s.error;
 export const selectAssistantBefore = (s: AssistantState) => s.before;
+export const selectAssistantUnseen = (s: AssistantState) => s.unseen;
+export const selectAssistantViewing = (s: AssistantState) => s.viewing;

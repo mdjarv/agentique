@@ -40,12 +40,22 @@ export function applyAssistantDelta(payload: unknown): void {
   useAssistantStore.getState().appendDelta(parsed.data.text ?? "");
 }
 
-/** `assistant.journal` — one new entry. */
+/**
+ * `assistant.journal` — one new entry.
+ *
+ * News that lands while the thread is on screen is seen as it arrives: the
+ * store keeps the rail's count honest, and the page's installed look tells the
+ * server so the stamp keeps pace with the strip.
+ */
 export function applyAssistantJournal(payload: unknown): void {
   const parsed = AssistantJournalEntrySchema.safeParse(payload);
   if (!parsed.success) {
     console.warn("[assistant] unreadable assistant.journal", parsed.error.issues);
     return;
   }
-  useAssistantStore.getState().addJournalEntry(parsed.data);
+  const store = useAssistantStore.getState();
+  const before = store.journal;
+  store.addJournalEntry(parsed.data);
+  const after = useAssistantStore.getState();
+  if (after.viewing && after.journal !== before) after.look?.();
 }

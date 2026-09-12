@@ -924,6 +924,10 @@ export const AssistantJournalPayloadSchema = z.object({
   limit: z.number().optional(),
 });
 
+export const AssistantUnseenPayloadSchema = z.object({});
+
+export const AssistantMarkSeenPayloadSchema = z.object({});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -1186,6 +1190,10 @@ export const AssistantUpdateSchema = z.object({
 
 export const AssistantJournalResultSchema = z.object({
   entries: z.array(AssistantJournalEntrySchema).optional(),
+});
+
+export const AssistantUnseenResultSchema = z.object({
+  count: z.number().optional(),
 });
 
 export const ScheduleInfoSchema = z.object({

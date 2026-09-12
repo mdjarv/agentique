@@ -1,15 +1,19 @@
 /**
- * The rail's voice band — the desktop half of the app-wide call.
+ * The rail's companion band — the assistant's row, and the desktop half of the
+ * app-wide call.
  *
  * A call is not a mode that owns the screen: it navigates, so it cannot cover
  * the thing it navigates to. What is left at the bottom of the sidebar has two
  * forms, and the difference between them is the point.
  *
  * **No call: a trace.** One quiet row, the same weight as everything else that
- * is always true down here. Hovering it draws the halo round and rolls the
- * label over to what the click would actually do — the affordance is the
- * animation, so nothing has to shout while nobody is reaching for it. `⌥V` does
- * the same thing without the reach, and the chip appears on hover to say so.
+ * is always true down here. With the assistant on it is the assistant's row
+ * (`AssistantRow`): the orb with an empty core, the word, and a click that
+ * opens the thread — a call is placed from the thread's header, from a
+ * session's composer, or with `⌥V`. With only voice on it is the Live row it
+ * always was. Hovering either draws the halo round and rolls the label over to
+ * what the click would actually do — the affordance is the animation, so
+ * nothing has to shout while nobody is reaching for it.
  *
  * **A call: a card.** Raised out of the rail on its own surface, because a live
  * call is not one more navigation row — it is the one thing here that is
@@ -31,6 +35,8 @@
  */
 import { PhoneOff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AssistantRow } from "~/components/assistant/AssistantRow";
+import { LabelSwap } from "~/components/layout/LabelSwap";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { CallLog } from "~/components/voice/CallLog";
 import { CallLineText, FocusChip } from "~/components/voice/CallStatus";
@@ -47,16 +53,18 @@ import { useVoiceStore } from "~/stores/voice-store";
 export function VoiceDock() {
   const isMobile = useIsMobile();
   const voiceEnabled = useFeatureStore((s) => s.features.voice);
+  const assistantEnabled = useFeatureStore((s) => s.features.assistant);
   const view = useCallView();
   const [open, setOpen] = useState(false);
 
-  // The shortcut is mounted from the entry it duplicates, so it exists exactly
-  // when the entry does — and hooks run before the early returns below.
+  // The call's shortcut is mounted with voice, whichever row is showing: with
+  // the assistant on, `⌥V` is the rail's one way to place a call directly —
+  // and hooks run before the early returns below.
   useLiveCallShortcut(voiceEnabled && !isMobile);
 
   // A call already running outlives the flag being read: never strand one
   // without a way to hang it up.
-  if (!voiceEnabled && !view.active) return null;
+  if (!voiceEnabled && !assistantEnabled && !view.active) return null;
   // On a phone the strip owns a call that exists; this row is only the way in.
   if (isMobile && view.active) return null;
 
@@ -146,9 +154,11 @@ export function VoiceDock() {
             </div>
           </PopoverContent>
         </Popover>
-      ) : (
+      ) : assistantEnabled ? (
         // The shortcut chip is mounted with the shortcut and not without it: a
         // phone has no ⌥ to press.
+        <AssistantRow showShortcut={!isMobile} />
+      ) : (
         <StartCallRow showShortcut={!isMobile} />
       )}
     </div>
@@ -209,30 +219,6 @@ function StartCallRow({ showShortcut }: { showShortcut: boolean }) {
         </kbd>
       )}
     </button>
-  );
-}
-
-/**
- * Two labels in the space of one, the second rolling up over the first.
- *
- * A tooltip would say the same thing later and elsewhere; this says it in
- * place, at the moment the pointer arrives. With reduced motion it is still two
- * labels and still swaps — it just does not travel. The button carries the
- * spoken name, so both halves are decoration to a screen reader.
- */
-function LabelSwap({ resting, hovered }: { resting: string; hovered: string }) {
-  return (
-    <span aria-hidden className="block h-4 min-w-0 overflow-hidden">
-      <span
-        className={cn(
-          "flex flex-col transition-transform duration-[220ms] ease-out",
-          "group-hover:-translate-y-4 motion-reduce:transition-none",
-        )}
-      >
-        <span className="block h-4 truncate leading-4">{resting}</span>
-        <span className="block h-4 truncate leading-4 text-success">{hovered}</span>
-      </span>
-    </span>
   );
 }
 

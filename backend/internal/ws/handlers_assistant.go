@@ -69,6 +69,33 @@ func (c *conn) handleAssistantJournal(msg ClientMessage) {
 	})
 }
 
+// handleAssistantUnseen counts what the thread has never been shown: the rail
+// row's notch, read once per connection. A pure read, on the read lane.
+func (c *conn) handleAssistantUnseen(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, _ AssistantUnseenPayload) (AssistantUnseenResult, error) {
+		if c.assistantSvc == nil {
+			return AssistantUnseenResult{}, errAssistantDisabled
+		}
+		n, err := c.assistantSvc.UnseenCount(ctx, assistant.SurfaceThread)
+		if err != nil {
+			return AssistantUnseenResult{}, err
+		}
+		return AssistantUnseenResult{Count: n}, nil
+	})
+}
+
+// handleAssistantMarkSeen stamps the thread's look. It WRITES — the journal's
+// seen marks and the conversation mark — so it is on the mutation lane, and
+// it is the only assistant op the thread sends that does not carry text.
+func (c *conn) handleAssistantMarkSeen(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, _ AssistantMarkSeenPayload) (struct{}, error) {
+		if c.assistantSvc == nil {
+			return struct{}{}, errAssistantDisabled
+		}
+		return struct{}{}, c.assistantSvc.Look(ctx, assistant.SurfaceThread)
+	})
+}
+
 // AssistantJournalResult wraps the entries rather than answering a bare array.
 //
 // An object is the shape every other list op answers with, and it is the one a

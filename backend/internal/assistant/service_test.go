@@ -295,6 +295,53 @@ func TestMirrorWritesACallsTurns(t *testing.T) {
 
 // The first look is the news; the second look is empty, because looking is
 // what stamps it.
+// The rail row's notch: a count before the look, nothing after it. Look is the
+// stamp alone, so what the thread rendered from the pure journal read is what
+// it acknowledges.
+func TestLookClearsTheUnseenCount(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newTestService(t)
+
+	for _, s := range []string{"first", "second"} {
+		if _, err := svc.appendJournal(ctx, journalWrite{Kind: JournalNote, Summary: s}); err != nil {
+			t.Fatalf("appendJournal() = %v", err)
+		}
+	}
+
+	n, err := svc.UnseenCount(ctx, SurfaceThread)
+	if err != nil {
+		t.Fatalf("UnseenCount() = %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("unseen = %d, want 2 before any look", n)
+	}
+	// Counting is a read: it must not have stamped anything.
+	if n2, _ := svc.UnseenCount(ctx, SurfaceThread); n2 != 2 {
+		t.Fatalf("a second count saw %d, want 2: counting must not be a look", n2)
+	}
+
+	if err := svc.Look(ctx, SurfaceThread); err != nil {
+		t.Fatalf("Look() = %v", err)
+	}
+	n, err = svc.UnseenCount(ctx, SurfaceThread)
+	if err != nil {
+		t.Fatalf("UnseenCount() = %v", err)
+	}
+	if n != 0 {
+		t.Errorf("unseen = %d after a look, want 0", n)
+	}
+	// Per surface: the thread's look is not the call's.
+	if v, _ := svc.UnseenCount(ctx, SurfaceVoice); v != 2 {
+		t.Errorf("voice unseen = %d, want 2: a look is per surface", v)
+	}
+	// Surfaces are an open set (a gateway adds one without a migration) and
+	// the guard is the name pattern, because the name is interpolated into a
+	// JSON path: a dot or a quote would address a different key.
+	if err := svc.Look(ctx, "Kiosk.1"); err == nil {
+		t.Error("Look() accepted a surface name that is not one")
+	}
+}
+
 func TestSinceLastIsNewsThenNothing(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)

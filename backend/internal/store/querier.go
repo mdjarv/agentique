@@ -26,6 +26,9 @@ type Querier interface {
 	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
 	ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
+	// How many entries this surface has never been shown. The rail's notch reads
+	// it once per connection; the journal pushes keep it current after that.
+	CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)

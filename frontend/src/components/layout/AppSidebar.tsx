@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash, Sparkles } from "lucide-react";
+import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { SyncDock } from "~/components/layout/git/SyncDock";
@@ -48,8 +48,9 @@ export function AppSidebar({ className }: AppSidebarProps) {
       {/* Sessions, then settled work, then repos, then system: the dock's
           growth pushes down into the footer, never into the session list. */}
       <SyncDock />
-      {/* The call sits below settled work and above the system line: it is
-          always-true state, but it is the operator's, not the machine's. */}
+      {/* The operator's companion sits below settled work and above the
+          system line: always-true state, but the operator's, not the
+          machine's. It is the assistant's row, and a call is that row awake. */}
       <VoiceDock />
       <SidebarFooter />
     </div>
@@ -61,9 +62,6 @@ function SidebarHeader() {
   // The brain is off by default, and off means the server mounts no /api/brain
   // routes — so the row is absent rather than leading somewhere that errors.
   const brainEnabled = useFeatureStore((s) => s.features.brain);
-  // Same rule, same reason: off means the server mounts nothing, so the row is
-  // absent rather than leading to a page with no ops behind it.
-  const assistantEnabled = useFeatureStore((s) => s.features.assistant);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
   return (
@@ -108,7 +106,9 @@ function SidebarHeader() {
             so it is an entry point on the Teams page rather than a peer of it.
 
             What is left all reports something: channels with traffic, a brain
-            that flares, loops that run.
+            that flares, loops that run. The assistant is not here because it
+            has a home already: the row above the footer, where the operator's
+            companion sits (see VoiceDock). One destination, one home.
           */}
           {/* `useSidebarDismissOnNavigate` closes the mobile sheet on arrival;
               these dismiss on the click as well, because a menu item can name
@@ -120,15 +120,6 @@ function SidebarHeader() {
               <span className="ml-auto text-muted-foreground-faint">add a repo</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            {assistantEnabled && (
-              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
-                <Link to="/assistant">
-                  <Sparkles className="size-3.5" />
-                  Assistant
-                  <span className="ml-auto text-muted-foreground-faint">the thread</span>
-                </Link>
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/teams">
                 <Hash className="size-3.5" />

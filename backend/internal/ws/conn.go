@@ -276,6 +276,7 @@ var concurrentOps = map[string]bool{
 	"browser.status":            true,
 	"assistant.history":         true,
 	"assistant.journal":         true,
+	"assistant.unseen":          true,
 }
 
 // dispatchConcurrently runs a read-lane handler on its own goroutine once a
@@ -477,9 +478,11 @@ var handlerRegistry = map[string]handlerFunc{
 	// registered whether or not the feature is on, because this table is
 	// package-level and a read on the concurrent lane must be a registered
 	// handler; with the assistant off each answers in words, naming the switch.
-	"assistant.say":     (*conn).handleAssistantSay,
-	"assistant.history": (*conn).handleAssistantHistory,
-	"assistant.journal": (*conn).handleAssistantJournal,
+	"assistant.say":       (*conn).handleAssistantSay,
+	"assistant.history":   (*conn).handleAssistantHistory,
+	"assistant.journal":   (*conn).handleAssistantJournal,
+	"assistant.unseen":    (*conn).handleAssistantUnseen,
+	"assistant.mark-seen": (*conn).handleAssistantMarkSeen,
 
 	// ping
 	"ping": (*conn).handlePing,

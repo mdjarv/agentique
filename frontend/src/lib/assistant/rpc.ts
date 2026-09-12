@@ -1,12 +1,12 @@
 /**
- * The assistant's three WS ops.
+ * The assistant's WS ops.
  *
- * `assistant.say` is a mutation and runs on the socket's serial lane;
- * `assistant.history` and `assistant.journal` are reads and run on the
- * concurrent one. The say returns the ASK, not the answer — the head's reply
- * arrives as `assistant.delta` pushes and then one `assistant.message`, because
- * a blocking say would hold this connection's whole mutation lane for the
- * length of a turn.
+ * `assistant.say` and `assistant.mark-seen` are mutations and run on the
+ * socket's serial lane; `assistant.history`, `assistant.journal` and
+ * `assistant.unseen` are reads and run on the concurrent one. The say returns
+ * the ASK, not the answer — the head's reply arrives as `assistant.delta`
+ * pushes and then one `assistant.message`, because a blocking say would hold
+ * this connection's whole mutation lane for the length of a turn.
  */
 
 import {
@@ -17,6 +17,7 @@ import {
   AssistantMessageSchema,
   type AssistantPage,
   AssistantPageSchema,
+  AssistantUnseenResultSchema,
 } from "~/lib/assistant/wire";
 import type { WsClient } from "~/lib/ws-client";
 import { define, QUICK } from "~/lib/ws-rpc";
@@ -29,6 +30,28 @@ export const JOURNAL_LOOK = 50;
 const sayRpc = define<unknown, { text: string }>("assistant.say", QUICK);
 const historyRpc = define<unknown, { before?: string; limit?: number }>("assistant.history");
 const journalRpc = define<unknown, { since?: string; limit?: number }>("assistant.journal");
+const unseenRpc = define<unknown, Record<string, never>>("assistant.unseen", QUICK);
+const markSeenRpc = define<unknown, Record<string, never>>("assistant.mark-seen", QUICK);
+
+/**
+ * How many journal entries the thread has never been shown — the rail row's
+ * notch, read once per connection. A pure read. An unreadable answer is zero:
+ * a notch that cannot be counted is better off than a notch that lies.
+ */
+export async function unseen(ws: WsClient): Promise<number> {
+  const raw = await unseenRpc(ws, {});
+  const parsed = AssistantUnseenResultSchema.safeParse(raw);
+  return parsed.success ? (parsed.data.count ?? 0) : 0;
+}
+
+/**
+ * Tells the server the thread has shown what it holds. A WRITE — it stamps the
+ * journal's seen marks and moves the thread's conversation mark — which is why
+ * it is its own op on the mutation lane rather than a flag on the journal read.
+ */
+export async function markSeen(ws: WsClient): Promise<void> {
+  await markSeenRpc(ws, {});
+}
 
 /**
  * Sends the operator's text to the head and resolves with the stored ask.

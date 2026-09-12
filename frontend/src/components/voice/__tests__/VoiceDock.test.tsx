@@ -14,9 +14,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VoiceDock } from "~/components/voice/VoiceDock";
 import { VoiceStrip } from "~/components/voice/VoiceStrip";
 import { useAppStore } from "~/stores/app-store";
+import { useAssistantStore } from "~/stores/assistant-store";
 import { useChatStore } from "~/stores/chat-store";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useVoiceStore } from "~/stores/voice-store";
+
+// The assistant's row navigates through the router's hook, and nothing here
+// mounts a router: the spy is the destination.
+const { navigateSpy } = vi.hoisted(() => ({ navigateSpy: vi.fn() }));
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return { ...actual, useNavigate: () => navigateSpy };
+});
 
 /** One breath of dictation, as it arrives: no punctuation, no natural break. */
 const LONG_INTERIM =
@@ -85,6 +94,8 @@ function expectNarrowPath(from: HTMLElement, stopClass: string) {
 
 afterEach(() => {
   cleanup();
+  navigateSpy.mockReset();
+  useAssistantStore.getState().reset();
   useVoiceStore.setState({
     status: "idle",
     detail: undefined,
@@ -93,6 +104,71 @@ afterEach(() => {
     focusSessionId: null,
     focusSeq: 0,
     log: [],
+  });
+});
+
+/**
+ * With the assistant on, the row above the footer is the assistant's: the same
+ * slot, the same idiom, a different name and a different click. The call keeps
+ * its card and its shortcut; it lost only the row, which was never about the
+ * call in the first place.
+ */
+describe("the assistant's row", () => {
+  beforeEach(() => {
+    mockMatchMedia(false);
+    window.innerWidth = 1280;
+    liveCall();
+    useVoiceStore.setState({ status: "idle", interim: null, focusSessionId: null });
+    useFeatureStore.setState({
+      features: { browser: false, teams: false, voice: true, brain: false, assistant: true },
+    });
+  });
+
+  it("takes the row from the call and opens the thread", () => {
+    render(<VoiceDock />);
+    const row = screen.getByRole("button", { name: "Ask the assistant" });
+    expect(screen.queryByRole("button", { name: "Start live call" })).not.toBeInTheDocument();
+    expect(screen.getByText("⌥A")).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(navigateSpy).toHaveBeenCalledWith({ to: "/assistant" });
+  });
+
+  it("wears the notch only with unseen news, and says the number", () => {
+    useAssistantStore.setState({ unseen: 2 });
+    render(<VoiceDock />);
+    expect(
+      screen.getByRole("button", { name: "Ask the assistant, 2 unseen updates" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-unseen")).toBeInTheDocument();
+  });
+
+  it("is there with voice off, because the thread needs no line", () => {
+    useFeatureStore.setState({
+      features: { browser: false, teams: false, voice: false, brain: false, assistant: true },
+    });
+    render(<VoiceDock />);
+    expect(screen.getByRole("button", { name: "Ask the assistant" })).toBeInTheDocument();
+  });
+
+  it("still gives a live call its card", () => {
+    liveCall();
+    useFeatureStore.setState({
+      features: { browser: false, teams: false, voice: true, brain: false, assistant: true },
+    });
+    render(<VoiceDock />);
+    expect(screen.getByText("Live call")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ask the assistant" })).not.toBeInTheDocument();
+  });
+
+  it("closes the drawer it is in on a phone, and offers no shortcut there", () => {
+    mockMatchMedia(true);
+    window.innerWidth = 400;
+    useAppStore.setState({ sidebarOpen: true });
+    render(<VoiceDock />);
+    expect(screen.queryByText("⌥A")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Ask the assistant" }));
+    expect(useAppStore.getState().sidebarOpen).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledWith({ to: "/assistant" });
   });
 });
 

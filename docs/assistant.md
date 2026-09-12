@@ -318,11 +318,18 @@ allowances do.
 
 ## Surfaces
 
-**The thread** is `/assistant`, a place where work lives, so it belongs in the
-sidebar's ⋯ menu beside channels and loops. It renders the channel, proposal
-cards from their rows, and a recent-updates strip from `SinceLast`. Its
-composer is the ordinary composer sending to the head. It renders on the
-phone, in the same shape.
+**The thread** is `/assistant`, opened from the rail's row above the footer,
+which is the assistant's row: the slot the Live row held, on the argument that
+placed it (always-true state that is the operator's, not the machine's). The
+orb with an empty core is the assistant's mark and a call is that mark awake;
+the row wears the unread notch and nothing else; `⌥A` opens it. The thread's
+header carries the call button, because a call is one way of talking to the
+thing you are looking at, and the composer's phone stays in sessions because
+it is about the next message. It renders the channel, proposal cards from
+their rows, and a recent-updates strip. Its composer is the ordinary composer
+sending to the head. It renders on the phone, in the same shape. (Design
+round 1, 2026-09-12, option B; D — the thread as the landing page — is the
+direction once proposals exist.)
 
 **The call** is unchanged from outside. Inside, its directory, registry and
 dispatcher come from the core, it mirrors turns into the conversation, and its
@@ -442,8 +449,9 @@ builder's call, and should be recorded in this document when it is made.
   Pushes on the global topic: `assistant.message` (a stored message),
   `assistant.delta` (the head's in-progress text), `assistant.journal` (a new
   entry). Wire fields optional, generated Zod schemas through `just typegen`.
-- Frontend: route `/assistant`, a row in the sidebar's ⋯ menu shown only when
-  `features.assistant` is true, a page that renders the channel's messages,
+- Frontend: route `/assistant`, the rail's row above the footer when
+  `features.assistant` is true (it was a ⋯ menu row until design round 1
+  moved it), a page that renders the channel's messages,
   the head's streaming reply, a recent-updates strip from `SinceLast`, and
   the ordinary composer sending `assistant.say`. Mobile renders the same page.
   State in a `assistant-store` with stable selectors.

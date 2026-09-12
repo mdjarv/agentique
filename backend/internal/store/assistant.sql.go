@@ -10,6 +10,20 @@ import (
 	"database/sql"
 )
 
+const countAssistantJournalUnseen = `-- name: CountAssistantJournalUnseen :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE json_extract(seen_by, '$.' || ?1) IS NULL
+`
+
+// How many entries this surface has never been shown. The rail's notch reads
+// it once per connection; the journal pushes keep it current after that.
+func (q *Queries) CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAssistantJournalUnseen, surface)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAssistantChannel = `-- name: CreateAssistantChannel :one
 INSERT INTO channels (id, name, kind) VALUES (?, ?, 'assistant') RETURNING id, name, project_id, created_at, kind
 `

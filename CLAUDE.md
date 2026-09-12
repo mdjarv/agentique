@@ -255,6 +255,18 @@ as the footer, which was length, not reach. And an action taken *on* a listed
 thing belongs on the surface that lists it, never as a peer of it — that is why
 Discussions is a control on the Teams page's profile section.
 
+**The row above the footer is the operator's companion.** It sits below settled
+work and above the machine's line because it is always-true state that is the
+operator's, not the machine's — and with the assistant on, that is the
+assistant's row (`AssistantRow`, hosted by `VoiceDock`): the orb with an empty
+core, the word, and a click that opens the thread. The call was the first thing
+that fit the slot, not the thing the slot is for, so a call is placed from the
+thread's header, from a session's composer (which is about the next message),
+or with `⌥V` — and the same orb, awake, is the call's card. The thread is not in
+the ⋯ menu for the one-home reason. The row indicates with one mark, the unread
+notch, and never a sentence: a second line that changed by itself is what the
+footer argued off the rail at 271px.
+
 "Behind the disk meter" is literal: `splitMetered` draws the compact indicator
 with two controls, because its halves lead different places. The allowances open
 the usage popover; the disk gauge is a `Link` to `/storage`, so that popover

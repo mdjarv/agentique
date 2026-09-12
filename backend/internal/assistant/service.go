@@ -319,6 +319,35 @@ func (s *Service) SinceLast(ctx context.Context, surface string) (Update, error)
 	return update, nil
 }
 
+// Look is [Service.SinceLast] with the news discarded: the stamp alone.
+//
+// The thread renders its strip from the pure journal read on the socket's read
+// lane, so what it owes when it is on screen is only the acknowledgement — the
+// journal stamped through its newest row and the conversation mark moved. That
+// is what clears the rail row's notch, and it is a write, so it has an op of
+// its own on the mutation lane rather than riding the read.
+func (s *Service) Look(ctx context.Context, surface string) error {
+	_, err := s.SinceLast(ctx, surface)
+	return err
+}
+
+// UnseenCount answers how many journal entries surface has never been shown.
+//
+// A pure read, for the rail row's notch at connect; the journal pushes keep
+// the client's count current after that, and a look zeroes it. It counts
+// rather than lists because the notch is one bit and the number is only
+// spoken to a screen reader.
+func (s *Service) UnseenCount(ctx context.Context, surface string) (int, error) {
+	if err := checkSurface(surface); err != nil {
+		return 0, err
+	}
+	n, err := s.store.CountAssistantJournalUnseen(ctx, nullString(surface))
+	if err != nil {
+		return 0, fmt.Errorf("count unseen journal for %q: %w", surface, err)
+	}
+	return int(n), nil
+}
+
 // unseen is [Service.SinceLast] without the stamp: a pure read.
 //
 // The two halves are separate because a look is not always a look. The head

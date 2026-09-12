@@ -22,6 +22,8 @@ func TestAssistantOpsAnswerWhenTheAssistantIsOff(t *testing.T) {
 		{"assistant.say", `{"text":"what needs me?"}`},
 		{"assistant.history", `{}`},
 		{"assistant.journal", `{}`},
+		{"assistant.unseen", `{}`},
+		{"assistant.mark-seen", `{}`},
 	} {
 		t.Run(op.name, func(t *testing.T) {
 			c := newDispatchTestConn()
@@ -64,12 +66,14 @@ func TestAssistantSayRefusesAnEmptyTurn(t *testing.T) {
 // there is a CLAIM that the handler mutates nothing a later request could
 // observe out of order, and `assistant.say` starts a turn.
 func TestAssistantLanes(t *testing.T) {
-	for _, op := range []string{"assistant.history", "assistant.journal"} {
+	for _, op := range []string{"assistant.history", "assistant.journal", "assistant.unseen"} {
 		if !concurrentOps[op] {
 			t.Errorf("%s is on the serial lane; it is a read", op)
 		}
 	}
-	if concurrentOps["assistant.say"] {
-		t.Error("assistant.say is on the read lane, and it writes")
+	for _, op := range []string{"assistant.say", "assistant.mark-seen"} {
+		if concurrentOps[op] {
+			t.Errorf("%s is on the read lane, and it writes", op)
+		}
 	}
 }

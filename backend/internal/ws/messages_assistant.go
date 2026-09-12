@@ -46,6 +46,20 @@ type AssistantJournalPayload struct {
 	Limit int `json:"limit,omitempty"`
 }
 
+// AssistantUnseenPayload asks how many journal entries the thread has never been
+// shown. It carries nothing: the surface is this socket's, as for every
+// assistant op.
+type AssistantUnseenPayload struct{}
+
+// AssistantUnseenResult is the count behind the rail row's notch.
+type AssistantUnseenResult struct {
+	Count int `json:"count,omitempty"`
+}
+
+// AssistantMarkSeenPayload says the thread is on screen and has shown what it
+// holds. It carries nothing, for the same reason.
+type AssistantMarkSeenPayload struct{}
+
 // --- Assistant validation ---
 
 var (

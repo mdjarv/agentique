@@ -1,12 +1,14 @@
-import { Sparkles } from "lucide-react";
+import { Phone } from "lucide-react";
 import { type UIEvent, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { AssistantComposer } from "~/components/assistant/AssistantComposer";
 import { AssistantConversation } from "~/components/assistant/AssistantConversation";
 import { AssistantUpdatesStrip } from "~/components/assistant/AssistantUpdatesStrip";
 import { PageHeader } from "~/components/layout/PageHeader";
+import { HaloOrb } from "~/components/voice/HaloOrb";
+import { useCallView } from "~/components/voice/use-call-view";
 import { useWebSocket } from "~/hooks/useWebSocket";
-import { history, journal, say } from "~/lib/assistant/rpc";
+import { history, journal, markSeen as markSeenRpc, say } from "~/lib/assistant/rpc";
 import { getErrorMessage } from "~/lib/utils";
 import {
   selectAssistantError,
@@ -18,9 +20,10 @@ import {
   useAssistantStore,
 } from "~/stores/assistant-store";
 import { useFeatureStore } from "~/stores/feature-store";
+import { useVoiceStore } from "~/stores/voice-store";
 
 /**
- * The thread — `/assistant`, one of the places where work lives.
+ * The thread — `/assistant`, the page the rail's assistant row opens.
  *
  * A TRANSPORT, not a head: it brings no model. It renders the shared
  * conversation, forwards the operator's text to the core's own head, and pins
@@ -64,6 +67,28 @@ export function AssistantPage() {
       // A read that fails is a missing strip, not a broken page: the
       // conversation is what the operator came for. Logged, not toasted.
       .catch((err) => console.error("assistant.journal failed", err));
+  }, [ws, enabled]);
+
+  // On screen is seen. The look is taken on arrival, and installed in the store
+  // so a journal push that lands while the thread is in front of the reader is
+  // acknowledged as it arrives (see `applyAssistantJournal`): the rail's notch
+  // goes locally at once, and the server stamps the journal through its newest
+  // row. Leaving uninstalls it, so a push then counts as unseen again.
+  useEffect(() => {
+    if (!enabled) return;
+    const look = () => {
+      useAssistantStore.getState().markSeen();
+      markSeenRpc(ws).catch((err) => console.warn("[assistant] mark-seen failed", err));
+    };
+    const store = useAssistantStore.getState();
+    store.setViewing(true);
+    store.setLook(look);
+    look();
+    return () => {
+      const s = useAssistantStore.getState();
+      s.setViewing(false);
+      s.setLook(null);
+    };
   }, [ws, enabled]);
 
   const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
@@ -140,11 +165,37 @@ export function AssistantPage() {
   );
 }
 
+/**
+ * The header is the assistant: its orb, its name, and the call as one of its
+ * controls, on both layouts.
+ *
+ * The orb is the same mark the rail row wears, and during a call it takes the
+ * call's state — the face awake — so the page and the row cannot disagree
+ * about whether a line is open. The phone button places an UNFOCUSED call: it
+ * means "talk to this instead of typing", where a session composer's phone
+ * means "talk about this session". It steps aside while a call exists, because
+ * the call's own surfaces carry its controls and a second phone would read as
+ * a second line.
+ */
 function AssistantHeader() {
+  const voiceEnabled = useFeatureStore((s) => s.features.voice);
+  const start = useVoiceStore((s) => s.start);
+  const view = useCallView();
   return (
     <PageHeader>
-      <Sparkles className="size-4 text-agent shrink-0" />
+      <HaloOrb size={20} state={view.active ? view.orbState : "idle"} glyph="none" />
       <span className="font-medium truncate">Assistant</span>
+      {voiceEnabled && !view.active && (
+        <button
+          type="button"
+          onClick={() => start()}
+          aria-label="Start a live call with the assistant"
+          title="Talk instead (⌥V)"
+          className="ml-auto h-8 w-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer text-muted-foreground hover:text-agent hover:bg-muted/80"
+        >
+          <Phone className="h-3.5 w-3.5" />
+        </button>
+      )}
     </PageHeader>
   );
 }
@@ -153,7 +204,7 @@ function AssistantHeader() {
 function EmptyThread() {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
-      <Sparkles className="size-6 text-agent/60" />
+      <HaloOrb size={32} state="idle" glyph="none" className="mb-1" />
       <p className="text-sm text-foreground">
         The assistant watches your sessions, remembers what you tell it, and can start work for you.
       </p>

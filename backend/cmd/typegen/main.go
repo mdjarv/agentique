@@ -227,6 +227,14 @@ func (g *generator) generateTS(path string) error {
 
 	for _, ref := range g.refs {
 		fields := g.structFields(ref)
+		// A payload with no fields is a real shape (an op that carries nothing),
+		// and `interface X {}` is what biome refuses as equivalent to `{}` — which
+		// it also bans. This is the spelling it accepts for "an object with no
+		// keys", and it is emitted here so the generated file needs no hand edit.
+		if len(fields) == 0 {
+			fmt.Fprintf(&buf, "export type %s = Record<string, never>;\n\n", ref.tsName)
+			continue
+		}
 		fmt.Fprintf(&buf, "export interface %s {\n", ref.tsName)
 		for _, f := range fields {
 			opt := ""
@@ -265,6 +273,11 @@ func (g *generator) generateZod(path string) error {
 
 	for _, ref := range g.refs {
 		fields := g.structFields(ref)
+		// One line for an empty object, which is how the formatter prints it.
+		if len(fields) == 0 {
+			fmt.Fprintf(&buf, "export const %sSchema = z.object({});\n\n", ref.tsName)
+			continue
+		}
 		fmt.Fprintf(&buf, "export const %sSchema = z.object({\n", ref.tsName)
 		for _, f := range fields {
 			if f.optional {
@@ -500,6 +513,8 @@ func main() {
 	g.register(ws.AssistantSayPayload{}, "AssistantSayPayload")
 	g.register(ws.AssistantHistoryPayload{}, "AssistantHistoryPayload")
 	g.register(ws.AssistantJournalPayload{}, "AssistantJournalPayload")
+	g.register(ws.AssistantUnseenPayload{}, "AssistantUnseenPayload")
+	g.register(ws.AssistantMarkSeenPayload{}, "AssistantMarkSeenPayload")
 
 	// ── Push event payload types ──
 
@@ -615,6 +630,7 @@ func main() {
 	g.register(assistant.Page{}, "AssistantPage")
 	g.register(assistant.Update{}, "AssistantUpdate")
 	g.register(ws.AssistantJournalResult{}, "AssistantJournalResult")
+	g.register(ws.AssistantUnseenResult{}, "AssistantUnseenResult")
 	// All three ride the GLOBAL topic: the conversation is project-less, so
 	// there is no topic to scope them to and no new routing to add.
 	g.addPushEvent("assistant.message", assistantMessageRef)

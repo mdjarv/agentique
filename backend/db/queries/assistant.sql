@@ -98,6 +98,12 @@ WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(lim);
 
+-- How many entries this surface has never been shown. The rail's notch reads
+-- it once per connection; the journal pushes keep it current after that.
+-- name: CountAssistantJournalUnseen :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL;
+
 -- Stamps everything this surface has now been shown, THROUGH the newest row it
 -- was handed.
 --

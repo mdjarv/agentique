@@ -922,6 +922,10 @@ export interface AssistantJournalPayload {
   limit?: number;
 }
 
+export type AssistantUnseenPayload = Record<string, never>;
+
+export type AssistantMarkSeenPayload = Record<string, never>;
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -1184,6 +1188,10 @@ export interface AssistantUpdate {
 
 export interface AssistantJournalResult {
   entries?: AssistantJournalEntry[];
+}
+
+export interface AssistantUnseenResult {
+  count?: number;
 }
 
 export interface ScheduleInfo {

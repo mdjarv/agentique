@@ -5,7 +5,9 @@ import {
   applyAssistantJournal,
   applyAssistantMessage,
 } from "~/lib/assistant/apply-push";
+import { unseen } from "~/lib/assistant/rpc";
 import { useAssistantStore } from "~/stores/assistant-store";
+import { useFeatureStore } from "~/stores/feature-store";
 
 /**
  * Subscribes the assistant's global pushes, from the app shell, on the brain
@@ -19,6 +21,24 @@ import { useAssistantStore } from "~/stores/assistant-store";
  * `/api/health` answers.
  */
 export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
+  const enabled = useFeatureStore((s) => s.features.assistant);
+
+  // The rail row's notch, seeded once the feature is known to be on and again
+  // on every reconnect: the pushes keep the count current in between, and a
+  // socket that was away has missed some. Gated here rather than in the
+  // subscriptions, because a read against a peer with the assistant off is a
+  // refusal in the console for nothing.
+  useEffect(() => {
+    if (!enabled) return;
+    const seed = () => {
+      unseen(ws)
+        .then((n) => useAssistantStore.getState().setUnseen(n))
+        .catch((err) => console.warn("[assistant] unseen count unavailable", err));
+    };
+    seed();
+    return ws.onConnect(seed);
+  }, [ws, enabled]);
+
   useEffect(() => {
     const unsubMessage = ws.subscribe("assistant.message", applyAssistantMessage);
     const unsubDelta = ws.subscribe("assistant.delta", applyAssistantDelta);

@@ -25,6 +25,7 @@ export {
   AssistantJournalResultSchema,
   AssistantMessageSchema,
   AssistantPageSchema,
+  AssistantUnseenResultSchema,
 } from "~/lib/generated-schemas";
 export type {
   AssistantDelta,
@@ -32,6 +33,7 @@ export type {
   AssistantJournalResult,
   AssistantMessage,
   AssistantPage,
+  AssistantUnseenResult,
 } from "~/lib/generated-types";
 
 /** The two roles a conversation has. The store's sender types are a channel's

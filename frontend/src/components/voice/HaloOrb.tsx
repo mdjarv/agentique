@@ -66,17 +66,24 @@ function offsetFor(fraction: number): number {
  *   row uses it to draw the halo to full on hover. It works because the resting
  *   offset is an SVG *attribute*, which any CSS rule outranks; the live arc
  *   writes an inline style instead, which outranks both.
+ * @param glyph `"none"` leaves the core empty while no line is open. The orb is
+ *   the assistant's face as well as the call's: at rest it is the assistant,
+ *   and a call is that same face awake — so the phone that used to sit in an
+ *   idle core is gone from the assistant's surfaces, and the microphone still
+ *   appears the moment there is a line, whatever this says.
  */
 export function HaloOrb({
   size,
   state,
   className,
   arcClassName,
+  glyph = "auto",
 }: {
   size: number;
   state: HaloState;
   className?: string;
   arcClassName?: string;
+  glyph?: "auto" | "none";
 }) {
   const arcRef = useRef<SVGCircleElement>(null);
   const metering = state === "live" || state === "working";
@@ -126,6 +133,9 @@ export function HaloOrb({
 
   const chasing = state === "connecting";
   const Glyph = metering ? Mic : Phone;
+  // An empty core only while there is nothing to say about a line: once one is
+  // open, the microphone is the state and no caller may hide it.
+  const showGlyph = metering || glyph !== "none";
 
   return (
     <span
@@ -174,17 +184,19 @@ export function HaloOrb({
             reads against a card as well as against the rail. */}
         <circle cx="50" cy="50" r={R - STROKE} fill="var(--card)" />
       </svg>
-      <Glyph
-        className={cn(
-          "relative",
-          state === "ended"
-            ? "text-muted-foreground"
-            : metering
-              ? "text-success"
-              : "text-foreground",
-        )}
-        style={{ width: size * 0.36, height: size * 0.36 }}
-      />
+      {showGlyph && (
+        <Glyph
+          className={cn(
+            "relative",
+            state === "ended"
+              ? "text-muted-foreground"
+              : metering
+                ? "text-success"
+                : "text-foreground",
+          )}
+          style={{ width: size * 0.36, height: size * 0.36 }}
+        />
+      )}
     </span>
   );
 }

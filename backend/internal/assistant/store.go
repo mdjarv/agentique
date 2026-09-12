@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -41,6 +42,7 @@ type Store interface {
 	InsertAssistantJournalEntry(ctx context.Context, arg store.InsertAssistantJournalEntryParams) (store.AssistantJournal, error)
 	ListAssistantJournalSince(ctx context.Context, arg store.ListAssistantJournalSinceParams) ([]store.AssistantJournal, error)
 	ListAssistantJournalUnseen(ctx context.Context, arg store.ListAssistantJournalUnseenParams) ([]store.AssistantJournal, error)
+	CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error)
 	MarkAssistantJournalSeenThrough(ctx context.Context, arg store.MarkAssistantJournalSeenThroughParams) error
 
 	// The one read of the sessions table this package makes, and it is a read
