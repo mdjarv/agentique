@@ -1700,8 +1700,241 @@ const queryOptimizerTurns: MockTurn[] = [
   },
 ];
 
+// A fan-out: four subagents from one turn, two back with reports and two still
+// out. This is what the Agents section and the flight strip are for, and no
+// other fixture produced a single agent run.
+//
+// A run is folded from three streams (see `lib/agent-runs.ts`): the `Agent`
+// tool call, its `task` events, and its return. `taskId` is what joins an
+// `agent_result` to the spawn, and forwarded narration carries the spawn's
+// `parentToolUseId` — get either wrong and the roster shows a row with nothing
+// in it.
+
+function agentSpawn(toolId: string, description: string, subagentType: string, prompt: string) {
+  return toolUse("Agent", { description, prompt, subagent_type: subagentType }, "task", toolId);
+}
+
+function taskStarted(toolId: string, taskId: string, description: string): WireEvent {
+  return {
+    type: "task",
+    subtype: "task_started",
+    taskId,
+    toolUseId: toolId,
+    taskType: "local_agent",
+    description,
+    status: "in_progress",
+  };
+}
+
+function taskProgress(
+  toolId: string,
+  taskId: string,
+  lastToolName: string,
+  toolUses: number,
+  totalTokens: number,
+  durationMs: number,
+): WireEvent {
+  return {
+    type: "task",
+    subtype: "task_progress",
+    taskId,
+    toolUseId: toolId,
+    status: "in_progress",
+    lastToolName,
+    toolUses,
+    totalTokens,
+    durationMs,
+  };
+}
+
+function taskDone(
+  toolId: string,
+  taskId: string,
+  summary: string,
+  toolUses: number,
+  totalTokens: number,
+  durationMs: number,
+): WireEvent {
+  return {
+    type: "task",
+    subtype: "task_notification",
+    taskId,
+    toolUseId: toolId,
+    status: "completed",
+    summary,
+    toolUses,
+    totalTokens,
+    durationMs,
+  };
+}
+
+function agentResult(taskId: string, report: string, tokens: number, tools: number): WireEvent {
+  return {
+    type: "agent_result",
+    status: "completed",
+    agentId: taskId,
+    content: [{ type: "text", text: report }],
+    totalTokens: tokens,
+    totalToolUseCount: tools,
+  };
+}
+
+/** Forwarded subagent narration — the agent's own output, addressed to its spawn. */
+function agentStep(toolId: string, event: WireEvent): WireEvent {
+  return { ...event, parentToolUseId: toolId };
+}
+
+const FORWARD_TOOL = {
+  trace: "mock-tool-fs-agent-1",
+  adapter: "mock-tool-fs-agent-2",
+  nested: "mock-tool-fs-agent-3",
+  codex: "mock-tool-fs-agent-4",
+} as const;
+
+const forwardSubagentTurns: MockTurn[] = [
+  {
+    prompt:
+      "Forwarded subagent text stops arriving after the agent's first tool call. Find out where it is dropped — fan out over the forwarder, the adapter and the codex side rather than reading them one at a time.",
+    events: [
+      thinking(
+        "Three independent places could swallow it: the forwarder that stamps parentToolUseId, the adapter that maps provider events onto neutral ones, and whatever codex reports instead. Nothing about them is sequential, so they go out in parallel and I read the reports.",
+      ),
+      toolUse(
+        "TodoWrite",
+        {
+          todos: [
+            { content: "Fan out over forwarder, adapter, nested case, codex", status: "completed" },
+            { content: "Read the reports and name the drop point", status: "in_progress" },
+            { content: "Write a failing test for it", status: "pending" },
+            { content: "Fix and re-run the suite", status: "pending" },
+          ],
+        },
+        "task",
+        "mock-tool-fs-todo",
+      ),
+      toolResult("mock-tool-fs-todo", "Todos updated."),
+
+      agentSpawn(
+        FORWARD_TOOL.trace,
+        "Trace where parentToolUseId is dropped",
+        "Explore",
+        "Follow a subagent text event from the CLI's stdout to ToWireEvent and report every place parentToolUseId could be lost.",
+      ),
+      taskStarted(FORWARD_TOOL.trace, "task-fs-1", "Trace where parentToolUseId is dropped"),
+      agentStep(
+        FORWARD_TOOL.trace,
+        text("Reading the forwarder and the two places that construct wire events."),
+      ),
+      agentStep(
+        FORWARD_TOOL.trace,
+        toolUse(
+          "Grep",
+          { pattern: "parentToolUseId", path: "internal/wire", output_mode: "content" },
+          "search",
+          "mock-tool-fs-1a",
+        ),
+      ),
+      taskProgress(FORWARD_TOOL.trace, "task-fs-1", "Grep", 7, 24_800, 38_000),
+      taskDone(
+        FORWARD_TOOL.trace,
+        "task-fs-1",
+        "The field survives the forwarder. It is cleared in ToWireEvent for any event whose tool block is closed.",
+        11,
+        41_200,
+        62_000,
+      ),
+      agentResult(
+        "task-fs-1",
+        "## Where it is dropped\n\n`parentToolUseId` is set correctly by the forwarder and survives `decode`. It is cleared in `ToWireEvent` (wire.go:214) for every event whose originating tool block has already closed — which, for a subagent, is every event after its first tool call returns.\n\n### Evidence\n\n- `forwarder.go:88` stamps the field on each forwarded message; a log at that point shows it present for all 14 events of a run.\n- `wire.go:214` resets it when `blockClosed(ev.ToolUseID)` is true. That predicate was written for the parent's own streaming blocks and does not distinguish a subagent's block from the parent's.\n\n### What I did not check\n\nWhether the codex adapter reaches this path at all — that is agent 4's question.",
+        41_200,
+        11,
+      ),
+      toolResult(
+        FORWARD_TOOL.trace,
+        "parentToolUseId is cleared in ToWireEvent (wire.go:214) once the originating tool block closes.",
+      ),
+
+      agentSpawn(
+        FORWARD_TOOL.adapter,
+        "Audit the claude adapter's event mapping",
+        "Explore",
+        "Check whether the claude adapter maps every subagent message kind, or only text.",
+      ),
+      taskStarted(FORWARD_TOOL.adapter, "task-fs-2", "Audit the claude adapter's event mapping"),
+      agentStep(
+        FORWARD_TOOL.adapter,
+        text("Comparing the adapter's switch against the CLI's message union."),
+      ),
+      taskProgress(FORWARD_TOOL.adapter, "task-fs-2", "Read", 9, 31_500, 44_000),
+      taskDone(
+        FORWARD_TOOL.adapter,
+        "task-fs-2",
+        "Mapping is complete. Thinking blocks are mapped but never forwarded, which is a separate gap.",
+        13,
+        52_900,
+        71_000,
+      ),
+      agentResult(
+        "task-fs-2",
+        "## Adapter mapping\n\nThe claude adapter maps all five subagent message kinds; nothing is dropped here.\n\nOne adjacent gap worth a separate issue: `thinking` blocks from a subagent are mapped to neutral events and then filtered out by `isTransient`, so a subagent's reasoning never reaches the roster even when text does. That is deliberate for the parent, and probably wrong for a subagent — but it is not this bug.",
+        52_900,
+        13,
+      ),
+      toolResult(
+        FORWARD_TOOL.adapter,
+        "Adapter maps every kind. Subagent thinking is filtered by isTransient — separate issue.",
+      ),
+
+      agentSpawn(
+        FORWARD_TOOL.nested,
+        "Reproduce with a two-level nested agent",
+        "general-purpose",
+        "Write a harness that spawns an agent which itself spawns one, and report which events arrive with which parent id.",
+      ),
+      taskStarted(FORWARD_TOOL.nested, "task-fs-3", "Reproduce with a two-level nested agent"),
+      agentStep(
+        FORWARD_TOOL.nested,
+        text("Building the harness under internal/wire/testdata so the run is reproducible."),
+      ),
+      agentStep(
+        FORWARD_TOOL.nested,
+        toolUse(
+          "Write",
+          { file_path: "internal/wire/nested_forward_test.go" },
+          "file_write",
+          "mock-tool-fs-3a",
+        ),
+      ),
+      taskProgress(FORWARD_TOOL.nested, "task-fs-3", "Write", 6, 19_400, 51_000),
+
+      agentSpawn(
+        FORWARD_TOOL.codex,
+        "Survey what codex reports for subagents",
+        "Explore",
+        "Determine whether codex emits any subagent-scoped events, and what the adapter answers today.",
+      ),
+      taskStarted(FORWARD_TOOL.codex, "task-fs-4", "Survey what codex reports for subagents"),
+      agentStep(
+        FORWARD_TOOL.codex,
+        toolUse(
+          "Grep",
+          { pattern: "subagent|task_started", path: "../codexcli-go", output_mode: "files" },
+          "search",
+          "mock-tool-fs-4a",
+        ),
+      ),
+      taskProgress(FORWARD_TOOL.codex, "task-fs-4", "Grep", 4, 12_100, 29_000),
+
+      text(
+        "Two of four are back. The drop is in `ToWireEvent`, not the forwarder: it clears `parentToolUseId` once the originating tool block closes, which for a subagent is every event after its first tool call. The adapter is clean. I'll wait for the nested repro before writing the test, since the fix has to hold for a two-level spawn as well.",
+      ),
+    ],
+  },
+];
+
 export const MOCK_TURNS: Record<string, MockTurn[]> = {
   [S.authRefactor]: authRefactorTurns,
+  [S.sensorDashboard]: forwardSubagentTurns,
   [S.wsReconnect]: wsReconnectTurns,
   [S.darkMode]: darkModeTurns,
   [S.migrationBug]: migrationBugTurns,
