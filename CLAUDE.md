@@ -1060,6 +1060,21 @@ test asserts every member is a registered handler. The slot wait happens on
 the loop, which is the backpressure: a mutation waits for at most one slot to
 free, never for a flood, and never overtakes a read sent after it.
 
+**A socket tears down in one order: cancel, wait, unsubscribe.** The read loop
+returning is not the end of the conn — the dispatch loop is still holding
+whatever the client sent before it dropped, and the read lane's handlers outlive
+the loop that started them. So `run` cancels first, so nothing takes new work;
+waits on `c.wg`, which every goroutine a conn starts joins through `spawn`
+(`dispatchConcurrently` and `handleRequestAsync` included); and unsubscribes
+last. Doing it the other way round crashed the service: `unsubscribe` nilled
+`c.sub` before the cancel, and a queued `project.subscribe` dereferenced it.
+
+**Nothing reassigns `c.sub`.** It is one field read by three goroutines, so
+writing it is a data race whatever the value, and the nil was buying nothing:
+eventbus's `AddTopic` already no-ops on a closed subscription, under the bus
+lock, and `Unsubscribe` is idempotent. A conn on its way out is allowed to
+reach the subscription and find it closed.
+
 **`session.list` never shells out.** Branch status (ahead, behind, dirty,
 merge-tree) is five git subprocesses per unmerged worktree session, and the
 list paid it for thirty sessions on every call. It now reads
