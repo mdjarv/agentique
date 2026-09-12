@@ -10,16 +10,17 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // The tools that only look. Their whole job is to let the assistant talk about
 // sessions accurately — and to refuse, in words, whenever it cannot.
 
-func newToolCall(dir Directory, d Dispatcher, focus string) *call {
-	c := newTestCall(d, NewRegistry(), focus)
+func newToolCall(dir assistant.Directory, d assistant.Dispatcher, focus string) *call {
+	c := newTestCall(d, assistant.NewRegistry(), focus)
 	c.directory = dir
 	if focus != "" {
-		c.offer(SessionRow{ID: focus})
+		c.offer(assistant.SessionRow{ID: focus})
 	}
 	return c
 }
@@ -85,13 +86,13 @@ func waitPending(t *testing.T, c *call, want int64) {
 
 func directoryWithTwo() *fakeDirectory {
 	return &fakeDirectory{
-		rows: []SessionRow{
+		rows: []assistant.SessionRow{
 			{ID: "s1", Name: "Live Voice Dialog", ProjectName: "agentique", MachineName: "workstation",
 				State: "running", LastActivity: "2026-08-26T12:00:00Z"},
 			{ID: "s2", Name: "Reconnect Drops", ProjectName: "agentique", MachineName: "workstation",
-				State: "idle", Attention: AttentionApproval, LastActivity: "2026-08-26T11:00:00Z"},
+				State: "idle", Attention: assistant.AttentionApproval, LastActivity: "2026-08-26T11:00:00Z"},
 		},
-		projects: []ProjectRow{
+		projects: []assistant.ProjectRow{
 			{ID: "p1", Name: "agentique", Slug: "agentique", LastActivity: "2026-08-26T12:00:00Z"},
 			{ID: "p2", Name: "webtickets", Slug: "webtickets", LastActivity: "2026-08-25T09:00:00Z"},
 		},
@@ -105,7 +106,7 @@ func directoryWithTwo() *fakeDirectory {
 func TestEveryDirectoryToolAnswers(t *testing.T) {
 	tests := []struct {
 		name string
-		dir  Directory
+		dir  assistant.Directory
 		ev   ToolCallEvent
 	}{
 		{"list with no directory", nil, ToolCallEvent{Name: ToolListSessions, Args: map[string]any{"filter": "all"}}},
@@ -139,7 +140,7 @@ func TestEveryDirectoryToolAnswers(t *testing.T) {
 func TestListSessionsOffersWhatItNames(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 
-	got := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	got := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	rows, _ := got["sessions"].([]map[string]any)
 	if len(rows) != 2 {
 		t.Fatalf("listed %v, want both sessions", got)
@@ -151,7 +152,7 @@ func TestListSessionsOffersWhatItNames(t *testing.T) {
 	}
 
 	// needs_attention is a real filter, not a relabelling of "everything".
-	only := c.toolListSessions(context.Background(), map[string]any{"filter": FilterNeedsAttention})
+	only := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterNeedsAttention})
 	rows, _ = only["sessions"].([]map[string]any)
 	if len(rows) != 1 || rows[0]["session_id"] != "s2" {
 		t.Errorf("needs_attention gave %v, want only the session waiting on approval", only)
@@ -166,7 +167,7 @@ func TestListSessionsIncludesRemoteRowsFromTheSnapshot(t *testing.T) {
 		SessionID: "s9", Name: "Remote Work", MachineName: "laptop", State: "running",
 	}})
 
-	got := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	got := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	rows, _ := got["sessions"].([]map[string]any)
 	var found bool
 	for _, row := range rows {
@@ -219,7 +220,7 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 		t.Error("a refused focus still moved the call")
 	}
 
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	got := c.toolFocusSession(context.Background(), map[string]any{"session_id": "s1"})
 	if _, bad := got["error"]; bad {
 		t.Fatalf("focus refused a listed session: %v", got)
@@ -253,7 +254,7 @@ func TestFocusSessionRequiresAnOfferedID(t *testing.T) {
 func TestRemoteSessionsCanBeSeenButNotWorkedIn(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 	c.setWorld([]wireSessionRow{{SessionID: "s9", Name: "Remote Work", MachineName: "laptop"}})
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	focused := c.toolFocusSession(context.Background(), map[string]any{"session_id": "s9"})
 	if _, bad := focused["error"]; bad {
@@ -364,7 +365,7 @@ func TestCreateSessionTakesAProjectTheOperatorSaid(t *testing.T) {
 // and no session, the same rule find_session follows for sessions.
 func TestCreateSessionNeverPicksBetweenProjects(t *testing.T) {
 	dir := directoryWithTwo()
-	dir.projects = append(dir.projects, ProjectRow{ID: "p3", Name: "agentique-ui", Slug: "agentique-ui"})
+	dir.projects = append(dir.projects, assistant.ProjectRow{ID: "p3", Name: "agentique-ui", Slug: "agentique-ui"})
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 
 	got := c.toolCreateSession(context.Background(), map[string]any{"project": "agentique"})
@@ -623,7 +624,7 @@ func TestSummarizeAnswersNowAndSpeaksLater(t *testing.T) {
 	dir := directoryWithTwo()
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 	c.engine = engine
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	got := c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 	if _, bad := got["error"]; bad {
@@ -661,7 +662,7 @@ func TestSummarizeSaysWhenThereIsNothing(t *testing.T) {
 	dir.summaries = map[string]string{}
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 	c.engine = engine
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	ws := giveSocket(t, c)
 	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s2"})
@@ -691,7 +692,7 @@ func TestSummarizeShowsItsWorkAndPutsTheAnswerOnScreen(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 	c.engine = engine
 	ws := giveSocket(t, c)
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 
@@ -732,7 +733,7 @@ func TestSummarizeShowsItsWorkAndPutsTheAnswerOnScreen(t *testing.T) {
 func TestSummaryReachesTheScreenWithoutAVoice(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 	ws := giveSocket(t, c)
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 	readControl(t, ws) // activity
@@ -748,7 +749,7 @@ func TestWarmingASummaryIsInvisible(t *testing.T) {
 	dir := directoryWithTwo()
 	c := newToolCall(dir, &recordingDispatcher{}, "")
 	ws := giveSocket(t, c)
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	c.toolFocusSession(context.Background(), map[string]any{"session_id": "s1"})
 	if focus := readControl(t, ws); focus.Type != msgFocus {
@@ -768,7 +769,7 @@ func TestDeliveryAfterTheCallClosesIsHarmless(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "")
 	c.engine = newSpeakingEngine()
 	ws := giveSocket(t, c)
-	c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	// Tear the call down the way run() does, then answer into the wreckage.
 	c.unfollowAll()

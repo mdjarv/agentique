@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
-	"github.com/mdjarv/agentique/backend/internal/voice"
 )
 
 // Attention is the deck's vocabulary, and the order is the deck's order: the
@@ -24,12 +24,12 @@ func TestAttentionOfRanksApprovalAboveAQuestion(t *testing.T) {
 		{
 			name: "waiting on approval",
 			info: session.SessionInfo{PendingApproval: &session.WirePendingApproval{ApprovalID: "a"}},
-			want: voice.AttentionApproval,
+			want: assistant.AttentionApproval,
 		},
 		{
 			name: "waiting on an answer",
 			info: session.SessionInfo{PendingQuestion: &session.WirePendingQuestion{QuestionID: "q"}},
-			want: voice.AttentionQuestion,
+			want: assistant.AttentionQuestion,
 		},
 		{
 			name: "both — approval holds the process first",
@@ -37,7 +37,7 @@ func TestAttentionOfRanksApprovalAboveAQuestion(t *testing.T) {
 				PendingApproval: &session.WirePendingApproval{ApprovalID: "a"},
 				PendingQuestion: &session.WirePendingQuestion{QuestionID: "q"},
 			},
-			want: voice.AttentionApproval,
+			want: assistant.AttentionApproval,
 		},
 	}
 
@@ -53,21 +53,21 @@ func TestAttentionOfRanksApprovalAboveAQuestion(t *testing.T) {
 // A mis-transcribed filter must not turn into an empty answer — "nothing is
 // running" and "I did not understand you" sound identical over a call.
 func TestKeepForFilter(t *testing.T) {
-	waiting := voice.SessionRow{State: "idle", Attention: voice.AttentionApproval}
-	running := voice.SessionRow{State: string(session.StateRunning)}
-	idle := voice.SessionRow{State: "idle"}
+	waiting := assistant.SessionRow{State: "idle", Attention: assistant.AttentionApproval}
+	running := assistant.SessionRow{State: string(session.StateRunning)}
+	idle := assistant.SessionRow{State: "idle"}
 
 	tests := []struct {
 		filter string
-		row    voice.SessionRow
+		row    assistant.SessionRow
 		want   bool
 	}{
-		{voice.FilterNeedsAttention, waiting, true},
-		{voice.FilterNeedsAttention, running, false},
-		{voice.FilterRunning, running, true},
-		{voice.FilterRunning, idle, false},
-		{voice.FilterRecent, idle, true},
-		{voice.FilterAll, idle, true},
+		{assistant.FilterNeedsAttention, waiting, true},
+		{assistant.FilterNeedsAttention, running, false},
+		{assistant.FilterRunning, running, true},
+		{assistant.FilterRunning, idle, false},
+		{assistant.FilterRecent, idle, true},
+		{assistant.FilterAll, idle, true},
 		{"whatever the model said", idle, true},
 	}
 
@@ -82,11 +82,11 @@ func TestKeepForFilter(t *testing.T) {
 // The orientation paragraph names the sessions waiting on the operator, and
 // says how many it left out rather than trailing off.
 func TestNamesWithReasonIsBoundedAndSaysWhy(t *testing.T) {
-	rows := make([]voice.SessionRow, 0, maxOrientationNames+3)
+	rows := make([]assistant.SessionRow, 0, maxOrientationNames+3)
 	for i := range maxOrientationNames + 3 {
-		rows = append(rows, voice.SessionRow{
+		rows = append(rows, assistant.SessionRow{
 			Name:      string(rune('A' + i)),
-			Attention: voice.AttentionApproval,
+			Attention: assistant.AttentionApproval,
 		})
 	}
 
@@ -102,7 +102,7 @@ func TestNamesWithReasonIsBoundedAndSaysWhy(t *testing.T) {
 // A spoken model name resolves through the same catalog the picker renders, so
 // a family somebody can choose on screen is one they can ask for out loud.
 func TestResolveSpokenModelUsesTheCatalog(t *testing.T) {
-	d := &voiceDirectory{catalog: providers.New(
+	d := &assistantDirectory{catalog: providers.New(
 		providers.WithCLIOptionsPath(filepath.Join(t.TempDir(), "absent.json")),
 	)}
 
@@ -126,12 +126,12 @@ func TestResolveSpokenModelUsesTheCatalog(t *testing.T) {
 // A model nobody has is a spoken question. The error carries the families that
 // DO exist, because the answer is the list, not a substitute.
 func TestResolveSpokenModelNamesTheFamiliesItHas(t *testing.T) {
-	d := &voiceDirectory{catalog: providers.New(
+	d := &assistantDirectory{catalog: providers.New(
 		providers.WithCLIOptionsPath(filepath.Join(t.TempDir(), "absent.json")),
 	)}
 
 	_, _, err := d.resolveSpokenModel(context.Background(), "grok")
-	var unknown *voice.UnknownModelError
+	var unknown *assistant.UnknownModelError
 	if !errors.As(err, &unknown) {
 		t.Fatalf("error = %v, want an UnknownModelError the tool can speak", err)
 	}
@@ -145,24 +145,24 @@ func TestResolveSpokenModelNamesTheFamiliesItHas(t *testing.T) {
 	}
 
 	// No catalog at all still refuses rather than guessing an id.
-	if _, _, err := (&voiceDirectory{}).resolveSpokenModel(context.Background(), "opus"); err == nil {
+	if _, _, err := (&assistantDirectory{}).resolveSpokenModel(context.Background(), "opus"); err == nil {
 		t.Error("a directory with no catalog invented a model")
 	}
 }
 
 // An unnamed session still has to be sayable: its id is not.
 func TestDisplayNameNeverSpeaksAnID(t *testing.T) {
-	if got := displayName(voice.SessionRow{ID: "8f1c-…", Name: "Live Voice Dialog"}); got != "Live Voice Dialog" {
+	if got := displayName(assistant.SessionRow{ID: "8f1c-…", Name: "Live Voice Dialog"}); got != "Live Voice Dialog" {
 		t.Errorf("displayName = %q, want the name", got)
 	}
-	got := displayName(voice.SessionRow{ID: "8f1c-…", ProjectName: "agentique"})
+	got := displayName(assistant.SessionRow{ID: "8f1c-…", ProjectName: "agentique"})
 	if strings.Contains(got, "8f1c") {
 		t.Errorf("displayName = %q, want no id read aloud", got)
 	}
 	if !strings.Contains(got, "agentique") {
 		t.Errorf("displayName = %q, want the project as the next best handle", got)
 	}
-	if got := displayName(voice.SessionRow{ID: "8f1c-…"}); strings.Contains(got, "8f1c") {
+	if got := displayName(assistant.SessionRow{ID: "8f1c-…"}); strings.Contains(got, "8f1c") {
 		t.Errorf("displayName = %q, want no id read aloud", got)
 	}
 }

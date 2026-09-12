@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"sort"
@@ -68,7 +68,7 @@ type Candidate struct {
 // enough ahead that confirming it by name is reasonable; deciding is the
 // operator's, out loud.
 func MatchSessions(query string, rows []SessionRow) (candidates []Candidate, topIsClear bool) {
-	tokens := normalizeTokens(query)
+	tokens := NormalizeTokens(query)
 	if len(tokens) == 0 {
 		return nil, false
 	}
@@ -78,7 +78,7 @@ func MatchSessions(query string, rows []SessionRow) (candidates []Candidate, top
 		if row.ID == "" {
 			continue
 		}
-		if score := scoreRow(tokens, row); score >= matchFloor {
+		if score := ScoreRow(tokens, row); score >= matchFloor {
 			scored = append(scored, Candidate{Row: row, Score: score})
 		}
 	}
@@ -116,7 +116,7 @@ func MatchSessions(query string, rows []SessionRow) (candidates []Candidate, top
 // and an empty query keeps the list in the order it arrived — which is already
 // most recently worked in first.
 func MatchProjects(query string, rows []ProjectRow) []ProjectRow {
-	tokens := normalizeTokens(query)
+	tokens := NormalizeTokens(query)
 	if len(tokens) == 0 {
 		return rows
 	}
@@ -135,13 +135,13 @@ func MatchProjects(query string, rows []ProjectRow) []ProjectRow {
 		// borrows the session scorer's project fields rather than growing a
 		// second scoring rule to drift from this one.
 		field := SessionRow{ProjectName: row.Name, ProjectSlug: row.Slug}
-		score := scoreRow(tokens, field)
+		score := ScoreRow(tokens, field)
 		// A slug is a compound word and a transcript splits it: "webtickets"
 		// comes back as "web tickets", which scores as two weak partial matches
 		// and falls under the floor. So the run-together spelling is tried too,
 		// and the better of the two wins.
 		if joined := strings.Join(tokens, ""); len(tokens) > 1 {
-			score = max(score, scoreRow([]string{joined}, field))
+			score = max(score, ScoreRow([]string{joined}, field))
 		}
 		if score < matchFloor {
 			continue
@@ -166,17 +166,51 @@ func MatchProjects(query string, rows []ProjectRow) []ProjectRow {
 // scoreBucket coarsens a score so that near-ties are ties.
 func scoreBucket(score float64) int { return int(score*20 + 0.5) }
 
-// scoreRow is the mean best match of the query's tokens against the row, with a
+// NamesRow reports whether any salient word of a spoken target belongs to this
+// session — its own name, or the project it sits in.
+//
+// One word, not a mean over all of them. A caller says "a new session in
+// Agentique" and "the Agentique one", and a scored average punishes both for
+// the words that carry no identity; what matters is whether anything they said
+// is actually this session's.
+//
+// It is exported for the same reason [ScoreRow] is: voice's target check
+// (judgeTarget) decides whether the name read back out loud is the session the
+// call is aimed at, and "clear enough to act on" has to mean the same thing
+// there as it does in [MatchSessions]. Two matchers is how a session comes back
+// found by one surface and unrecognised by the next.
+func NamesRow(tokens []string, row SessionRow) bool {
+	fields := [][]string{
+		NormalizeTokens(row.Name),
+		NormalizeTokens(row.ProjectName),
+		NormalizeTokens(row.ProjectSlug),
+	}
+	for _, token := range tokens {
+		for _, field := range fields {
+			if bestTokenScore(token, field) >= scorePrefix {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ScoreRow is the mean best match of the query's tokens against the row, with a
 // bonus for a name that matches outright.
-func scoreRow(query []string, row SessionRow) float64 {
+//
+// Exported so a caller that has already matched can ask how well one row it
+// holds scores — voice's target check compares the focused session against the
+// best candidate elsewhere — without a second scoring rule to drift from this
+// one.
+func ScoreRow(query []string, row SessionRow) float64 {
 	fields := []struct {
 		tokens []string
 		weight float64
 	}{
-		{normalizeTokens(row.Name), weightName},
-		{normalizeTokens(row.ProjectName), weightProject},
-		{normalizeTokens(row.ProjectSlug), weightProject},
-		{normalizeTokens(row.MachineName), weightMachine},
+		{NormalizeTokens(row.Name), weightName},
+		{NormalizeTokens(row.ProjectName), weightProject},
+		{NormalizeTokens(row.ProjectSlug), weightProject},
+		{NormalizeTokens(row.MachineName), weightMachine},
 	}
 
 	var total float64
@@ -192,13 +226,13 @@ func scoreRow(query []string, row SessionRow) float64 {
 	score := total / float64(len(query))
 
 	// The whole name, said correctly, is not a coincidence.
-	name := strings.Join(normalizeTokens(row.Name), " ")
+	name := strings.Join(NormalizeTokens(row.Name), " ")
 	if name != "" && name == strings.Join(query, " ") {
 		return 1
 	}
 	// Every word of the query is in the name, in some form: "the reconnect one"
 	// against "Reconnect Drops" should beat a project-only match.
-	if coversAll(query, normalizeTokens(row.Name)) {
+	if coversAll(query, NormalizeTokens(row.Name)) {
 		score += 0.1
 	}
 	return min(score, 1)
@@ -257,10 +291,10 @@ var filler = map[string]bool{
 	"my": true, "on": true, "in": true, "for": true, "to": true, "of": true,
 }
 
-// normalizeTokens lowercases, drops punctuation, and removes conversational
+// NormalizeTokens lowercases, drops punctuation, and removes conversational
 // filler. Punctuation matters here: a transcript writes "dialog," and a session
 // is called "dialog".
-func normalizeTokens(s string) []string {
+func NormalizeTokens(s string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"google.golang.org/genai"
 )
 
@@ -120,9 +121,9 @@ func SystemInstruction(brief Briefing) string {
 
 	b.WriteString("# The other sessions\n\n")
 	b.WriteString(fmt.Sprintf("`%s` says what is going on: pass `%s` when they ask what needs them, ",
-		ToolListSessions, FilterNeedsAttention))
+		ToolListSessions, assistant.FilterNeedsAttention))
 	b.WriteString(fmt.Sprintf("`%s` for what is working, `%s` otherwise. Summarise the answer — how ",
-		FilterRunning, FilterRecent))
+		assistant.FilterRunning, assistant.FilterRecent))
 	b.WriteString("many, and the two or three that matter. Never read a list aloud.\n\n")
 	b.WriteString(fmt.Sprintf("`%s` turns what they called something into candidates. Spoken names ",
 		ToolFindSession))
@@ -389,7 +390,13 @@ const unnamedFocusLabel = "the session they were looking at"
 // opened on none: the unfocused greeting folds in the single line of
 // orientation the instruction already allows, and says so, or the operator
 // hears the same offer twice in the first ten seconds of the call.
-func greetingCue(focusName string) string {
+//
+// news is what has happened since a call last looked, from the assistant's
+// journal, and it is the one thing here that is not this cue's own words: it
+// **folds into** the greeting rather than preceding it, and an empty one adds
+// nothing at all. A greeting that announced there was no news would be a
+// bulletin about the absence of a bulletin.
+func greetingCue(focusName, news string) string {
 	var b strings.Builder
 	b.WriteString("CALL CONNECTED. This is the switchboard itself telling you the line is open, ")
 	b.WriteString("not the user speaking — they have said nothing yet and cannot hear this. Greet ")
@@ -413,6 +420,16 @@ func greetingCue(focusName string) string {
 
 	b.WriteString("If they are already talking, drop the greeting and listen — they were there ")
 	b.WriteString("first. Say it once and never repeat it later in this call.")
+
+	if text := strings.TrimSpace(news); text != "" {
+		b.WriteString("\n\nSINCE THEY WERE LAST ON A CALL, this happened. It is the server telling you, ")
+		b.WriteString("not them speaking, and it is NOT part of the greeting: say hello as described ")
+		b.WriteString("above, and if there is one thing here worth a clause, add it to that same ")
+		b.WriteString("sentence. Never read the list out, and never make the greeting longer than one ")
+		b.WriteString("sentence to fit it in — the rest is here so you can answer their first question ")
+		b.WriteString("without looking anything up.\n\n")
+		b.WriteString(text)
+	}
 	return b.String()
 }
 
@@ -478,7 +495,7 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 				Properties: map[string]*genai.Schema{
 					"filter": {
 						Type: genai.TypeString,
-						Enum: []string{FilterNeedsAttention, FilterRunning, FilterRecent, FilterAll},
+						Enum: []string{assistant.FilterNeedsAttention, assistant.FilterRunning, assistant.FilterRecent, assistant.FilterAll},
 						Description: "needs_attention: waiting on the user. running: a turn is in " +
 							"flight. recent: whatever was active last. all: everything.",
 					},

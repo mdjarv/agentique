@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -239,7 +240,7 @@ func TestPickupGreetingGoesOutWhenTheCallGoesLive(t *testing.T) {
 	engine := newSpeakingEngine()
 	h, err := NewHandler(Options{
 		Backend:   BackendEcho,
-		Directory: &fakeDirectory{rows: []SessionRow{{ID: "sess-1", Name: "Live Voice Dialog"}}},
+		Directory: &fakeDirectory{rows: []assistant.SessionRow{{ID: "sess-1", Name: "Live Voice Dialog"}}},
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

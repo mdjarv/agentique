@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // The second utterance of a call is where this state used to go wrong, so these
@@ -30,11 +32,11 @@ type recordingDispatcher struct {
 	records []dispatchRecord
 }
 
-func (r *recordingDispatcher) Dispatch(_ context.Context, sessionID, prompt string, withReporting bool) (Delivery, error) {
+func (r *recordingDispatcher) Dispatch(_ context.Context, sessionID, prompt string, withReporting bool) (assistant.Delivery, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.records = append(r.records, dispatchRecord{session: sessionID, prompt: prompt, reporting: withReporting})
-	return DeliveryTurn, nil
+	return assistant.DeliveryTurn, nil
 }
 
 func (r *recordingDispatcher) AutoRunnable(context.Context, string) (bool, string, error) {
@@ -73,7 +75,7 @@ type step struct {
 	stay   bool
 	// notice delivers a runtime fact about a session.
 	noticeFor  string
-	noticeKind NoticeKind
+	noticeKind assistant.NoticeKind
 	// unfollow releases one session.
 	unfollowSession string
 }
@@ -142,7 +144,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 			steps: []step{
 				{focus: "sess-a", prompt: "the long one", stay: true},
 				{focus: "sess-b", prompt: "the quick one", stay: true},
-				{noticeFor: "sess-b", noticeKind: NoticeFinished},
+				{noticeFor: "sess-b", noticeKind: assistant.NoticeFinished},
 			},
 			check: func(t *testing.T, c *call, _ *recordingDispatcher) {
 				if c.currentPhase() != phaseWorking {
@@ -154,7 +156,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 			name: "the last run finishing returns the call to gathering",
 			steps: []step{
 				{focus: "sess-a", prompt: "the only one", stay: true},
-				{noticeFor: "sess-a", noticeKind: NoticeFinished},
+				{noticeFor: "sess-a", noticeKind: assistant.NoticeFinished},
 			},
 			check: func(t *testing.T, c *call, _ *recordingDispatcher) {
 				if c.currentPhase() != phaseGathering {
@@ -170,7 +172,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 			name: "blocked does not end the work",
 			steps: []step{
 				{focus: "sess-a", prompt: "do the thing", stay: true},
-				{noticeFor: "sess-a", noticeKind: NoticeBlocked},
+				{noticeFor: "sess-a", noticeKind: assistant.NoticeBlocked},
 			},
 			check: func(t *testing.T, c *call, _ *recordingDispatcher) {
 				if c.currentPhase() != phaseWorking {
@@ -201,7 +203,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 			name: "a failed run ends the work like a finished one",
 			steps: []step{
 				{focus: "sess-a", prompt: "do the thing", stay: true},
-				{noticeFor: "sess-a", noticeKind: NoticeFailed},
+				{noticeFor: "sess-a", noticeKind: assistant.NoticeFailed},
 			},
 			check: func(t *testing.T, c *call, _ *recordingDispatcher) {
 				if c.currentPhase() != phaseGathering {
@@ -214,7 +216,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &recordingDispatcher{}
-			registry := NewRegistry()
+			registry := assistant.NewRegistry()
 			c := newTestCall(d, registry, "")
 
 			for _, s := range tt.steps {
@@ -231,7 +233,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 						t.Fatalf("dispatch %q failed: %v", s.prompt, got)
 					}
 				case s.noticeFor != "":
-					registry.Notice(s.noticeFor, Notice{Kind: s.noticeKind, Headline: "something happened"})
+					registry.Notice(s.noticeFor, assistant.Notice{Kind: s.noticeKind, Headline: "something happened"})
 				case s.unfollowSession != "":
 					c.unfollow(s.unfollowSession)
 				}
@@ -246,7 +248,7 @@ func TestCallStateAcrossASecondUtterance(t *testing.T) {
 // under concurrency rather than right in the order the notices happened to
 // arrive.
 func TestPhaseIsDerivedFromTheFollowSet(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "")
 
 	if c.currentPhase() != phaseGathering {
 		t.Fatal("a call following nothing is gathering")
@@ -287,7 +289,7 @@ func (e *silentEngine) LastSpeech() time.Time { return e.speech }
 // quietCall is a call that has heard nothing since `since`: no speech, no
 // frames, no interaction.
 func quietCall(since time.Time) *call {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "")
 	c.engine = &silentEngine{EchoEngine: NewEchoEngine(), speech: since}
 	c.idleTimeout = defaultIdleTimeout
 	c.lastFrame = since
@@ -386,8 +388,8 @@ func TestAPromisedAnswerHoldsTheLine(t *testing.T) {
 // --- the pickup greeting ---
 
 // greetingCall is a call wired to an engine and a directory, with no socket.
-func greetingCall(engine Engine, dir Directory, focus string) *call {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), focus)
+func greetingCall(engine Engine, dir assistant.Directory, focus string) *call {
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), focus)
 	c.engine = engine
 	c.directory = dir
 	return c
@@ -397,7 +399,7 @@ func greetingCall(engine Engine, dir Directory, focus string) *call {
 // is spoken to leaves a freshly connected call silent — and in a car that is
 // indistinguishable from a call that never came up.
 func TestPickupGreeting(t *testing.T) {
-	dir := &fakeDirectory{rows: []SessionRow{
+	dir := &fakeDirectory{rows: []assistant.SessionRow{
 		{ID: "sess-1", Name: "Live Voice Dialog", ProjectName: "agentique"},
 		{ID: "sess-2"},
 	}}
@@ -490,7 +492,7 @@ func TestPickupGreeting(t *testing.T) {
 // Reports and notices must name their session, or a call following two runs
 // tells the listener something true about the wrong one.
 func TestSpokenFramingNamesTheSession(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "")
 	c.follow("sess-a", "Live Voice Dialog")
 
 	if got := c.sessionLabel("sess-a"); got != "Live Voice Dialog" {
@@ -502,7 +504,7 @@ func TestSpokenFramingNamesTheSession(t *testing.T) {
 		t.Errorf("sessionLabel for an unknown session = %q, want the id", got)
 	}
 
-	for _, kind := range []NoticeKind{NoticeFinished, NoticeFailed, NoticeBlocked} {
+	for _, kind := range []assistant.NoticeKind{assistant.NoticeFinished, assistant.NoticeFailed, assistant.NoticeBlocked} {
 		if got := noticePreamble(kind, "Live Voice Dialog"); !strings.Contains(got, "Live Voice Dialog") {
 			t.Errorf("%s preamble does not name the session: %q", kind, got)
 		}

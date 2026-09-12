@@ -1,16 +1,22 @@
-package voice
+package assistant
 
 import (
 	"fmt"
 	"strings"
 )
 
-// ReportingInstructions is appended to a drafted prompt when the operator has
-// chosen to stay on the call.
+// ReportingInstructions is appended to a dispatched prompt when the assistant
+// is following the run — which it is for everything it dispatches, and for
+// anything it was asked to follow.
 //
-// It is conditional on purpose. A run nobody is listening to should carry none
-// of this: no instruction, no tool calls, no reporting overhead. That is the
-// whole reason the handoff asks rather than assuming.
+// It is conditional on purpose. A run nobody is watching should carry none of
+// this: no instruction, no tool calls, no reporting overhead. That is why a run
+// started from the composer carries nothing unless somebody asks.
+//
+// The wording still says "a live voice call", because today every follower is
+// one and the headline is written to be spoken. Changing it is a prompt change
+// and wants its own verification; what already changed is where a report goes
+// when nobody is live, which is the journal.
 //
 // toolName is the full MCP tool name so the worker can find it.
 func ReportingInstructions(toolName string) string {

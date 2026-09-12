@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"context"
@@ -87,8 +87,8 @@ func (d Delivery) Confirmation(session string) string {
 
 // Dispatcher hands a drafted prompt to the session that does the work.
 //
-// The voice agent never runs anything itself: it produces text and this sends
-// it down the same path the composer's send button uses. One route into the
+// The assistant never runs anything itself: it produces text and this sends it
+// down the same path the composer's send button uses. One route into the
 // session pipeline, whether the gesture was a click or a sentence.
 type Dispatcher interface {
 	// Dispatch delivers prompt to sessionID and reports which of the three

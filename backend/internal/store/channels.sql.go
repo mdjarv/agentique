@@ -27,7 +27,7 @@ func (q *Queries) AddChannelMember(ctx context.Context, arg AddChannelMemberPara
 }
 
 const createChannel = `-- name: CreateChannel :one
-INSERT INTO channels (id, name, project_id) VALUES (?, ?, ?) RETURNING id, name, project_id, created_at
+INSERT INTO channels (id, name, project_id) VALUES (?, ?, ?) RETURNING id, name, project_id, created_at, kind
 `
 
 type CreateChannelParams struct {
@@ -44,6 +44,7 @@ func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (C
 		&i.Name,
 		&i.ProjectID,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -58,7 +59,7 @@ func (q *Queries) DeleteChannel(ctx context.Context, id string) error {
 }
 
 const getChannel = `-- name: GetChannel :one
-SELECT id, name, project_id, created_at FROM channels WHERE id = ?
+SELECT id, name, project_id, created_at, kind FROM channels WHERE id = ?
 `
 
 func (q *Queries) GetChannel(ctx context.Context, id string) (Channel, error) {
@@ -69,6 +70,7 @@ func (q *Queries) GetChannel(ctx context.Context, id string) (Channel, error) {
 		&i.Name,
 		&i.ProjectID,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -217,9 +219,13 @@ func (q *Queries) ListChannelMemberSessions(ctx context.Context, channelID strin
 }
 
 const listChannelsByProject = `-- name: ListChannelsByProject :many
-SELECT id, name, project_id, created_at FROM channels WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, name, project_id, created_at, kind FROM channels WHERE project_id = ? AND kind = '' ORDER BY created_at ASC
 `
 
+// Ordinary channels only. The assistant's conversation is a channel with
+// kind = 'assistant' and is not one of a project's channels: it has no project,
+// it has no roster, and a row for it in the channel list would offer every
+// channel gesture (dissolve, add a member) against the thread.
 func (q *Queries) ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]Channel, error) {
 	rows, err := q.db.QueryContext(ctx, listChannelsByProject, projectID)
 	if err != nil {
@@ -234,6 +240,7 @@ func (q *Queries) ListChannelsByProject(ctx context.Context, projectID sql.NullS
 			&i.Name,
 			&i.ProjectID,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}

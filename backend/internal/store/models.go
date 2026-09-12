@@ -20,6 +20,38 @@ type AgentProfile struct {
 	UpdatedAt   string         `json:"updated_at"`
 }
 
+type AssistantFollow struct {
+	SessionID string `json:"session_id"`
+	Since     string `json:"since"`
+	Briefed   int64  `json:"briefed"`
+	Source    string `json:"source"`
+}
+
+type AssistantJournal struct {
+	ID        int64  `json:"id"`
+	At        string `json:"at"`
+	Kind      string `json:"kind"`
+	SessionID string `json:"session_id"`
+	ProjectID string `json:"project_id"`
+	Summary   string `json:"summary"`
+	Payload   string `json:"payload"`
+	Untrusted int64  `json:"untrusted"`
+	Notable   int64  `json:"notable"`
+	SeenBy    string `json:"seen_by"`
+	CreatedAt string `json:"created_at"`
+}
+
+type AssistantState struct {
+	ID              int64  `json:"id"`
+	ChannelID       string `json:"channel_id"`
+	Model           string `json:"model"`
+	LastHeartbeatAt string `json:"last_heartbeat_at"`
+	LastDigestAt    string `json:"last_digest_at"`
+	SurfaceMarks    string `json:"surface_marks"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
 type AuthSession struct {
 	TokenHash string         `json:"token_hash"`
 	ID        sql.NullString `json:"id"`
@@ -45,6 +77,7 @@ type Channel struct {
 	Name      string         `json:"name"`
 	ProjectID sql.NullString `json:"project_id"`
 	CreatedAt string         `json:"created_at"`
+	Kind      string         `json:"kind"`
 }
 
 type ChannelMember struct {

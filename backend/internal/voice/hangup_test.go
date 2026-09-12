@@ -4,13 +4,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // The fault this path was built for: the assistant said it was hanging up, and
 // the call stayed open. Arming has to be a state the call actually holds, not a
 // sentence it said.
 func TestHangUpArmsTheCallAndAsksForAGoodbye(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 	if c.askedToHangUp() {
 		t.Fatal("a fresh call is not hanging up")
 	}
@@ -40,7 +42,7 @@ func TestHangUpArmsTheCallAndAsksForAGoodbye(t *testing.T) {
 // The goodbye is spoken on the turn after the tool answers, and that turn
 // completing is what ends the call.
 func TestTheGoodbyeTurnEndsTheCall(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 
 	// An ordinary turn on an unarmed call must not close anything.
 	if err := c.forward(TurnCompleteEvent{}); err == nil {
@@ -60,7 +62,7 @@ func TestTheGoodbyeTurnEndsTheCall(t *testing.T) {
 // Talking over the farewell is not a retraction. They asked to hang up; an
 // interrupted goodbye still ends the call, or barging in wedges it open.
 func TestAnInterruptedGoodbyeStillEndsTheCall(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolHangUp})
 
 	_ = c.forward(TurnCompleteEvent{Interrupted: true})
@@ -74,7 +76,7 @@ func TestAnInterruptedGoodbyeStillEndsTheCall(t *testing.T) {
 // what stops an explicit hangup from falling back to the idle rule — which, on
 // a call following a run, is half an hour.
 func TestTheGoodbyeGraceClosesACallThatNeverSpeaks(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 	now := time.Now()
 
 	if c.hangupOverdue(now) {
@@ -93,7 +95,7 @@ func TestTheGoodbyeGraceClosesACallThatNeverSpeaks(t *testing.T) {
 // A second ask must not extend the first one's deadline, or an assistant that
 // keeps saying farewell keeps the line open as long as it keeps talking.
 func TestAskingTwiceDoesNotExtendTheGrace(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 	start := time.Now()
 
 	c.armHangup(start)
@@ -107,7 +109,7 @@ func TestAskingTwiceDoesNotExtendTheGrace(t *testing.T) {
 // The browser is told once. Two closing frames would have it sound the hangup
 // tone twice, and the two paths that end an armed call genuinely race.
 func TestTheClosingFrameGoesOutExactlyOnce(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 
 	if !c.endCall(hangupReason) {
 		t.Fatal("the first close did not report itself as the one that closed")
@@ -124,7 +126,7 @@ func TestTheClosingFrameGoesOutExactlyOnce(t *testing.T) {
 // finished, or because nobody said anything, is a call that hung up on someone
 // who was still there.
 func TestNothingButTheToolArmsAHangup(t *testing.T) {
-	c := newTestCall(&recordingDispatcher{}, NewRegistry(), "sess-1")
+	c := newTestCall(&recordingDispatcher{}, assistant.NewRegistry(), "sess-1")
 
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{
 		"prompt": "do the thing",

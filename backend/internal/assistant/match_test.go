@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import "testing"
 

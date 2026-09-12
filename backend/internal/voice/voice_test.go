@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 func TestParseBackend(t *testing.T) {
@@ -212,7 +213,7 @@ func TestUnknownControlIsIgnored(t *testing.T) {
 // session, the worker's report reaches the registry, and it arrives as a text
 // control frame — never as a binary one, which is audio's channel.
 func TestFollowDeliversReportsOverTheSocket(t *testing.T) {
-	registry := NewRegistry()
+	registry := assistant.NewRegistry()
 	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
@@ -251,8 +252,8 @@ func TestFollowDeliversReportsOverTheSocket(t *testing.T) {
 	if got.Type != msgReport {
 		t.Fatalf("frame type = %q, want %q", got.Type, msgReport)
 	}
-	if got.Kind != string(ReportSurprise) {
-		t.Errorf("kind = %q, want %q", got.Kind, ReportSurprise)
+	if got.Kind != string(assistant.ReportSurprise) {
+		t.Errorf("kind = %q, want %q", got.Kind, assistant.ReportSurprise)
 	}
 	if got.Headline != "the auth tests were already failing" {
 		t.Errorf("headline = %q", got.Headline)
@@ -265,7 +266,7 @@ func TestFollowDeliversReportsOverTheSocket(t *testing.T) {
 // Following a session suspends the conversational idle rule, and a run ending
 // restores it. Without this a call hangs up in the middle of every real task.
 func TestFollowingSuspendsTheIdleRuleUntilTheRunEnds(t *testing.T) {
-	registry := NewRegistry()
+	registry := assistant.NewRegistry()
 	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
@@ -294,19 +295,19 @@ func TestFollowingSuspendsTheIdleRuleUntilTheRunEnds(t *testing.T) {
 	}
 
 	// Blocked still holds the process, so it must not end the working phase.
-	registry.Notice("sess-3", Notice{Kind: NoticeBlocked, Headline: "needs approval"})
+	registry.Notice("sess-3", assistant.Notice{Kind: assistant.NoticeBlocked, Headline: "needs approval"})
 	blocked := readControl(t, ws)
-	if blocked.Type != msgNotice || blocked.Kind != string(NoticeBlocked) {
+	if blocked.Type != msgNotice || blocked.Kind != string(assistant.NoticeBlocked) {
 		t.Fatalf("frame = %q/%q, want a blocked notice", blocked.Type, blocked.Kind)
 	}
 
-	registry.Notice("sess-3", Notice{Kind: NoticeFinished, Headline: "all tests pass"})
+	registry.Notice("sess-3", assistant.Notice{Kind: assistant.NoticeFinished, Headline: "all tests pass"})
 	done := readControl(t, ws)
 	if done.Type != msgNotice {
 		t.Fatalf("frame type = %q, want %q", done.Type, msgNotice)
 	}
-	if done.Kind != string(NoticeFinished) {
-		t.Errorf("kind = %q, want %q", done.Kind, NoticeFinished)
+	if done.Kind != string(assistant.NoticeFinished) {
+		t.Errorf("kind = %q, want %q", done.Kind, assistant.NoticeFinished)
 	}
 	if done.Headline != "all tests pass" {
 		t.Errorf("headline = %q", done.Headline)
@@ -325,7 +326,7 @@ func TestFollowingSuspendsTheIdleRuleUntilTheRunEnds(t *testing.T) {
 // A closed call must release its binding, or the registry keeps writing into a
 // dead socket and the session looks like it still has a listener.
 func TestClosingACallReleasesTheBinding(t *testing.T) {
-	registry := NewRegistry()
+	registry := assistant.NewRegistry()
 	h, err := NewHandler(Options{Backend: BackendEcho, Registry: registry})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)

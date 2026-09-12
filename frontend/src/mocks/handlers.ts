@@ -92,7 +92,7 @@ export const restHandlers = [
   http.get("/api/health", () => {
     return HttpResponse.json({
       status: "ok",
-      features: { browser: false, teams: true, brain: true },
+      features: { browser: false, teams: true, brain: true, assistant: false },
     });
   }),
 

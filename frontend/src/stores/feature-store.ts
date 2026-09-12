@@ -12,6 +12,14 @@ interface Features {
    * has to check this first rather than render and fail.
    */
   brain: boolean;
+  /**
+   * The assistant — a durable principal behind the thread, the call and, later,
+   * a gateway. Off unless `[experimental] assistant` is set, and off means
+   * unbuilt: no routes, no ops, no pushes. So the /assistant destination is
+   * absent rather than leading somewhere that answers the SPA with a 200 and
+   * looks alive. See docs/assistant.md.
+   */
+  assistant: boolean;
 }
 
 interface FeatureState {
@@ -32,7 +40,13 @@ interface FeatureState {
   saveHostPresentation: (label: string, icon: string) => Promise<void>;
 }
 
-const DEFAULT_FEATURES: Features = { browser: false, teams: false, voice: false, brain: false };
+const DEFAULT_FEATURES: Features = {
+  browser: false,
+  teams: false,
+  voice: false,
+  brain: false,
+  assistant: false,
+};
 
 export const useFeatureStore = create<FeatureState>((set, get) => ({
   features: DEFAULT_FEATURES,

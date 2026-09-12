@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // The assistant's tools, minus the one that starts work.
@@ -56,7 +58,7 @@ func summaryRelayPreamble(session string) string {
 
 // toolListSessions answers "what is going on" for one filter.
 func (c *call) toolListSessions(ctx context.Context, args map[string]any) map[string]any {
-	filter := normalizeFilter(stringArg(args, "filter"))
+	filter := assistant.NormalizeFilter(stringArg(args, "filter"))
 	rows := c.mergedRows(ctx, filter)
 	if len(rows) == 0 {
 		if c.directory == nil && len(c.worldRows()) == 0 {
@@ -96,12 +98,12 @@ func (c *call) toolFindSession(ctx context.Context, args map[string]any) map[str
 		return refuse("empty-query", "Nothing to look for. Ask them which session they mean.")
 	}
 
-	rows := c.mergedRows(ctx, FilterAll)
+	rows := c.mergedRows(ctx, assistant.FilterAll)
 	if len(rows) == 0 {
 		return refuse("no-sessions-visible", "I cannot see any sessions from this call.")
 	}
 
-	candidates, topIsClear := MatchSessions(query, rows)
+	candidates, topIsClear := assistant.MatchSessions(query, rows)
 	if len(candidates) == 0 {
 		return map[string]any{
 			"candidates":   []any{},
@@ -111,7 +113,7 @@ func (c *call) toolFindSession(ctx context.Context, args map[string]any) map[str
 		}
 	}
 
-	matched := make([]SessionRow, 0, len(candidates))
+	matched := make([]assistant.SessionRow, 0, len(candidates))
 	payloads := make([]map[string]any, 0, len(candidates))
 	for _, candidate := range candidates {
 		matched = append(matched, candidate.Row)
@@ -123,7 +125,7 @@ func (c *call) toolFindSession(ctx context.Context, args map[string]any) map[str
 		"the machine, or what it is doing. Never choose for them."
 	if topIsClear {
 		note = fmt.Sprintf("The first one is the obvious match. Confirm it by name and project (%q) "+
-			"as you focus it, so they can stop you if it is the wrong one.", displayFor(candidates[0].Row))
+			"as you focus it, so they can stop you if it is the wrong one.", assistant.DisplayFor(candidates[0].Row))
 	}
 
 	return map[string]any{
@@ -166,13 +168,13 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 	out := c.rowPayload(row)
 	out["focused"] = true
 	out["note"] = fmt.Sprintf("Confirm out loud that you are now on %q before you do anything else.",
-		displayFor(row))
+		assistant.DisplayFor(row))
 
 	if !local {
 		out["can_start_work"] = false
 		out["note"] = fmt.Sprintf("You are looking at %q, which runs on %s. You can talk about it, "+
 			"but work cannot be started there from this call — say that plainly if they ask for any.",
-			displayFor(row), machineWords(row))
+			assistant.DisplayFor(row), machineWords(row))
 		return out
 	}
 
@@ -182,14 +184,14 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 			out["can_start_work"] = false
 			out["note"] = fmt.Sprintf("You are now on %q, but it is not in full auto, so work cannot "+
 				"be started there from a call — there is no way to approve anything by voice. %s",
-				displayFor(row), why)
+				assistant.DisplayFor(row), why)
 		}
 	}
 
 	// A question about a session is usually followed by "what has it been
 	// doing?". Warming the summary here makes that answer instant; it is never
 	// spoken unless they ask.
-	c.warmSummary(ctx, sessionID, displayFor(row))
+	c.warmSummary(ctx, sessionID, assistant.DisplayFor(row))
 	return out
 }
 
@@ -214,7 +216,7 @@ func (c *call) toolSummarizeSession(ctx context.Context, args map[string]any) ma
 	if !local {
 		row = c.bestKnownRow(ctx, sessionID)
 	}
-	label := displayFor(row)
+	label := assistant.DisplayFor(row)
 
 	if !local {
 		return refuse("summary-not-local", fmt.Sprintf("%s runs on %s, and its transcript is not on "+
@@ -330,7 +332,7 @@ func (c *call) toolListProjects(ctx context.Context, args map[string]any) map[st
 
 	query := strings.TrimSpace(stringArg(args, "query"))
 	if query != "" {
-		if narrowed := MatchProjects(query, rows); len(narrowed) > 0 {
+		if narrowed := assistant.MatchProjects(query, rows); len(narrowed) > 0 {
 			rows = narrowed
 		} else {
 			// A miss is not an empty machine, and saying so as "there are none"
@@ -399,13 +401,13 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 	if err != nil {
 		// A model nobody has is a question, not a failure: the words name the
 		// families that do exist, and nothing was created.
-		var unknown *UnknownModelError
+		var unknown *assistant.UnknownModelError
 		if errors.As(err, &unknown) {
 			return refuse("unknown-model", unknown.Error())
 		}
 		c.log.Warn("voice session creation failed", "project", projectID, "error", err)
 		return refuse("create-failed", fmt.Sprintf("That could not be created in %s. Say so plainly, "+
-			"and offer to use a session that already exists.", project.displayName()))
+			"and offer to use a session that already exists.", project.DisplayName()))
 	}
 	if row.ID == "" {
 		c.log.Warn("voice session creation returned no session", "project", projectID)
@@ -427,7 +429,7 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 	out["created"] = true
 	out["focused"] = true
 	out["can_start_work"] = true
-	out["project"] = project.displayName()
+	out["project"] = project.DisplayName()
 
 	prompt := strings.TrimSpace(stringArg(args, "prompt"))
 	if prompt == "" {
@@ -438,7 +440,7 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 		out["note"] = fmt.Sprintf("Created and focused: a new session in %s%s, on their screen now. "+
 			"Nothing is running in it, because no prompt came with this. If they had already agreed "+
 			"one, send it now with %s and do not ask again. Otherwise say in one sentence that it is "+
-			"there.", project.displayName(), modelWords(row.Model), ToolRunPrompt)
+			"there.", project.DisplayName(), modelWords(row.Model), ToolRunPrompt)
 		return out
 	}
 
@@ -451,7 +453,7 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 		out["sent"] = false
 		out[reasonKey] = "created-but-not-sent:" + inner
 		out["error"] = fmt.Sprintf("The session was created in %s and is on their screen, but the "+
-			"prompt did NOT go. Tell them both, in that order. %s", project.displayName(), refusal)
+			"prompt did NOT go. Tell them both, in that order. %s", project.DisplayName(), refusal)
 		return out
 	}
 
@@ -472,7 +474,7 @@ func (c *call) toolCreateSession(ctx context.Context, args map[string]any) map[s
 // It never picks. One match is a name; several is a description, and a
 // description gets a question rather than a guess — the same rule
 // [ToolFindSession] follows for sessions.
-func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (ProjectRow, targetJudgement) {
+func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (assistant.ProjectRow, targetJudgement) {
 	if projectID := strings.TrimSpace(stringArg(args, "project_id")); projectID != "" {
 		project, offered := c.offeredProject(projectID)
 		if offered {
@@ -482,7 +484,7 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (P
 		// transcript, but the assistant may still have heard the project right,
 		// so the spoken name below gets its chance before this refuses.
 		if spoken := strings.TrimSpace(stringArg(args, "project")); spoken == "" {
-			return ProjectRow{}, targetJudgement{Reason: "project-not-offered",
+			return assistant.ProjectRow{}, targetJudgement{Reason: "project-not-offered",
 				Say: "That is not a project id I have given you. Say the project's name in `project` " +
 					"instead, or call " + ToolListProjects + " and use an id from the result."}
 		}
@@ -490,22 +492,22 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (P
 
 	spoken := strings.TrimSpace(stringArg(args, "project"))
 	if spoken == "" {
-		return ProjectRow{}, targetJudgement{Reason: "no-project",
+		return assistant.ProjectRow{}, targetJudgement{Reason: "no-project",
 			Say: "No project. Ask which one it should go in, plainly, and pass what they say as " +
 				"`project` — nothing has been created."}
 	}
 
 	rows := c.directory.ListProjects(ctx)
 	if len(rows) == 0 {
-		return ProjectRow{}, targetJudgement{Reason: "no-projects",
+		return assistant.ProjectRow{}, targetJudgement{Reason: "no-projects",
 			Say: "There are no projects on this machine, so there is nowhere to create a session. " +
 				"Say that plainly rather than guessing at one."}
 	}
 
-	matched := MatchProjects(spoken, rows)
+	matched := assistant.MatchProjects(spoken, rows)
 	switch len(matched) {
 	case 0:
-		return ProjectRow{}, targetJudgement{Reason: "project-unrecognised",
+		return assistant.ProjectRow{}, targetJudgement{Reason: "project-unrecognised",
 			Say: fmt.Sprintf("Nothing on this machine is called %q, and nothing has been created. Ask "+
 				"them to say the project another way, or offer to read out the few there are.", spoken)}
 	case 1:
@@ -513,7 +515,7 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (P
 		c.offerProjects(matched[0])
 		return matched[0], targetJudgement{OK: true}
 	default:
-		return ProjectRow{}, targetJudgement{Reason: "project-ambiguous",
+		return assistant.ProjectRow{}, targetJudgement{Reason: "project-ambiguous",
 			Say: fmt.Sprintf("More than one project could be %q — %s. Nothing has been created: ask "+
 				"which they mean and never choose for them.", spoken, spokenProjectList(matched))}
 	}
@@ -521,15 +523,15 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (P
 
 // spokenProjectList names the contenders the way a person reads a short list
 // out, capped because past a handful nobody is choosing between them.
-func spokenProjectList(rows []ProjectRow) string {
+func spokenProjectList(rows []assistant.ProjectRow) string {
 	names := make([]string, 0, maxSpokenProjects)
 	for _, row := range rows {
 		if len(names) == maxSpokenProjects {
 			break
 		}
-		names = append(names, row.displayName())
+		names = append(names, row.DisplayName())
 	}
-	return spokenList(names)
+	return assistant.SpokenList(names)
 }
 
 // modelWords names the model a new session runs, when there is one to name. A
@@ -542,12 +544,12 @@ func modelWords(model string) string {
 }
 
 // projectPayloads renders projects for the model.
-func (c *call) projectPayloads(rows []ProjectRow) []map[string]any {
+func (c *call) projectPayloads(rows []assistant.ProjectRow) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		payload := map[string]any{
 			"project_id": row.ID,
-			"name":       row.displayName(),
+			"name":       row.DisplayName(),
 		}
 		if row.Slug != "" && row.Slug != row.Name {
 			payload["slug"] = row.Slug
@@ -561,7 +563,7 @@ func (c *call) projectPayloads(rows []ProjectRow) []map[string]any {
 }
 
 // rowPayloads renders rows for the model.
-func (c *call) rowPayloads(rows []SessionRow) []map[string]any {
+func (c *call) rowPayloads(rows []assistant.SessionRow) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, c.rowPayload(row))
@@ -571,10 +573,10 @@ func (c *call) rowPayloads(rows []SessionRow) []map[string]any {
 
 // rowPayload is one session as the model sees it: what to say about it, and
 // what tells it apart from a session with a similar name somewhere else.
-func (c *call) rowPayload(row SessionRow) map[string]any {
+func (c *call) rowPayload(row assistant.SessionRow) map[string]any {
 	out := map[string]any{
 		"session_id": row.ID,
-		"name":       displayFor(row),
+		"name":       assistant.DisplayFor(row),
 	}
 	if row.ProjectName != "" {
 		out["project"] = row.ProjectName
@@ -605,67 +607,24 @@ func (c *call) rowPayload(row SessionRow) map[string]any {
 // attentionPhrase says why a session is waiting, the way a person would.
 func attentionPhrase(attention string) string {
 	switch attention {
-	case AttentionApproval:
+	case assistant.AttentionApproval:
 		return "an approval it cannot get over a call"
-	case AttentionQuestion:
+	case assistant.AttentionQuestion:
 		return "an answer to a question"
-	case AttentionUnread:
+	case assistant.AttentionUnread:
 		return "someone to read what it finished"
 	default:
 		return attention
 	}
 }
 
-// displayFor is what to call a session out loud. Never its id: an id read aloud
-// is noise, and the listener cannot act on it.
-//
-// **It always places the session in its project**, and that is the half that
-// matters. Session names are auto-generated from a first prompt, so they are
-// forgettable and often similar; the project is the word the operator is
-// actually holding in their head. A confirmation that said "Live Melodikrysset
-// Sessions" was true and useless to someone who had just asked about Agentique,
-// where "Live Melodikrysset Sessions in riff" is caught in the one second it is
-// still worth catching.
-func displayFor(row SessionRow) string {
-	project := row.ProjectName
-	if project == "" {
-		project = row.ProjectSlug
-	}
-	switch {
-	case row.Name != "" && project != "":
-		return row.Name + " in " + project
-	case row.Name != "":
-		return row.Name
-	case project != "":
-		return "an unnamed session in " + project
-	default:
-		return "an unnamed session"
-	}
-}
-
 // machineWords names the machine a session runs on, for a sentence that has to
 // explain why work cannot start there.
-func machineWords(row SessionRow) string {
+func machineWords(row assistant.SessionRow) string {
 	if row.MachineName != "" {
 		return row.MachineName
 	}
 	return "another machine"
-}
-
-// normalizeFilter resolves what the model asked for. Anything unrecognised is
-// "recent": a mis-transcribed filter must not come back as an empty list, which
-// over a call is indistinguishable from "there is nothing".
-func normalizeFilter(filter string) string {
-	switch strings.ToLower(strings.TrimSpace(filter)) {
-	case FilterNeedsAttention, "attention", "waiting", "needs attention":
-		return FilterNeedsAttention
-	case FilterRunning, "busy", "working":
-		return FilterRunning
-	case FilterAll, "everything":
-		return FilterAll
-	default:
-		return FilterRecent
-	}
 }
 
 // stringArg reads one string argument, tolerating the model sending something

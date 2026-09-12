@@ -6,13 +6,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 	// The whole reason delivery is reported rather than inferred is that these
 	// are three different sentences to a listener.
 	seen := map[string]bool{}
-	for _, d := range []Delivery{DeliveryTurn, DeliveryMidTurn, DeliveryQueued} {
+	for _, d := range []assistant.Delivery{assistant.DeliveryTurn, assistant.DeliveryMidTurn, assistant.DeliveryQueued} {
 		s := d.Spoken()
 		if s == "" {
 			t.Errorf("%q has nothing to say", d)
@@ -22,7 +24,7 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 		}
 		seen[s] = true
 	}
-	if !strings.Contains(strings.ToLower(DeliveryQueued.Spoken()), "queue") {
+	if !strings.Contains(strings.ToLower(assistant.DeliveryQueued.Spoken()), "queue") {
 		t.Error("a queued prompt must say it is waiting, or the user thinks it started")
 	}
 }
@@ -30,7 +32,7 @@ func TestDeliverySpokenDistinguishesTheThreeOutcomes(t *testing.T) {
 // The second after a yes is the one moment silence is read as failure, so the
 // tool answers with a sentence to say rather than a status to interpret.
 func TestDeliveryConfirmationIsAStatementNamingTheSession(t *testing.T) {
-	got := DeliveryTurn.Confirmation("Live Voice Dialog")
+	got := assistant.DeliveryTurn.Confirmation("Live Voice Dialog")
 	lower := strings.ToLower(got)
 	for _, want := range []string{
 		"live voice dialog", // they cannot see which session has it
@@ -41,13 +43,13 @@ func TestDeliveryConfirmationIsAStatementNamingTheSession(t *testing.T) {
 			t.Errorf("confirmation is missing %q: %s", want, got)
 		}
 	}
-	if !strings.Contains(lower, strings.ToLower(DeliveryTurn.Clause())) {
+	if !strings.Contains(lower, strings.ToLower(assistant.DeliveryTurn.Clause())) {
 		t.Errorf("confirmation does not say what happened to the prompt: %s", got)
 	}
 
 	// An unnamed session degrades to the focus. Never a blank, and never an id —
-	// displayFor already guarantees the caller cannot hand one over.
-	blank := strings.ToLower(DeliveryTurn.Confirmation("   "))
+	// assistant.DisplayFor already guarantees the caller cannot hand one over.
+	blank := strings.ToLower(assistant.DeliveryTurn.Confirmation("   "))
 	if !strings.Contains(blank, "focused") {
 		t.Errorf("an unnamed session must still be referred to: %s", blank)
 	}
@@ -57,7 +59,7 @@ func TestDeliveryConfirmationIsAStatementNamingTheSession(t *testing.T) {
 // conflating any two of them is a lie about whether anything is happening.
 func TestDeliveryClauseDistinguishesTheThreeOutcomes(t *testing.T) {
 	seen := map[string]bool{}
-	for _, d := range []Delivery{DeliveryTurn, DeliveryMidTurn, DeliveryQueued} {
+	for _, d := range []assistant.Delivery{assistant.DeliveryTurn, assistant.DeliveryMidTurn, assistant.DeliveryQueued} {
 		clause := d.Clause()
 		if clause == "" {
 			t.Errorf("%q has no clause", d)
@@ -67,10 +69,10 @@ func TestDeliveryClauseDistinguishesTheThreeOutcomes(t *testing.T) {
 		}
 		seen[clause] = true
 	}
-	if !strings.Contains(strings.ToLower(DeliveryQueued.Clause()), "queue") {
+	if !strings.Contains(strings.ToLower(assistant.DeliveryQueued.Clause()), "queue") {
 		t.Error("a queued prompt must say it is waiting, or the user thinks it started")
 	}
-	if strings.Contains(strings.ToLower(DeliveryQueued.Clause()), "has started") {
+	if strings.Contains(strings.ToLower(assistant.DeliveryQueued.Clause()), "has started") {
 		t.Error("queued work must never be confirmed as started")
 	}
 }
@@ -98,8 +100,8 @@ func TestSystemInstructionCarriesTheLoadBearingRules(t *testing.T) {
 // The greeting cue is the trigger, because the speech model has no "call
 // opened" event: the first injected text is what makes it speak at all.
 func TestGreetingCueSaysWhatToSayAndStops(t *testing.T) {
-	focused := greetingCue("Live Voice Dialog")
-	unfocused := greetingCue("")
+	focused := greetingCue("Live Voice Dialog", "")
+	unfocused := greetingCue("", "")
 
 	for _, cue := range []string{focused, unfocused} {
 		lower := strings.ToLower(cue)
@@ -285,7 +287,7 @@ func TestSystemInstructionIncludesProjectContext(t *testing.T) {
 
 type fakeDispatcher struct {
 	mu        sync.Mutex
-	delivery  Delivery
+	delivery  assistant.Delivery
 	dispErr   error
 	autoOK    bool
 	autoWhy   string
@@ -298,7 +300,7 @@ type fakeDispatcher struct {
 	projectContext string
 }
 
-func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string, withReporting bool) (Delivery, error) {
+func (f *fakeDispatcher) Dispatch(_ context.Context, _, prompt string, withReporting bool) (assistant.Delivery, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -324,15 +326,15 @@ func (f *fakeDispatcher) dispatched() (int, string) {
 
 // newTestCall builds a call with no socket. sendControl writes to a nil socket;
 // every path through runTool tolerates that failing.
-func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
+func newTestCall(d assistant.Dispatcher, registry *assistant.Registry, focus string) *call {
 	return &call{
 		engine:          NewEchoEngine(),
 		registry:        registry,
 		dispatcher:      d,
 		focus:           focus,
 		follows:         make(map[string]*followState),
-		offered:         make(map[string]SessionRow),
-		offeredProjects: make(map[string]ProjectRow),
+		offered:         make(map[string]assistant.SessionRow),
+		offeredProjects: make(map[string]assistant.ProjectRow),
 		summaries:       make(map[string]string),
 		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
 		log:             testLogger(),
@@ -341,14 +343,14 @@ func newTestCall(d Dispatcher, registry *Registry, focus string) *call {
 }
 
 // toolCall exercises runTool against a call wired to the given dispatcher.
-func toolCall(t *testing.T, d Dispatcher, target string, args map[string]any) map[string]any {
+func toolCall(t *testing.T, d assistant.Dispatcher, target string, args map[string]any) map[string]any {
 	t.Helper()
-	c := newTestCall(d, NewRegistry(), target)
+	c := newTestCall(d, assistant.NewRegistry(), target)
 	return c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: args})
 }
 
 func TestRunPromptDispatchesAndReportsDelivery(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryQueued}
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryQueued}
 	got := toolCall(t, d, "sess-1", map[string]any{
 		"prompt":       "  fix the reconnect  ",
 		"stay_on_line": true,
@@ -386,7 +388,7 @@ func TestRunPromptRefusesASessionThatWouldStopAndAsk(t *testing.T) {
 }
 
 func TestRunPromptRejectsAnEmptyPrompt(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
 	for _, arg := range []map[string]any{
 		{"prompt": "   "},
 		{},
@@ -406,7 +408,7 @@ func TestRunPromptRejectsAnEmptyPrompt(t *testing.T) {
 // must carry no reporting instruction at all.
 func TestStayOnLineDecidesReporting(t *testing.T) {
 	for _, staying := range []bool{true, false} {
-		d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+		d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
 		got := toolCall(t, d, "sess-1", map[string]any{
 			"prompt":       "do the thing",
 			"stay_on_line": staying,
@@ -426,7 +428,7 @@ func TestStayOnLineDecidesReporting(t *testing.T) {
 // Hanging up must be said, not silently implied — otherwise the listener waits
 // for updates that are never coming.
 func TestHangingUpSaysThereWillBeNoUpdates(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
 	got := toolCall(t, d, "sess-1", map[string]any{
 		"prompt":       "do the thing",
 		"stay_on_line": false,
@@ -441,8 +443,8 @@ func TestHangingUpSaysThereWillBeNoUpdates(t *testing.T) {
 // that gets said out loud — and the assistant no longer asks, which means most
 // dispatches arrive with the field omitted entirely.
 func TestAbsentStayOnLineKeepsFollowing(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
-	c := newTestCall(d, NewRegistry(), "sess-1")
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
+	c := newTestCall(d, assistant.NewRegistry(), "sess-1")
 	got := c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{
 		"prompt": "do the thing",
 	}})
@@ -466,7 +468,7 @@ func TestAbsentStayOnLineKeepsFollowing(t *testing.T) {
 }
 
 func TestRunPromptWithoutASessionSaysSo(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
 	got := toolCall(t, d, "", map[string]any{"prompt": "do the thing"})
 	if _, ok := got["error"]; !ok {
 		t.Errorf("result = %v, want an error when no session is attached", got)
@@ -487,7 +489,7 @@ func TestEveryToolPathAnswers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := newTestCall(tc.d, NewRegistry(), "sess-1")
+			c := newTestCall(tc.d, assistant.NewRegistry(), "sess-1")
 			got := c.runTool(tc.ev)
 			if len(got) == 0 {
 				t.Fatal("no response payload — the model would stay paused forever")
@@ -499,8 +501,8 @@ func TestEveryToolPathAnswers(t *testing.T) {
 // The reporting instruction is a page of prose and the worker keeps the first
 // copy in context, so a second dispatch on the same call must not repeat it.
 func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
-	c := newTestCall(d, NewRegistry(), "sess-1")
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
+	c := newTestCall(d, assistant.NewRegistry(), "sess-1")
 	args := map[string]any{"prompt": "do the thing", "stay_on_line": true}
 
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: args})
@@ -527,8 +529,8 @@ func TestTheWorkerIsBriefedOncePerCall(t *testing.T) {
 // went nowhere — the listener asked for progress and got nothing, because the
 // binding had been quietly released underneath them.
 func TestASecondDispatchCannotUnfollowARunningOne(t *testing.T) {
-	registry := NewRegistry()
-	d := &fakeDispatcher{autoOK: true, delivery: DeliveryTurn}
+	registry := assistant.NewRegistry()
+	d := &fakeDispatcher{autoOK: true, delivery: assistant.DeliveryTurn}
 	c := newTestCall(d, registry, "sess-1")
 
 	c.runTool(ToolCallEvent{ID: "1", Name: ToolRunPrompt, Args: map[string]any{

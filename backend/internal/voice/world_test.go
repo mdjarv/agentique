@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // speakingEngine is an echo engine that can also be handed text, so a test can
@@ -54,9 +56,9 @@ func (e *speakingEngine) waitForSpeech(t *testing.T, want int) []string {
 func newWorldCall(engine Engine) *call {
 	return &call{
 		engine:    engine,
-		registry:  NewRegistry(),
+		registry:  assistant.NewRegistry(),
 		follows:   make(map[string]*followState),
-		offered:   make(map[string]SessionRow),
+		offered:   make(map[string]assistant.SessionRow),
 		summaries: make(map[string]string),
 		log:       testLogger(),
 		runCtx:    context.Background(),
@@ -164,7 +166,7 @@ func TestViewingSaysNothingWhenThereIsNothingToSay(t *testing.T) {
 // supplies the truth about its own. Where both have a row, the local one wins.
 func TestMergedRowsPreferTheLocalTruth(t *testing.T) {
 	c := newWorldCall(NewEchoEngine())
-	c.directory = &fakeDirectory{rows: []SessionRow{
+	c.directory = &fakeDirectory{rows: []assistant.SessionRow{
 		{ID: "sess-local", Name: "Local Truth", MachineName: "here", LastActivity: "2026-08-26T10:00:00Z"},
 	}}
 	c.setWorld([]wireSessionRow{
@@ -172,11 +174,11 @@ func TestMergedRowsPreferTheLocalTruth(t *testing.T) {
 		{SessionID: "sess-remote", Name: "Remote Work", MachineName: "laptop", LastActivityAt: "2026-08-26T09:00:00Z"},
 	})
 
-	rows := c.mergedRows(context.Background(), FilterAll)
+	rows := c.mergedRows(context.Background(), assistant.FilterAll)
 	if len(rows) != 2 {
 		t.Fatalf("merged %d rows, want 2: %v", len(rows), rows)
 	}
-	byID := map[string]SessionRow{}
+	byID := map[string]assistant.SessionRow{}
 	for _, row := range rows {
 		byID[row.ID] = row
 	}
@@ -190,11 +192,11 @@ func TestMergedRowsPreferTheLocalTruth(t *testing.T) {
 
 // fakeDirectory answers from a fixed set of rows.
 type fakeDirectory struct {
-	rows      []SessionRow
-	projects  []ProjectRow
+	rows      []assistant.SessionRow
+	projects  []assistant.ProjectRow
 	summaries map[string]string
 	// families is what a spoken model name may be, standing in for the model
-	// catalog. Anything else comes back as an UnknownModelError.
+	// catalog. Anything else comes back as an assistant.UnknownModelError.
 	families []string
 	// createErr, when set, is what CreateSession fails with.
 	createErr error
@@ -214,8 +216,8 @@ type createdSession struct {
 
 func (f *fakeDirectory) Orientation(context.Context) string { return "Two sessions, none waiting." }
 
-func (f *fakeDirectory) ListSessions(_ context.Context, filter string) []SessionRow {
-	var out []SessionRow
+func (f *fakeDirectory) ListSessions(_ context.Context, filter string) []assistant.SessionRow {
+	var out []assistant.SessionRow
 	for _, row := range f.sessions() {
 		if matchesFilter(row, filter) {
 			out = append(out, row)
@@ -224,21 +226,21 @@ func (f *fakeDirectory) ListSessions(_ context.Context, filter string) []Session
 	return out
 }
 
-func (f *fakeDirectory) SessionBrief(_ context.Context, id string) (SessionRow, bool) {
+func (f *fakeDirectory) SessionBrief(_ context.Context, id string) (assistant.SessionRow, bool) {
 	for _, row := range f.sessions() {
 		if row.ID == id {
 			return row, true
 		}
 	}
-	return SessionRow{}, false
+	return assistant.SessionRow{}, false
 }
 
 // sessions is every row the directory knows, including the ones it created —
 // the real one reads a database, where a session exists the moment it is made.
-func (f *fakeDirectory) sessions() []SessionRow {
+func (f *fakeDirectory) sessions() []assistant.SessionRow {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]SessionRow(nil), f.rows...)
+	return append([]assistant.SessionRow(nil), f.rows...)
 }
 
 func (f *fakeDirectory) Summarize(_ context.Context, id string, deliver func(string)) {
@@ -248,11 +250,11 @@ func (f *fakeDirectory) Summarize(_ context.Context, id string, deliver func(str
 	go deliver(f.summaries[id])
 }
 
-func (f *fakeDirectory) ListProjects(context.Context) []ProjectRow { return f.projects }
+func (f *fakeDirectory) ListProjects(context.Context) []assistant.ProjectRow { return f.projects }
 
-func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string) (SessionRow, error) {
+func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string) (assistant.SessionRow, error) {
 	if f.createErr != nil {
-		return SessionRow{}, f.createErr
+		return assistant.SessionRow{}, f.createErr
 	}
 
 	family := "Opus"
@@ -265,12 +267,12 @@ func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string
 			}
 		}
 		if matched == "" {
-			return SessionRow{}, &UnknownModelError{Spoken: model, Families: f.families}
+			return assistant.SessionRow{}, &assistant.UnknownModelError{Spoken: model, Families: f.families}
 		}
 		family = matched
 	}
 
-	var project ProjectRow
+	var project assistant.ProjectRow
 	for _, row := range f.projects {
 		if row.ID == projectID {
 			project = row
@@ -280,7 +282,7 @@ func (f *fakeDirectory) CreateSession(_ context.Context, projectID, model string
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created = append(f.created, createdSession{projectID: projectID, model: model})
-	row := SessionRow{
+	row := assistant.SessionRow{
 		ID:          fmt.Sprintf("new-%d", len(f.created)),
 		ProjectName: project.Name,
 		ProjectSlug: project.Slug,

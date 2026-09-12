@@ -549,6 +549,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalTeams:   fileCfg.Experimental.Teams,
 		ExperimentalBrowser: fileCfg.Experimental.Browser,
 		ExperimentalVoice:   envBoolOr("AGENTIQUE_EXPERIMENTAL_VOICE", fileCfg.Experimental.Voice),
+		ExperimentalAssistant: envBoolOr("AGENTIQUE_EXPERIMENTAL_ASSISTANT",
+			fileCfg.Experimental.Assistant),
 		Voice: config.VoiceConfig{
 			Backend:      firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_BACKEND"), fileCfg.Voice.Backend),
 			APIKey:       firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_API_KEY"), fileCfg.Voice.APIKey),
@@ -703,6 +705,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 			slog.Warn("orphan CLI reap skipped", "error", err)
 		case n > 0:
 			slog.Info("reaped orphaned CLI process groups on startup", "count", n)
+		}
+
+		// The assistant head's MCP config files. Its id is a fresh uuid per
+		// start, so an ungraceful exit leaves one under a name nothing reuses;
+		// the token in it died with the process that minted it (the store is in
+		// memory), so this is litter. Here rather than in server.New for the
+		// same reason as everything else in this block.
+		switch n, err := server.SweepHeadCredentials(); {
+		case err != nil:
+			slog.Warn("assistant head credential sweep incomplete", "error", err)
+		case n > 0:
+			slog.Info("removed stale assistant head credential files", "count", n)
 		}
 	} else if !testMode {
 		slog.Info("startup reclaim skipped — not the canonical server for this data dir",

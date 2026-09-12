@@ -4,8 +4,12 @@ INSERT INTO channels (id, name, project_id) VALUES (?, ?, ?) RETURNING *;
 -- name: GetChannel :one
 SELECT * FROM channels WHERE id = ?;
 
+-- Ordinary channels only. The assistant's conversation is a channel with
+-- kind = 'assistant' and is not one of a project's channels: it has no project,
+-- it has no roster, and a row for it in the channel list would offer every
+-- channel gesture (dissolve, add a member) against the thread.
 -- name: ListChannelsByProject :many
-SELECT * FROM channels WHERE project_id = ? ORDER BY created_at ASC;
+SELECT * FROM channels WHERE project_id = ? AND kind = '' ORDER BY created_at ASC;
 
 -- name: DeleteChannel :exec
 DELETE FROM channels WHERE id = ?;

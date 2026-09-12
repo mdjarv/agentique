@@ -166,6 +166,17 @@ type ExperimentalConfig struct {
 	// and its browser affordance exist only when this is on; talking to a
 	// speech model additionally needs credentials in [voice].
 	Voice bool `toml:"voice"`
+	// Assistant enables the durable assistant (docs/assistant.md): the
+	// conversation thread, the journal, the verb table and the head. Off means
+	// UNBUILT, on the brain's precedent — no /assistant route, no assistant.*
+	// WS ops, no verb tools, and `features.assistant` false in /api/health,
+	// because an unmounted /api/ path falls through to the SPA and answers
+	// text/html with a 200 rather than a 404.
+	//
+	// The session-facing AssistantReport tool is the one exception, and it is
+	// not this switch's: it is registered wherever a run can be followed, which
+	// includes a live call on a server whose assistant is off.
+	Assistant bool `toml:"assistant"`
 }
 
 // ClaudeConfig carries flags handed to the claude CLI when a session's provider

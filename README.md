@@ -487,6 +487,10 @@ teams   = false  # Teams tab and multi-agent channel coordination
 browser = false  # the in-app browser panel
 voice   = false  # live spoken dialog (docs/voice.md). Adds a Live button to the
                  # composer; /dev/voice stays a loopback check for the audio path.
+assistant = false  # the durable assistant (docs/assistant.md): the /assistant
+                   # thread, the journal, the head and its verbs. Off means
+                   # unbuilt — no route, no assistant.* WS ops, no verb tools.
+                   # A live call keeps its own report tool either way.
 
 [claude]
 autocompact = ""     # "auto", or a token count between 100000 and 1000000.

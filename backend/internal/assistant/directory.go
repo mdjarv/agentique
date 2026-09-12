@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"context"
@@ -6,21 +6,20 @@ import (
 	"strings"
 )
 
-// Directory is what the call knows about the sessions on this machine.
+// Directory is what the assistant knows about the sessions on this machine.
 //
 // It is a seam, not a convenience. This package must stay independent of the
 // session pipeline — the same reason [Delivery] mirrors session.MessageDelivery
-// rather than importing it — so the assistant asks four questions in its own
+// rather than importing it — so the assistant asks its questions in its own
 // vocabulary and the server answers them.
 //
 // Every method degrades to nothing rather than failing: a directory that cannot
 // read the database makes the assistant vaguer, never mute. A nil Directory is
-// valid and means the call can talk about the session it opened on and nothing
-// else.
+// valid and means the assistant can talk about nothing it was not told.
 type Directory interface {
-	// Orientation is one short paragraph the drafter is given at call open:
-	// how many sessions there are and which of them are waiting on the
-	// operator. It is spoken material, so it is prose and it is brief.
+	// Orientation is one short paragraph a head is given when it starts: how
+	// many sessions there are and which of them are waiting on the operator. It
+	// may be spoken, so it is prose and it is brief.
 	Orientation(ctx context.Context) string
 
 	// ListSessions answers a filter — [FilterNeedsAttention], [FilterRunning],
@@ -46,7 +45,7 @@ type Directory interface {
 	// ListProjects answers "where could a new session go", most recently worked
 	// in first. LOCAL projects only: a session is created through this server's
 	// session service, so a repository checked out on another machine is not a
-	// place this call can start one.
+	// place the assistant can start one.
 	//
 	// Like every other method here it degrades to nothing rather than failing.
 	ListProjects(ctx context.Context) []ProjectRow
@@ -85,11 +84,15 @@ func (e *UnknownModelError) Error() string {
 			"Ask them to pick the model on screen instead.", e.Spoken)
 	}
 	return fmt.Sprintf("There is no model called %q. The ones available are %s. "+
-		"Ask which of those they want; do not choose for them.", e.Spoken, spokenList(e.Families))
+		"Ask which of those they want; do not choose for them.", e.Spoken, SpokenList(e.Families))
 }
 
-// spokenList renders a short list the way a person reads one out.
-func spokenList(items []string) string {
+// SpokenList renders a short list the way a person reads one out.
+//
+// Exported because a refusal is written to be said, and every surface that
+// writes one ("more than one project could be that -- a, b and c") has to read
+// a list the same way.
+func SpokenList(items []string) string {
 	switch len(items) {
 	case 0:
 		return ""
@@ -99,7 +102,7 @@ func spokenList(items []string) string {
 	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
-// ProjectRow is one project as the voice assistant sees it: enough to name it,
+// ProjectRow is one project as the assistant sees it: enough to name it,
 // tell it from a similarly-named one, and rank it by how recently it was worked
 // in. Not enough to render it — that is the browser's job.
 //
@@ -119,8 +122,8 @@ type ProjectRow struct {
 	LastActivity string
 }
 
-// displayName is what to call a project out loud.
-func (r ProjectRow) displayName() string {
+// DisplayName is what to call a project.
+func (r ProjectRow) DisplayName() string {
 	if r.Name != "" {
 		return r.Name
 	}
@@ -142,6 +145,25 @@ const (
 	// FilterAll: everything not filed away.
 	FilterAll = "all"
 )
+
+// NormalizeFilter resolves what a head asked for.
+//
+// Anything unrecognised is [FilterRecent]: a mis-transcribed or invented
+// filter must not come back as an empty list, which is indistinguishable from
+// "there is nothing" — and "there is nothing" is the one answer here that
+// makes an assistant look broken when it is not.
+func NormalizeFilter(filter string) string {
+	switch strings.ToLower(strings.TrimSpace(filter)) {
+	case FilterNeedsAttention, "attention", "waiting", "needs attention":
+		return FilterNeedsAttention
+	case FilterRunning, "busy", "working":
+		return FilterRunning
+	case FilterAll, "everything":
+		return FilterAll
+	default:
+		return FilterRecent
+	}
+}
 
 // Attention is why a session is waiting on the operator, in the vocabulary the
 // deck's "Needs you" band uses. Ordered the way lib/session/priority.ts orders
@@ -174,11 +196,11 @@ func AttentionRank(attention string) int {
 	}
 }
 
-// stateRunning is the one session state this package reasons about: a turn is
+// StateRunning is the one session state this package reasons about: a turn is
 // in flight. Every other state it only repeats.
-const stateRunning = "running"
+const StateRunning = "running"
 
-// SessionRow is one session as the voice assistant sees it: enough to name it,
+// SessionRow is one session as the assistant sees it: enough to name it,
 // tell it apart from a session with a similar name on another machine, and say
 // what it is doing. Not enough to render it — that is the browser's job.
 //
@@ -213,5 +235,32 @@ type SessionRow struct {
 	LastActivity string
 }
 
-// hasAttention reports whether this session is waiting on the operator.
-func (r SessionRow) hasAttention() bool { return r.Attention != "" }
+// HasAttention reports whether this session is waiting on the operator.
+func (r SessionRow) HasAttention() bool { return r.Attention != "" }
+
+// DisplayFor is what to call a session. Never its id: an id is noise to a
+// listener and to a reader, and neither can act on it.
+//
+// **It always places the session in its project**, and that is the half that
+// matters. Session names are auto-generated from a first prompt, so they are
+// forgettable and often similar; the project is the word the operator is
+// actually holding in their head. A confirmation that said "Live Melodikrysset
+// Sessions" was true and useless to someone who had just asked about Agentique,
+// where "Live Melodikrysset Sessions in riff" is caught in the one second it is
+// still worth catching.
+func DisplayFor(row SessionRow) string {
+	project := row.ProjectName
+	if project == "" {
+		project = row.ProjectSlug
+	}
+	switch {
+	case row.Name != "" && project != "":
+		return row.Name + " in " + project
+	case row.Name != "":
+		return row.Name
+	case project != "":
+		return "an unnamed session in " + project
+	default:
+		return "an unnamed session"
+	}
+}

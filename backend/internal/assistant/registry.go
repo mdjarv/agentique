@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"fmt"
@@ -30,10 +30,13 @@ type Follower interface {
 	NotifyRuntime(sessionID string, n Notice) error
 }
 
-// Registry routes a working session's reports to whatever calls are following
-// it.
+// Registry routes a working session's reports to whatever is following it.
 //
-// Reports flow the opposite way from everything else in this package: the
+// It outlives any one surface. A report that arrives between calls still has a
+// home, because the assistant journals it whether or not anyone is live; this
+// is only the live half.
+//
+// Reports flow the opposite way from everything else here: the
 // worker decides what is worth saying and pushes it, rather than a watcher
 // inferring salience from an event stream. The worker is the only party that
 // knows it just found the tests were already broken, so the judgement lives
@@ -101,20 +104,41 @@ func (r *Registry) Report(sessionID, kind, headline string) (string, error) {
 		return "", err
 	}
 
+	if !r.Listening(sessionID) {
+		return "Nobody is on the call for this session, so that was not spoken. You can stop reporting for this run.", nil
+	}
+	if !r.Take(sessionID) {
+		return "Reporting too often — that one was dropped. Save the next call for something that changes what the listener would do.", nil
+	}
+	return r.Deliver(sessionID, report)
+}
+
+// Take spends one report from sessionID's budget, answering false when it is
+// empty.
+//
+// Separate from [Registry.Deliver] because the budget is not the delivery's:
+// the assistant keeps a followed run's report in the journal whether or not
+// anybody is live, and that durable write needs the same one ceiling. Two
+// budgets would be two answers to "how often may this run report".
+func (r *Registry) Take(sessionID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.takeToken(sessionID)
+}
+
+// Deliver hands a parsed report to every follower of sessionID and returns the
+// message for the worker. It spends no budget: the caller has already taken one.
+func (r *Registry) Deliver(sessionID string, report Report) (string, error) {
 	r.mu.Lock()
 	followers := make([]Follower, 0, len(r.followers[sessionID]))
 	for f := range r.followers[sessionID] {
 		followers = append(followers, f)
 	}
+	r.mu.Unlock()
+
 	if len(followers) == 0 {
-		r.mu.Unlock()
 		return "Nobody is on the call for this session, so that was not spoken. You can stop reporting for this run.", nil
 	}
-	if !r.takeToken(sessionID) {
-		r.mu.Unlock()
-		return "Reporting too often — that one was dropped. Save the next call for something that changes what the listener would do.", nil
-	}
-	r.mu.Unlock()
 
 	var failures int
 	for _, f := range followers {

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash } from "lucide-react";
+import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { SyncDock } from "~/components/layout/git/SyncDock";
@@ -61,6 +61,9 @@ function SidebarHeader() {
   // The brain is off by default, and off means the server mounts no /api/brain
   // routes — so the row is absent rather than leading somewhere that errors.
   const brainEnabled = useFeatureStore((s) => s.features.brain);
+  // Same rule, same reason: off means the server mounts nothing, so the row is
+  // absent rather than leading to a page with no ops behind it.
+  const assistantEnabled = useFeatureStore((s) => s.features.assistant);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
   return (
@@ -117,6 +120,15 @@ function SidebarHeader() {
               <span className="ml-auto text-muted-foreground-faint">add a repo</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {assistantEnabled && (
+              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
+                <Link to="/assistant">
+                  <Sparkles className="size-3.5" />
+                  Assistant
+                  <span className="ml-auto text-muted-foreground-faint">the thread</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/teams">
                 <Hash className="size-3.5" />

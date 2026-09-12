@@ -908,6 +908,20 @@ export interface WireListPayload {
   limit: number;
 }
 
+export interface AssistantSayPayload {
+  text?: string;
+}
+
+export interface AssistantHistoryPayload {
+  before?: string;
+  limit?: number;
+}
+
+export interface AssistantJournalPayload {
+  since?: string;
+  limit?: number;
+}
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -1130,6 +1144,48 @@ export interface PushBrowserProvisioning {
   state: string;
 }
 
+export interface AssistantMessage {
+  id?: string;
+  role?: string;
+  text?: string;
+  surface?: string;
+  callId?: string;
+  createdAt?: string;
+}
+
+export interface AssistantDelta {
+  surface?: string;
+  text?: string;
+}
+
+export interface AssistantJournalEntry {
+  id?: number;
+  at?: string;
+  kind?: string;
+  sessionId?: string;
+  projectId?: string;
+  summary?: string;
+  payload?: Record<string, unknown>;
+  untrusted?: boolean;
+  notable?: boolean;
+}
+
+export interface AssistantPage {
+  messages?: AssistantMessage[];
+  before?: string;
+}
+
+export interface AssistantUpdate {
+  journal?: AssistantJournalEntry[];
+  messages?: AssistantMessage[];
+  since?: string;
+  lookedAt?: string;
+}
+
+export interface AssistantJournalResult {
+  entries?: AssistantJournalEntry[];
+}
+
 export interface ScheduleInfo {
   id: string;
   projectId: string;
@@ -1226,6 +1282,9 @@ export interface PushEventMap {
   "browser.frame": PushBrowserFrame;
   "browser.stopped": PushBrowserStopped;
   "browser.provisioning": PushBrowserProvisioning;
+  "assistant.message": AssistantMessage;
+  "assistant.delta": AssistantDelta;
+  "assistant.journal": AssistantJournalEntry;
   "schedule.updated": ScheduleInfo;
   "schedule.deleted": ScheduleInfo;
   "schedule.run": ScheduleRunInfo;

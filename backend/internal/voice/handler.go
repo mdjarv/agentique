@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -76,16 +77,44 @@ type Options struct {
 	Persona Persona
 	// Dispatcher hands a drafted prompt to the session that does the work.
 	// Nil leaves the call conversational — it can talk, but cannot start work.
-	Dispatcher Dispatcher
+	Dispatcher assistant.Dispatcher
 	// Registry routes a followed session's progress reports into live calls.
 	// Nil disables following — a call still works, it just hears nothing from
 	// the sessions it starts.
-	Registry *Registry
+	//
+	// It is the server's ONE registry rather than this handler's own, because
+	// the registry outlives the call: a report that arrives between calls lands
+	// in the assistant's journal, and the next call's greeting can say it.
+	Registry *assistant.Registry
 	// Directory is what this machine knows about its own sessions. Nil is
 	// valid: the assistant's directory tools then answer, in words, that they
 	// are not available, and the call is exactly the single-session call it was
 	// before.
-	Directory Directory
+	Directory assistant.Directory
+	// Conversation is the assistant's shared conversation, which a call both
+	// writes to and reads from: each completed utterance is mirrored in with
+	// metadata.surface = "voice", and the greeting reads what this surface has
+	// missed since it last looked.
+	//
+	// Nil is valid and means a call keeps no record beyond its own transcript —
+	// which is what a server with the assistant switched off has.
+	Conversation Conversation
+}
+
+// Conversation is the assistant's shared conversation as a call uses it.
+//
+// Narrow on purpose, and satisfied by *assistant.Service. A call is a HEAD on
+// the assistant (docs/assistant.md), so it brings its own model and reaches the
+// core for everything that is not speech; what it needs of the conversation is
+// exactly two things — write down what was said, and find out what has happened
+// since.
+type Conversation interface {
+	// Mirror writes one turn that happened somewhere else into the
+	// conversation. role is [assistant.RoleUser] or [assistant.RoleAssistant].
+	Mirror(ctx context.Context, surface, callID, role, text string) (assistant.Message, error)
+	// SinceLast is what this surface has missed, and it stamps the surface as
+	// having looked.
+	SinceLast(ctx context.Context, surface string) (assistant.Update, error)
 }
 
 // Handler serves the live voice socket.

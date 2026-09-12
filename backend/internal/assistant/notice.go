@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 // NoticeKind is a runtime fact about a followed session.
 //
@@ -23,11 +23,11 @@ const (
 	NoticeBlocked NoticeKind = "blocked"
 )
 
-// priority orders notices by how much they demand of the listener, matching
+// Priority orders notices by how much they demand of the listener, matching
 // lib/session/priority.ts: the thing that holds a process outranks the thing
 // that already stopped. One rule, both surfaces — a session that says "needs
 // approval" in the rail cannot say something else in your ear.
-func (k NoticeKind) priority() int {
+func (k NoticeKind) Priority() int {
 	switch k {
 	case NoticeBlocked:
 		return 0
@@ -40,9 +40,9 @@ func (k NoticeKind) priority() int {
 	}
 }
 
-// endsWork reports whether this notice means the run is over, so the call can
+// EndsWork reports whether this notice means the run is over, so the call can
 // go back to treating silence as abandonment rather than as work in progress.
-func (k NoticeKind) endsWork() bool {
+func (k NoticeKind) EndsWork() bool {
 	return k == NoticeFinished || k == NoticeFailed
 }
 

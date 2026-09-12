@@ -59,6 +59,13 @@ const (
 	// AgentiqueSessionModelTool reports which upstream model a session runs on.
 	// A pure read of agentique's own metadata, so it auto-allows.
 	AgentiqueSessionModelTool = "mcp__" + AgentiqueMCPServerName + "__SessionModel"
+	// AgentiqueAssistantReportTool hands one sentence to the assistant while it
+	// is following this run (docs/assistant.md). Auto-allowed, on
+	// ScheduleReport's grounds: it writes nothing but a line the operator reads,
+	// and the instruction teaching it rides every prompt the assistant
+	// dispatches — so a run in a mode that still asks would stop on a permission
+	// prompt for a report nobody can approve from the surface that asked for it.
+	AgentiqueAssistantReportTool = "mcp__" + AgentiqueMCPServerName + "__AssistantReport"
 )
 
 // ChannelMCPConfig returns the MCP config JSON that starts the legacy stdio

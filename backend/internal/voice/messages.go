@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // Control message types. Audio never appears here — it rides binary frames.
@@ -148,8 +150,8 @@ type wireSessionRow struct {
 }
 
 // toRow clamps one snapshot row into the shape the rest of the package uses.
-func (w wireSessionRow) toRow() SessionRow {
-	return SessionRow{
+func (w wireSessionRow) toRow() assistant.SessionRow {
+	return assistant.SessionRow{
 		ID:           clampField(w.SessionID),
 		Name:         clampField(w.Name),
 		ProjectSlug:  clampField(w.ProjectSlug),

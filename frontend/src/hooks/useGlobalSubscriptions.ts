@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useSessionSubscriptions } from "~/hooks/session/useSessionSubscriptions";
+import { useAssistantSubscriptions } from "~/hooks/useAssistantSubscriptions";
 import { useBrainSubscriptions } from "~/hooks/useBrainSubscriptions";
 import { useChannelSubscriptions } from "~/hooks/useChannelSubscriptions";
 import { useDiscussionSubscriptions } from "~/hooks/useDiscussionSubscriptions";
@@ -183,6 +184,7 @@ export function useGlobalSubscriptions(projects: Project[]) {
   useDiscussionSubscriptions(ws);
   useTeamSubscriptions(ws);
   useBrainSubscriptions(ws);
+  useAssistantSubscriptions(ws);
   useScheduleSubscriptions(ws);
   useUpdateSubscriptions(ws);
 

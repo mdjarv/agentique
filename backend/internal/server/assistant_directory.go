@@ -8,31 +8,32 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/mdjarv/agentique/backend/internal/voice"
 )
 
 // maxDirectoryRows bounds what one directory answer carries.
 //
-// Everything here is read aloud or fed to the speech model, and a list of forty
-// sessions is neither. The rows are sorted before the cut, so what survives is
-// what the operator most likely meant.
+// Everything here is read aloud or fed to a model, and a list of forty sessions
+// is neither. The rows are sorted before the cut, so what survives is what the
+// operator most likely meant.
 const maxDirectoryRows = 12
 
-// maxOrientationNames bounds how many sessions the call-open paragraph names.
+// maxOrientationNames bounds how many sessions the orientation paragraph names.
 // Past a few it stops being orientation and becomes a list read aloud.
 const maxOrientationNames = 4
 
-// voiceDirectory answers the voice assistant's questions about this machine's
-// sessions.
+// assistantDirectory answers the assistant's questions about this machine's
+// sessions, for every surface on it: the thread, a live call, and the head.
 //
-// It is the server-side half of voice.Directory: the voice package must not
-// import the session pipeline, so this is where a SessionInfo becomes something
-// speakable. Every method degrades to nothing rather than failing — a directory
-// that cannot read the database makes the assistant vaguer, never mute.
-type voiceDirectory struct {
+// It is the server-side half of assistant.Directory. That package must not
+// import the session pipeline — it is the layer a thread, a call and a gateway
+// all attach to — so this is where a SessionInfo becomes something sayable.
+// Every method degrades to nothing rather than failing: a directory that cannot
+// read the database makes the assistant vaguer, never mute.
+type assistantDirectory struct {
 	svc        *session.Service
 	queries    *store.Queries
 	summarizer *sessionSummarizer
@@ -49,10 +50,10 @@ type voiceDirectory struct {
 	machineName func(ctx context.Context) string
 }
 
-func newVoiceDirectory(svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer,
+func newAssistantDirectory(svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer,
 	catalog *providers.Catalog, machineID string, machineName func(ctx context.Context) string,
-) *voiceDirectory {
-	return &voiceDirectory{
+) *assistantDirectory {
+	return &assistantDirectory{
 		svc:         svc,
 		queries:     queries,
 		summarizer:  summarizer,
@@ -62,14 +63,14 @@ func newVoiceDirectory(svc *session.Service, queries *store.Queries, summarizer 
 	}
 }
 
-// Orientation implements voice.Directory: one paragraph, spoken material.
-func (d *voiceDirectory) Orientation(ctx context.Context) string {
+// Orientation implements assistant.Directory: one paragraph, spoken material.
+func (d *assistantDirectory) Orientation(ctx context.Context) string {
 	rows := d.rows(ctx)
 	if len(rows) == 0 {
 		return "There are no sessions on this machine yet."
 	}
 
-	var waiting, running []voice.SessionRow
+	var waiting, running []assistant.SessionRow
 	for _, row := range rows {
 		if row.Attention != "" {
 			waiting = append(waiting, row)
@@ -106,8 +107,8 @@ func (d *voiceDirectory) Orientation(ctx context.Context) string {
 	return b.String()
 }
 
-// ListSessions implements voice.Directory.
-func (d *voiceDirectory) ListSessions(ctx context.Context, filter string) []voice.SessionRow {
+// ListSessions implements assistant.Directory.
+func (d *assistantDirectory) ListSessions(ctx context.Context, filter string) []assistant.SessionRow {
 	rows := d.rows(ctx)
 	kept := rows[:0]
 	for _, row := range rows {
@@ -121,27 +122,27 @@ func (d *voiceDirectory) ListSessions(ctx context.Context, filter string) []voic
 	return kept
 }
 
-// SessionBrief implements voice.Directory. The false return is what "this
+// SessionBrief implements assistant.Directory. The false return is what "this
 // session is not ours" looks like, which is the test for whether work can be
 // started in it from this call.
-func (d *voiceDirectory) SessionBrief(ctx context.Context, id string) (voice.SessionRow, bool) {
+func (d *assistantDirectory) SessionBrief(ctx context.Context, id string) (assistant.SessionRow, bool) {
 	if id == "" {
-		return voice.SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 	info, err := d.svc.GetSessionInfo(ctx, id)
 	if err != nil {
-		return voice.SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 	projects := d.projects(ctx)
 	return d.toRow(ctx, info, projects), true
 }
 
-// Summarize implements voice.Directory.
+// Summarize implements assistant.Directory.
 //
 // It runs on its own goroutine with a detached context: the caller is a tool
 // handler that has already answered, and the request that opened the call is
 // long gone. deliver is called exactly once, whatever happens.
-func (d *voiceDirectory) Summarize(ctx context.Context, id string, deliver func(summary string)) {
+func (d *assistantDirectory) Summarize(ctx context.Context, id string, deliver func(summary string)) {
 	if deliver == nil {
 		return
 	}
@@ -153,17 +154,17 @@ func (d *voiceDirectory) Summarize(ctx context.Context, id string, deliver func(
 	go deliver(d.summarizer.Summary(detached, id))
 }
 
-// ListProjects implements voice.Directory: this machine's projects, most
+// ListProjects implements assistant.Directory: this machine's projects, most
 // recently worked in first.
 //
 // Local only, and that is the point rather than a limitation. A project row
-// here is somewhere [voiceDirectory.CreateSession] can actually put a session,
+// here is somewhere [assistantDirectory.CreateSession] can actually put a session,
 // and creation goes through this server's session service — a repository
 // checked out on a paired machine is not one of those places.
-func (d *voiceDirectory) ListProjects(ctx context.Context) []voice.ProjectRow {
+func (d *assistantDirectory) ListProjects(ctx context.Context) []assistant.ProjectRow {
 	list, err := d.queries.ListProjects(ctx)
 	if err != nil {
-		slog.Warn("voice directory: project list failed", "error", err)
+		slog.Warn("assistant directory: project list failed", "error", err)
 		return nil
 	}
 
@@ -172,9 +173,9 @@ func (d *voiceDirectory) ListProjects(ctx context.Context) []voice.ProjectRow {
 	// just in. The sessions already read for every other answer are what say so.
 	lastWork := d.lastWorkByProject(ctx)
 
-	rows := make([]voice.ProjectRow, 0, len(list))
+	rows := make([]assistant.ProjectRow, 0, len(list))
 	for _, project := range list {
-		rows = append(rows, voice.ProjectRow{
+		rows = append(rows, assistant.ProjectRow{
 			ID:           project.ID,
 			Name:         project.Name,
 			Slug:         project.Slug,
@@ -191,7 +192,7 @@ func (d *voiceDirectory) ListProjects(ctx context.Context) []voice.ProjectRow {
 	return rows
 }
 
-// CreateSession implements voice.Directory.
+// CreateSession implements assistant.Directory.
 //
 // One route in: this is the same [session.Service.CreateSession] the composer's
 // new-session flow reaches through the `session.create` WS handler, with the
@@ -205,14 +206,14 @@ func (d *voiceDirectory) ListProjects(ctx context.Context) []voice.ProjectRow {
 // from the call that made it. The consent gate is not weakened by this, because
 // it was never the session's mode: it is the prompt, read back and agreed to
 // out loud, and that read-back now names the new session too.
-func (d *voiceDirectory) CreateSession(ctx context.Context, projectID, model string) (voice.SessionRow, error) {
+func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model string) (assistant.SessionRow, error) {
 	if projectID == "" {
-		return voice.SessionRow{}, errors.New("no project")
+		return assistant.SessionRow{}, errors.New("no project")
 	}
 
 	slug, family, err := d.resolveSpokenModel(ctx, model)
 	if err != nil {
-		return voice.SessionRow{}, err
+		return assistant.SessionRow{}, err
 	}
 
 	result, err := d.svc.CreateSession(ctx, session.CreateSessionParams{
@@ -224,10 +225,10 @@ func (d *voiceDirectory) CreateSession(ctx context.Context, projectID, model str
 		AutoApproveMode: "fullAuto",
 	})
 	if err != nil {
-		return voice.SessionRow{}, fmt.Errorf("create session in %q: %w", projectID, err)
+		return assistant.SessionRow{}, fmt.Errorf("create session in %q: %w", projectID, err)
 	}
 
-	row := voice.SessionRow{
+	row := assistant.SessionRow{
 		ID:           result.SessionID,
 		Name:         result.Name,
 		MachineID:    d.machineID,
@@ -256,28 +257,28 @@ func (d *voiceDirectory) CreateSession(ctx context.Context, projectID, model str
 // resolving one here would be a second copy of that decision. Anything else
 // must be a family the catalog actually lists: guessing at a model id is the
 // one mistake in this flow the operator cannot see happening.
-func (d *voiceDirectory) resolveSpokenModel(ctx context.Context, spoken string) (slug, family string, err error) {
+func (d *assistantDirectory) resolveSpokenModel(ctx context.Context, spoken string) (slug, family string, err error) {
 	spoken = strings.TrimSpace(spoken)
 	if spoken == "" {
 		return "", "", nil
 	}
 	if d.catalog == nil {
-		return "", "", &voice.UnknownModelError{Spoken: spoken}
+		return "", "", &assistant.UnknownModelError{Spoken: spoken}
 	}
 	if model, ok := d.catalog.ResolveFamily(ctx, "claude", spoken); ok {
 		return model.Slug, model.DisplayName, nil
 	}
-	return "", "", &voice.UnknownModelError{
+	return "", "", &assistant.UnknownModelError{
 		Spoken:   spoken,
 		Families: d.catalog.FamilyNames(ctx, "claude"),
 	}
 }
 
 // lastWorkByProject is when each project was last actually worked in.
-func (d *voiceDirectory) lastWorkByProject(ctx context.Context) map[string]string {
+func (d *assistantDirectory) lastWorkByProject(ctx context.Context) map[string]string {
 	result, err := d.svc.ListAllSessions(ctx)
 	if err != nil {
-		slog.Warn("voice directory: session list failed", "error", err)
+		slog.Warn("assistant directory: session list failed", "error", err)
 		return nil
 	}
 	out := make(map[string]string, len(result.Sessions))
@@ -291,15 +292,15 @@ func (d *voiceDirectory) lastWorkByProject(ctx context.Context) map[string]strin
 }
 
 // rows reads every live session on this machine, newest activity first.
-func (d *voiceDirectory) rows(ctx context.Context) []voice.SessionRow {
+func (d *assistantDirectory) rows(ctx context.Context) []assistant.SessionRow {
 	result, err := d.svc.ListAllSessions(ctx)
 	if err != nil {
-		slog.Warn("voice directory: session list failed", "error", err)
+		slog.Warn("assistant directory: session list failed", "error", err)
 		return nil
 	}
 
 	projects := d.projects(ctx)
-	rows := make([]voice.SessionRow, 0, len(result.Sessions))
+	rows := make([]assistant.SessionRow, 0, len(result.Sessions))
 	for _, info := range result.Sessions {
 		// Archived is the operator filing a session away. It is not part of the
 		// picture they are asking about, and it is the one section the UI itself
@@ -311,7 +312,7 @@ func (d *voiceDirectory) rows(ctx context.Context) []voice.SessionRow {
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := voice.AttentionRank(rows[i].Attention), voice.AttentionRank(rows[j].Attention)
+		a, b := assistant.AttentionRank(rows[i].Attention), assistant.AttentionRank(rows[j].Attention)
 		if a != b {
 			return a < b
 		}
@@ -321,8 +322,8 @@ func (d *voiceDirectory) rows(ctx context.Context) []voice.SessionRow {
 }
 
 // toRow turns one SessionInfo into something speakable.
-func (d *voiceDirectory) toRow(ctx context.Context, info session.SessionInfo, projects map[string]store.Project) voice.SessionRow {
-	row := voice.SessionRow{
+func (d *assistantDirectory) toRow(ctx context.Context, info session.SessionInfo, projects map[string]store.Project) assistant.SessionRow {
+	row := assistant.SessionRow{
 		ID:        info.ID,
 		Name:      info.Name,
 		MachineID: d.machineID,
@@ -346,10 +347,10 @@ func (d *voiceDirectory) toRow(ctx context.Context, info session.SessionInfo, pr
 
 // projects loads the project rows once per answer, so a list of twenty sessions
 // is one query rather than twenty.
-func (d *voiceDirectory) projects(ctx context.Context) map[string]store.Project {
+func (d *assistantDirectory) projects(ctx context.Context) map[string]store.Project {
 	list, err := d.queries.ListProjects(ctx)
 	if err != nil {
-		slog.Warn("voice directory: project list failed", "error", err)
+		slog.Warn("assistant directory: project list failed", "error", err)
 		return nil
 	}
 	byID := make(map[string]store.Project, len(list))
@@ -364,15 +365,15 @@ func (d *voiceDirectory) projects(ctx context.Context) map[string]store.Project 
 // does not.
 func attentionOf(info session.SessionInfo) string {
 	if info.PendingApproval != nil {
-		return voice.AttentionApproval
+		return assistant.AttentionApproval
 	}
 	if info.PendingQuestion != nil {
-		return voice.AttentionQuestion
+		return assistant.AttentionQuestion
 	}
 	// Unread mirrors the deck's rule (use-deck-rows / needs-you): a completion
 	// nobody has looked at counts only once the run has actually stopped.
 	if info.UnseenCompletedAt != nil && info.State != string(session.StateRunning) {
-		return voice.AttentionUnread
+		return assistant.AttentionUnread
 	}
 	return ""
 }
@@ -380,11 +381,11 @@ func attentionOf(info session.SessionInfo) string {
 // keepForFilter applies one of the four filters. An unknown filter keeps
 // everything recent rather than nothing: a mis-transcribed word must not turn
 // into an empty answer.
-func keepForFilter(row voice.SessionRow, filter string) bool {
+func keepForFilter(row assistant.SessionRow, filter string) bool {
 	switch filter {
-	case voice.FilterNeedsAttention:
+	case assistant.FilterNeedsAttention:
 		return row.Attention != ""
-	case voice.FilterRunning:
+	case assistant.FilterRunning:
 		return row.State == string(session.StateRunning)
 	default:
 		return true
@@ -393,7 +394,7 @@ func keepForFilter(row voice.SessionRow, filter string) bool {
 
 // namesWithReason renders the waiting sessions as speech: a few names, each
 // with what it is waiting for, and a count for the rest.
-func namesWithReason(rows []voice.SessionRow) string {
+func namesWithReason(rows []assistant.SessionRow) string {
 	named := rows
 	var extra int
 	if len(named) > maxOrientationNames {
@@ -414,11 +415,11 @@ func namesWithReason(rows []voice.SessionRow) string {
 // attentionWords says a reason the way a person would.
 func attentionWords(attention string) string {
 	switch attention {
-	case voice.AttentionApproval:
+	case assistant.AttentionApproval:
 		return "needs approval"
-	case voice.AttentionQuestion:
+	case assistant.AttentionQuestion:
 		return "asked a question"
-	case voice.AttentionUnread:
+	case assistant.AttentionUnread:
 		return "finished, unread"
 	default:
 		return "waiting"
@@ -427,7 +428,7 @@ func attentionWords(attention string) string {
 
 // displayName is what to call a session out loud. An unnamed session still gets
 // something sayable, since its id is not.
-func displayName(row voice.SessionRow) string {
+func displayName(row assistant.SessionRow) string {
 	if row.Name != "" {
 		return row.Name
 	}

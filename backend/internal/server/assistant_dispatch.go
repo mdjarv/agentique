@@ -8,12 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
-	"github.com/mdjarv/agentique/backend/internal/voice"
 )
 
 // maxSpokenSummary bounds the finished-run summary handed to the speaking
@@ -27,52 +28,53 @@ const maxSpokenSummary = 600
 // turn's answer when this one ended without saying anything.
 const turnsBack = 1
 
-// voiceDispatcher hands a voice-drafted prompt to a session.
+// assistantDispatcher hands a drafted prompt to the session that does the work.
 //
 // It is deliberately thin: the prompt goes down the *same* path the composer's
 // send button uses, so there is one route into the session pipeline whether the
-// gesture was a click or a sentence.
-type voiceDispatcher struct {
+// gesture was a click, a sentence in the thread, or a sentence on a call.
+type assistantDispatcher struct {
 	svc        *session.Service
 	queries    *store.Queries
 	summarizer *sessionSummarizer
 }
 
-// Dispatch implements voice.Dispatcher.
+// Dispatch implements assistant.Dispatcher.
 //
 // The reporting instruction rides along only when the operator said they were
 // staying on the line. A run nobody is listening to carries none of it — no
 // instruction, no tool calls, no overhead — which is the whole reason the
 // handoff asks instead of assuming.
-func (d *voiceDispatcher) Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (voice.Delivery, error) {
+func (d *assistantDispatcher) Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (assistant.Delivery, error) {
 	if withReporting {
-		prompt += "\n\n" + voice.ReportingInstructions(mcphttp.VoiceReportToolFullName)
+		prompt += "\n\n" + assistant.ReportingInstructions(mcphttp.AssistantReportToolFullName)
 	}
 
 	delivery, err := d.svc.EnqueueMessage(ctx, sessionID, prompt, nil)
 	if err != nil {
 		return "", err
 	}
-	// Mapped rather than cast: the voice vocabulary is its own, so a rename on
-	// either side is a compile error here instead of a silently wrong sentence.
+	// Mapped rather than cast: the assistant's vocabulary is its own, so a
+	// rename on either side is a compile error here instead of a silently wrong
+	// sentence.
 	switch delivery {
 	case session.DeliveryMidTurn:
-		return voice.DeliveryMidTurn, nil
+		return assistant.DeliveryMidTurn, nil
 	case session.DeliveryQueued:
-		return voice.DeliveryQueued, nil
+		return assistant.DeliveryQueued, nil
 	case session.DeliveryTurn:
-		return voice.DeliveryTurn, nil
+		return assistant.DeliveryTurn, nil
 	default:
-		return voice.DeliveryTurn, nil
+		return assistant.DeliveryTurn, nil
 	}
 }
 
-// AutoRunnable implements voice.Dispatcher.
+// AutoRunnable implements assistant.Dispatcher.
 //
 // Live voice has no spoken approval, so a session that would stop and ask is
 // refused at the handoff. The alternative is a run that stalls invisibly while
 // the call sounds perfectly healthy.
-func (d *voiceDispatcher) AutoRunnable(ctx context.Context, sessionID string) (bool, string, error) {
+func (d *assistantDispatcher) AutoRunnable(ctx context.Context, sessionID string) (bool, string, error) {
 	info, err := d.svc.GetSessionInfo(ctx, sessionID)
 	if err != nil {
 		return false, "", err
@@ -97,15 +99,15 @@ const autoApproveAll = "fullAuto"
 // worse questions than one given its opening summary, not better.
 const maxProjectContext = 4000
 
-// ProjectContext implements voice.Dispatcher.
+// ProjectContext implements assistant.Dispatcher.
 //
 // The drafter needs enough to ask sharp questions and name files — not the file
 // tree, not the history. What it gets is the session's own identity plus the
 // head of the project's CLAUDE.md, which is where a repository explains itself.
-func (d *voiceDispatcher) ProjectContext(ctx context.Context, sessionID string) string {
+func (d *assistantDispatcher) ProjectContext(ctx context.Context, sessionID string) string {
 	info, err := d.svc.GetSessionInfo(ctx, sessionID)
 	if err != nil {
-		slog.Warn("voice: no project context", "session", sessionID, "error", err)
+		slog.Warn("assistant: no project context", "session", sessionID, "error", err)
 		return ""
 	}
 
@@ -168,34 +170,61 @@ func readProjectGuide(projectPath string) string {
 	return strings.TrimSpace(string(runes[:maxProjectContext])) + "\n\n[…truncated]"
 }
 
-// voiceTurnWatcher pushes the three things a working agent cannot report about
-// itself — that it is blocked, that it died, that it finished — to whoever is
-// listening on a live call.
+// assistantTurnFacts answers what the runtime knows about a turn that has just
+// ended: the three things a working agent CANNOT report about itself — it is
+// blocked, it died, it stopped — which is why they come from here rather than
+// from a tool call.
 //
-// It hangs off Manager.AddTurnEndListener, which fires once per turn "on any
-// session, after that turn has stopped... completion, a CLI that died, a
-// session closed mid-flight". That covers the cases a completion hook would
-// miss, which is exactly why the runtime rather than the agent is the source
-// here: a suspended or dead agent cannot call a tool.
-type voiceTurnWatcher struct {
-	registry   *voice.Registry
-	svc        *session.Service
-	queries    *store.Queries
-	summarizer *sessionSummarizer
+// It implements assistant.TurnFacts, the seam that keeps internal/assistant off
+// the session pipeline. The reads are the ones the voice watcher made before the
+// core existed; what moved is who ranks them ([assistant.TurnNotice]) and who is
+// told ([assistant.Service.OnTurnEnd], and the journal behind it).
+type assistantTurnFacts struct {
+	svc     *session.Service
+	queries *store.Queries
 }
 
-func newVoiceTurnWatcher(registry *voice.Registry, svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer) *voiceTurnWatcher {
-	return &voiceTurnWatcher{registry: registry, svc: svc, queries: queries, summarizer: summarizer}
+// PendingHumanInput implements assistant.TurnFacts.
+func (f *assistantTurnFacts) PendingHumanInput(sessionID string) string {
+	return f.svc.PendingHumanInput(sessionID)
+}
+
+// TurnOutcome implements assistant.TurnFacts.
+func (f *assistantTurnFacts) TurnOutcome(ctx context.Context, sessionID string) (assistant.TurnOutcome, error) {
+	info, err := f.svc.GetSessionInfo(ctx, sessionID)
+	if err != nil {
+		return assistant.TurnOutcome{}, fmt.Errorf("session %s: %w", sessionID, err)
+	}
+	return assistant.TurnOutcome{
+		Failed:       info.State == string(session.StateFailed),
+		ProjectID:    info.ProjectID,
+		SessionName:  info.Name,
+		ClosingWords: f.closingWords(ctx, sessionID),
+	}, nil
+}
+
+// voiceTurnWatcher keeps a live call hearing its runtime facts on a server that
+// has the assistant itself switched off.
+//
+// A call is a head on the assistant, so with the core built the one turn-end
+// listener is [assistant.Service.OnTurnEnd]: it journals the fact and notifies
+// the followers, and the call is one of them. But the core is opt-in and a call
+// must not go deaf because it is off, so this is the same fact delivered to the
+// same registry with nothing written down. The RANKING is not duplicated — both
+// paths read [assistant.TurnNotice] — because a session that says "needs
+// approval" in one place cannot say something else in your ear.
+type voiceTurnWatcher struct {
+	registry *assistant.Registry
+	facts    assistant.TurnFacts
+}
+
+func newVoiceTurnWatcher(registry *assistant.Registry, facts assistant.TurnFacts) *voiceTurnWatcher {
+	return &voiceTurnWatcher{registry: registry, facts: facts}
 }
 
 // OnTurnEnd is the dispatch point. It runs on the event-loop goroutine, so the
 // no-listener case must stay cheap and the rest is handed to a goroutine.
 func (w *voiceTurnWatcher) OnTurnEnd(sessionID string) {
-	// A cached summary describes the session as it was before this turn, so it
-	// is stale the moment the turn ends. Dropping it is a map delete, cheap
-	// enough to do for every session whether or not anyone is on a call.
-	w.summarizer.Forget(sessionID)
-
 	// The overwhelmingly common case: nobody is on a call for this session.
 	// One map lookup, then out.
 	if !w.registry.Listening(sessionID) {
@@ -205,52 +234,35 @@ func (w *voiceTurnWatcher) OnTurnEnd(sessionID string) {
 }
 
 func (w *voiceTurnWatcher) push(sessionID string) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), turnFactsBudget)
+	defer cancel()
 
-	// Blocked outranks failure, matching lib/session/priority.ts: the thing
-	// still holding a process is more urgent than the thing that already
-	// stopped.
-	if pending := w.svc.PendingHumanInput(sessionID); pending != "" {
-		w.registry.Notice(sessionID, voice.Notice{
-			Kind:     voice.NoticeBlocked,
-			Headline: pending,
-		})
-		return
-	}
-
-	info, err := w.svc.GetSessionInfo(ctx, sessionID)
+	notice, _, err := assistant.TurnNotice(ctx, w.facts, sessionID)
 	if err != nil {
-		slog.Warn("voice watcher: session lookup failed", "session", sessionID, "error", err)
+		slog.Warn("voice watcher: turn outcome unavailable", "session", sessionID, "error", err)
 		return
 	}
-
-	if info.State == string(session.StateFailed) {
-		w.registry.Notice(sessionID, voice.Notice{
-			Kind:     voice.NoticeFailed,
-			Headline: w.closingWords(ctx, sessionID),
-		})
-		return
-	}
-
-	w.registry.Notice(sessionID, voice.Notice{
-		Kind:     voice.NoticeFinished,
-		Headline: w.closingWords(ctx, sessionID),
-	})
+	w.registry.Notice(sessionID, notice)
 }
+
+// turnFactsBudget bounds the reads behind one turn-end notice. The caller is a
+// goroutine off the runtime's event loop, so an unbounded read here is a
+// goroutine held for the life of the process rather than a stalled turn.
+const turnFactsBudget = 15 * time.Second
 
 // closingWords returns the turn's last assistant text, clamped.
 //
 // Empty is a fine answer: the notice's own preamble already tells the model
 // what happened, and a run that ended without saying anything should not have
 // words invented for it.
-func (w *voiceTurnWatcher) closingWords(ctx context.Context, sessionID string) string {
-	events, err := w.queries.ListRecentEventsBySession(ctx, store.ListRecentEventsBySessionParams{
+func (f *assistantTurnFacts) closingWords(ctx context.Context, sessionID string) string {
+	events, err := f.queries.ListRecentEventsBySession(ctx, store.ListRecentEventsBySessionParams{
 		SessionID: sessionID,
 		// Column2 is a count of turns, not of rows.
 		Column2: turnsBack,
 	})
 	if err != nil {
-		slog.Warn("voice watcher: event lookup failed", "session", sessionID, "error", err)
+		slog.Warn("assistant: event lookup failed", "session", sessionID, "error", err)
 		return ""
 	}
 

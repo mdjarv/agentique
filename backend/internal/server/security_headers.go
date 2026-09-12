@@ -34,7 +34,9 @@ func securityHeaders(csp string, next http.Handler) http.Handler {
 		// The API and the file route set their own, tighter policies (the file
 		// route sandboxes; both are stricter than the document policy). Only
 		// documents need the SPA policy.
-		if csp != "" && !strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/mcp" {
+		// "/mcp" covers the head's own endpoint under it as well: neither is a
+		// document, and both are reached by a CLI rather than a browser.
+		if csp != "" && !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/mcp") {
 			h.Set("Content-Security-Policy", csp)
 		}
 		next.ServeHTTP(w, r)

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as AssistantRouteImport } from "./routes/assistant";
 import { Route as BrainRouteImport } from "./routes/brain";
 import { Route as DiscussionsRouteImport } from "./routes/discussions";
 import { Route as ProjectsRouteImport } from "./routes/projects";
@@ -48,6 +49,11 @@ import { Route as ProjectProjectSlugSessionNewRouteImport } from "./routes/proje
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AssistantRoute = AssistantRouteImport.update({
+  id: "/assistant",
+  path: "/assistant",
   getParentRoute: () => rootRouteImport,
 } as any);
 const BrainRoute = BrainRouteImport.update({
@@ -227,6 +233,7 @@ const ProjectProjectSlugSessionNewRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/assistant": typeof AssistantRoute;
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
@@ -264,6 +271,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/assistant": typeof AssistantRoute;
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
@@ -300,6 +308,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/assistant": typeof AssistantRoute;
   "/brain": typeof BrainRoute;
   "/discussions": typeof DiscussionsRoute;
   "/projects": typeof ProjectsRoute;
@@ -339,6 +348,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/assistant"
     | "/brain"
     | "/discussions"
     | "/projects"
@@ -376,6 +386,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/assistant"
     | "/brain"
     | "/discussions"
     | "/projects"
@@ -411,6 +422,7 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/assistant"
     | "/brain"
     | "/discussions"
     | "/projects"
@@ -449,6 +461,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  AssistantRoute: typeof AssistantRoute;
   BrainRoute: typeof BrainRoute;
   DiscussionsRoute: typeof DiscussionsRoute;
   ProjectsRoute: typeof ProjectsRoute;
@@ -479,6 +492,13 @@ declare module "@tanstack/react-router" {
       path: "/";
       fullPath: "/";
       preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/assistant": {
+      id: "/assistant";
+      path: "/assistant";
+      fullPath: "/assistant";
+      preLoaderRoute: typeof AssistantRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/brain": {
@@ -771,6 +791,7 @@ const ProjectProjectSlugRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AssistantRoute: AssistantRoute,
   BrainRoute: BrainRoute,
   DiscussionsRoute: DiscussionsRoute,
   ProjectsRoute: ProjectsRoute,

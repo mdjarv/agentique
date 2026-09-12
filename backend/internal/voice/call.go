@@ -10,7 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 const (
@@ -140,12 +142,23 @@ type SpeechIdler interface {
 // control messages. That keeps audio out of a JSON encoder, which matters at
 // 30-odd frames a second.
 type call struct {
-	ws         *websocket.Conn
-	engine     Engine
-	registry   *Registry
-	dispatcher Dispatcher
-	directory  Directory
-	log        *slog.Logger
+	ws           *websocket.Conn
+	engine       Engine
+	registry     *assistant.Registry
+	dispatcher   assistant.Dispatcher
+	directory    assistant.Directory
+	conversation Conversation
+	log          *slog.Logger
+
+	// id names this call in the shared conversation, so a mirrored turn can be
+	// traced back to the drive it was said on. Minted here rather than taken
+	// from the socket: a call is not a session and has no row to borrow an
+	// identity from.
+	id string
+
+	// said accumulates the turn in progress, because transcription arrives in
+	// fragments and the conversation stores whole utterances.
+	said utterances
 
 	// focusMu guards focus, the session this call is currently aimed at.
 	//
@@ -187,7 +200,7 @@ type call struct {
 	// sessions on machines this server cannot reach; for this machine's own
 	// sessions the database wins, because it is the thing that is true.
 	worldMu     sync.Mutex
-	world       []SessionRow
+	world       []assistant.SessionRow
 	viewing     string
 	viewingNote time.Time
 
@@ -198,10 +211,10 @@ type call struct {
 	// between focusing a session and focusing a plausible-looking id a speech
 	// model assembled from a transcript.
 	offeredMu sync.Mutex
-	offered   map[string]SessionRow
+	offered   map[string]assistant.SessionRow
 	// offeredProjects is the same guard for the places a session can be
 	// created. create_session accepts only these.
-	offeredProjects map[string]ProjectRow
+	offeredProjects map[string]assistant.ProjectRow
 
 	// summaryMu guards the summaries delivered for this call, kept per session
 	// because that is what they describe. A summary warmed by focusing a session
@@ -286,10 +299,12 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 		registry:        opts.Registry,
 		dispatcher:      opts.Dispatcher,
 		directory:       opts.Directory,
+		conversation:    opts.Conversation,
+		id:              uuid.New().String(),
 		focus:           initialFocus,
 		follows:         make(map[string]*followState),
-		offered:         make(map[string]SessionRow),
-		offeredProjects: make(map[string]ProjectRow),
+		offered:         make(map[string]assistant.SessionRow),
+		offeredProjects: make(map[string]assistant.ProjectRow),
 		summaries:       make(map[string]string),
 		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
 		log:             log,
@@ -302,7 +317,7 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 	// chose it by pressing the button, which is a stronger gesture than any
 	// list the assistant could read back.
 	if initialFocus != "" {
-		c.offered[initialFocus] = SessionRow{ID: initialFocus}
+		c.offered[initialFocus] = assistant.SessionRow{ID: initialFocus}
 	}
 	return c
 }
@@ -472,13 +487,13 @@ func (c *call) noteSessionName(sessionID, name string) {
 	}
 }
 
-// Notify implements [Follower]: it puts a report on the screen and, when the
+// Notify implements [assistant.Follower]: it puts a report on the screen and, when the
 // engine has a voice, in the listener's ear.
 //
 // The screen copy always goes out. Speaking it is best-effort — a call whose
 // engine cannot speak (the loopback) or whose session is mid-reconnect still
 // shows the report rather than losing it.
-func (c *call) Notify(sessionID string, r Report) error {
+func (c *call) Notify(sessionID string, r assistant.Report) error {
 	err := c.sendControl(serverMessage{
 		Type:      msgReport,
 		Kind:      string(r.Kind),
@@ -493,15 +508,15 @@ func (c *call) Notify(sessionID string, r Report) error {
 	return nil
 }
 
-// NotifyRuntime implements [Follower] for the three facts an agent cannot
+// NotifyRuntime implements [assistant.Follower] for the three facts an agent cannot
 // report about itself.
 //
 // A run ending clears that session's in-flight mark, which returns the call to
 // gathering once nothing else is running — so silence goes back to meaning
 // abandonment and the short idle rule applies again. Blocked does not: the run
 // is stuck, not done, and it is still holding a process.
-func (c *call) NotifyRuntime(sessionID string, n Notice) error {
-	if n.Kind.endsWork() {
+func (c *call) NotifyRuntime(sessionID string, n assistant.Notice) error {
+	if n.Kind.EndsWork() {
 		c.markRunEnded(sessionID)
 	}
 
@@ -666,7 +681,7 @@ func (c *call) stampFocus(ctx context.Context, out map[string]any) map[string]an
 		out["focused_on"] = "nothing — no session is aimed at yet, so there is nowhere to send"
 		return out
 	}
-	out["focused_on"] = displayFor(c.focusRow(ctx))
+	out["focused_on"] = assistant.DisplayFor(c.focusRow(ctx))
 	return out
 }
 
@@ -677,10 +692,10 @@ func (c *call) stampFocus(ctx context.Context, out map[string]any) map[string]an
 // from a list — is replaced by a real row the first time anything asks. Without
 // that, the single most common dispatch target on any call is the one row the
 // server can say least about.
-func (c *call) focusRow(ctx context.Context) SessionRow {
+func (c *call) focusRow(ctx context.Context) assistant.SessionRow {
 	focus := c.currentFocus()
 	if focus == "" {
-		return SessionRow{}
+		return assistant.SessionRow{}
 	}
 	if row, ok := c.lookupRow(ctx, focus); ok {
 		c.offer(row)
@@ -721,7 +736,7 @@ func (c *call) runPrompt(ctx context.Context, ev ToolCallEvent) map[string]any {
 // The project list is passed as a thunk because it is a database read that only
 // the refusing branch needs, and refusing is the rare path.
 func (c *call) judgeSpokenTarget(ctx context.Context, spoken string) targetJudgement {
-	projects := func() []ProjectRow {
+	projects := func() []assistant.ProjectRow {
 		if c.directory == nil {
 			return nil
 		}
@@ -762,7 +777,7 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 		}
 		return refuse("not-local", fmt.Sprintf("%s runs on %s, so work cannot be started there "+
 			"from this call. Tell the user that, and offer to hand this to a session on this "+
-			"machine instead.", displayFor(row), machineWords(row)))
+			"machine instead.", assistant.DisplayFor(row), machineWords(row)))
 	}
 
 	prompt = strings.TrimSpace(prompt)
@@ -819,7 +834,7 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 	// rather than left for the model to guess — and it comes back as the
 	// sentence to say, not a status, because the moment after a yes is the one
 	// place in the call where silence is read as failure.
-	spoken := delivery.Confirmation(displayFor(row))
+	spoken := delivery.Confirmation(assistant.DisplayFor(row))
 
 	if !stayOnLine {
 		// Declining to stay does NOT release an existing binding. A second
@@ -897,7 +912,10 @@ func (c *call) greet() {
 		go func() {
 			ctx, cancel := context.WithTimeout(c.ctx(), toolCallTimeout)
 			defer cancel()
-			c.speak(greetingCue(c.greetingFocusName(ctx)))
+			// The news is read here rather than at connect because reading it
+			// STAMPS this surface as having looked: a call that opened and never
+			// greeted would otherwise consume news nobody heard.
+			c.speak(greetingCue(c.greetingFocusName(ctx), c.greetingNews(ctx)))
 		}()
 	})
 }
@@ -906,7 +924,7 @@ func (c *call) greet() {
 // opened on, or "" for a call that opened on nothing — which is a different
 // greeting, not a missing word.
 //
-// The full spoken address, project and all ([displayFor]), because the greeting
+// The full spoken address, project and all ([assistant.DisplayFor]), because the greeting
 // is the first and sometimes only place the model is told where it is pointed —
 // and a read-back that names a session without its project is the half of the
 // address that blurs.
@@ -915,7 +933,7 @@ func (c *call) greetingFocusName(ctx context.Context) string {
 		return ""
 	}
 	if row := c.focusRow(ctx); row.Name != "" {
-		return displayFor(row)
+		return assistant.DisplayFor(row)
 	}
 	return unnamedFocusLabel
 }
@@ -936,15 +954,15 @@ func (c *call) speak(text string) {
 // noticePreamble tells the model what a runtime fact means and which session it
 // is about. The name is not decoration: a call can follow several runs, and
 // "it failed" without a name sends the listener to the wrong screen.
-func noticePreamble(kind NoticeKind, session string) string {
+func noticePreamble(kind assistant.NoticeKind, session string) string {
 	switch kind {
-	case NoticeFinished:
+	case assistant.NoticeFinished:
 		return fmt.Sprintf("The run in %q just finished. Tell the user briefly what it did, "+
 			"naming that session: ", session)
-	case NoticeFailed:
+	case assistant.NoticeFailed:
 		return fmt.Sprintf("The run in %q failed. Tell the user briefly and without alarm, "+
 			"naming that session: ", session)
-	case NoticeBlocked:
+	case assistant.NoticeBlocked:
 		// There is no spoken approval, so this is a report, not a question.
 		return fmt.Sprintf("The run in %q is stuck waiting for something you cannot answer "+
 			"from this call. Tell the user, naming that session, that they will need to look "+
@@ -960,7 +978,13 @@ func (c *call) run(ctx context.Context) {
 	defer cancel()
 	c.setCtx(ctx)
 	defer func() {
-		// Release the session bindings first: a report arriving mid-teardown
+		// Write down whatever the turn in progress had said. A socket that drops
+		// between the last transcript fragment and TurnCompleteEvent would
+		// otherwise discard both halves of the exchange, which is the one a
+		// greeting would most want — the thing agreed just before the line went.
+		// take() clears, so the ordinary path cannot double-write this.
+		c.mirrorTurn()
+		// Release the session bindings next: a report arriving mid-teardown
 		// would otherwise write to a socket that is already closing.
 		c.unfollowAll()
 		if err := c.engine.Close(); err != nil {
@@ -1078,6 +1102,10 @@ func (c *call) forward(ev Event) error {
 		// Both the natural end of a turn and an interruption must reach the
 		// client, because both mean "flush whatever is queued".
 		err := c.sendControl(serverMessage{Type: msgTurnComplete, Interrupted: e.Interrupted})
+		// The turn is what a conversation is made of, so this is where it gets
+		// written down. An interrupted turn counts: what was said was said, and
+		// a record that skipped every barge-in would omit most of a real call.
+		c.mirrorTurn()
 		// On an armed call this turn was the goodbye, and the flush above is
 		// what gets it played. An interrupted one still ends the call: they
 		// asked to hang up, and talking over the farewell is not a retraction.
@@ -1087,6 +1115,7 @@ func (c *call) forward(ev Event) error {
 		return err
 
 	case TranscriptEvent:
+		c.noteTranscript(e)
 		return c.sendControl(serverMessage{
 			Type:   msgTranscript,
 			Text:   e.Text,

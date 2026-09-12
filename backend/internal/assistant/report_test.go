@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"io"
@@ -265,8 +265,8 @@ func TestReportRejectsBadInputBeforeSpendingBudget(t *testing.T) {
 }
 
 func TestReportingInstructionsNameTheTool(t *testing.T) {
-	got := ReportingInstructions("mcp__agentique__VoiceReport")
-	if !strings.Contains(got, "mcp__agentique__VoiceReport") {
+	got := ReportingInstructions("mcp__agentique__AssistantReport")
+	if !strings.Contains(got, "mcp__agentique__AssistantReport") {
 		t.Error("instructions must name the tool the worker has to call")
 	}
 	for _, want := range []string{"read aloud", "two or three"} {

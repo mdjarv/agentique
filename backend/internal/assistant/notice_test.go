@@ -1,4 +1,4 @@
-package voice
+package assistant
 
 import (
 	"testing"
@@ -8,21 +8,21 @@ import (
 // The ordering must match lib/session/priority.ts: the thing still holding a
 // process outranks the thing that already stopped. One rule, both surfaces.
 func TestNoticePriorityMatchesTheAttentionRule(t *testing.T) {
-	if NoticeBlocked.priority() >= NoticeFailed.priority() {
+	if NoticeBlocked.Priority() >= NoticeFailed.Priority() {
 		t.Error("blocked must outrank failed — it is still holding a process")
 	}
-	if NoticeFailed.priority() >= NoticeFinished.priority() {
+	if NoticeFailed.Priority() >= NoticeFinished.Priority() {
 		t.Error("failed must outrank finished")
 	}
 }
 
 func TestEndsWork(t *testing.T) {
-	if !NoticeFinished.endsWork() || !NoticeFailed.endsWork() {
+	if !NoticeFinished.EndsWork() || !NoticeFailed.EndsWork() {
 		t.Error("a run that finished or failed is over")
 	}
 	// Blocked still holds the process, so the call stays in its working phase
 	// and the short conversational idle rule must not come back.
-	if NoticeBlocked.endsWork() {
+	if NoticeBlocked.EndsWork() {
 		t.Error("blocked must not end work — the run is stuck, not done")
 	}
 }
@@ -75,19 +75,4 @@ func TestNoticesAreNeverThrottled(t *testing.T) {
 func TestNoticeWithNoFollowerIsSilent(t *testing.T) {
 	r := NewRegistry()
 	r.Notice("nobody", Notice{Kind: NoticeFinished, Headline: "done"})
-}
-
-func TestPhaseChoosesTheIdleRule(t *testing.T) {
-	base := 90 * time.Second
-	if got := phaseGathering.idleTimeout(base); got != base {
-		t.Errorf("gathering idle = %v, want the conversational timeout %v", got, base)
-	}
-	// Quiet while a run works is the expected state; the short rule would hang
-	// up in the middle of every real task.
-	if got := phaseWorking.idleTimeout(base); got != workingIdleCeiling {
-		t.Errorf("working idle = %v, want the backstop %v", got, workingIdleCeiling)
-	}
-	if workingIdleCeiling <= base {
-		t.Error("the working ceiling must be longer than the conversational timeout")
-	}
 }

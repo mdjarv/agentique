@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // TestGeminiEngineLive talks to the real Live API.
@@ -166,7 +168,7 @@ func TestGeminiToolCallLive(t *testing.T) {
 			target, _ := toolCall.Args["target"].(string)
 			if strings.TrimSpace(target) == "" {
 				t.Errorf("run_prompt named no target: %v", toolCall.Args)
-			} else if judged := judgeTarget(target, SessionRow{
+			} else if judged := judgeTarget(target, assistant.SessionRow{
 				Name: "Live Voice Dialog", ProjectName: "agentique", ProjectSlug: "agentique",
 			}, nil, nil); !judged.OK {
 				t.Errorf("run_prompt named %q, which the server refuses as %s", target, judged.Reason)
@@ -185,7 +187,7 @@ func TestGeminiToolCallLive(t *testing.T) {
 
 			// Answering is mandatory: the model is paused until it arrives.
 			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
-				"output": DeliveryTurn.Confirmation("Live Voice Dialog"),
+				"output": assistant.DeliveryTurn.Confirmation("Live Voice Dialog"),
 			}); err != nil {
 				t.Fatalf("RespondTool: %v", err)
 			}
@@ -228,7 +230,7 @@ func TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive(t *testing.T) {
 	defer cancel()
 
 	// The call is pointed at riff, and only at riff.
-	focus := SessionRow{
+	focus := assistant.SessionRow{
 		ID: "riff-1", Name: "Live Melodikrysset Sessions",
 		ProjectName: "riff", ProjectSlug: "riff",
 	}
@@ -236,12 +238,12 @@ func TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive(t *testing.T) {
 	// legitimate answer — it is in the right project — so the test has to move
 	// its focus the way the server does, or it reports a refusal production
 	// would never make and passes for the wrong reason.
-	agentique := SessionRow{
+	agentique := assistant.SessionRow{
 		ID: "ag-1", Name: "Voice Reliability",
 		ProjectName: "Agentique", ProjectSlug: "agentique",
 	}
-	knownProjects := func() []ProjectRow {
-		return []ProjectRow{
+	knownProjects := func() []assistant.ProjectRow {
+		return []assistant.ProjectRow{
 			{ID: "p1", Name: "riff", Slug: "riff"},
 			{ID: "p2", Name: "Agentique", Slug: "agentique"},
 		}
@@ -294,13 +296,13 @@ func TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive(t *testing.T) {
 			if id, _ := toolCall.Args["session_id"].(string); id == agentique.ID {
 				focus = agentique
 			}
-			t.Logf("turn %d: focus_session(%v) — now on %s", turn, toolCall.Args, displayFor(focus))
+			t.Logf("turn %d: focus_session(%v) — now on %s", turn, toolCall.Args, assistant.DisplayFor(focus))
 			if err := engine.RespondTool(toolCall.ID, toolCall.Name, map[string]any{
 				"session_id": toolCall.Args["session_id"],
-				"name":       displayFor(focus),
+				"name":       assistant.DisplayFor(focus),
 				"focused":    true,
-				"focused_on": displayFor(focus),
-				"note":       "Confirm out loud that you are now on " + displayFor(focus) + ".",
+				"focused_on": assistant.DisplayFor(focus),
+				"note":       "Confirm out loud that you are now on " + assistant.DisplayFor(focus) + ".",
 			}); err != nil {
 				t.Fatalf("RespondTool: %v", err)
 			}
@@ -321,21 +323,21 @@ func TestGeminiDoesNotSendOneProjectsWorkIntoAnothersSessionLive(t *testing.T) {
 			// The recovery path: not what the instruction asks for, but the
 			// target must still be what it said, so the server can refuse.
 			target, _ := toolCall.Args["target"].(string)
-			judged := judgeTarget(target, focus, []SessionRow{agentique}, knownProjects)
+			judged := judgeTarget(target, focus, []assistant.SessionRow{agentique}, knownProjects)
 			if judged.OK {
 				// Accepting is only correct if the call was actually moved into
 				// Agentique first, which focus_session above is what does.
 				if focus.ID != agentique.ID {
 					t.Fatalf("turn %d: run_prompt named %q against a focus of %s, and the server "+
 						"would ACCEPT — Agentique's work is about to land in a riff session",
-						turn, target, displayFor(focus))
+						turn, target, assistant.DisplayFor(focus))
 				}
 				t.Logf("turn %d: run_prompt named %q, accepted — the call was moved to %s first",
-					turn, target, displayFor(focus))
+					turn, target, assistant.DisplayFor(focus))
 				return
 			}
 			t.Logf("turn %d: run_prompt named %q against a focus of %s, refused as %s — "+
-				"the guard held", turn, target, displayFor(focus), judged.Reason)
+				"the guard held", turn, target, assistant.DisplayFor(focus), judged.Reason)
 			return
 
 		default:
@@ -745,7 +747,7 @@ func TestGeminiGreetsOnPickupLive(t *testing.T) {
 
 	// The cue is the whole of the trigger. Nothing else is sent: no microphone
 	// frames, no user turn, exactly as a freshly connected call has none.
-	if err := engine.SendText(greetingCue(focus)); err != nil {
+	if err := engine.SendText(greetingCue(focus, "")); err != nil {
 		t.Fatalf("send greeting cue: %v", err)
 	}
 

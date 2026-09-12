@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // Where a prompt lands. Everything here exists because it went wrong once: a
@@ -12,17 +14,17 @@ import (
 // happened to be pointing at.
 
 // theIncident is that call, with the names it actually had.
-func theIncident() (focus SessionRow, known []SessionRow, projects func() []ProjectRow) {
-	focus = SessionRow{
+func theIncident() (focus assistant.SessionRow, known []assistant.SessionRow, projects func() []assistant.ProjectRow) {
+	focus = assistant.SessionRow{
 		ID: "riff-1", Name: "Live Melodikrysset Sessions",
 		ProjectName: "riff", ProjectSlug: "riff", MachineName: "workstation",
 	}
-	known = []SessionRow{
+	known = []assistant.SessionRow{
 		focus,
 		{ID: "ag-1", Name: "Voice Reliability", ProjectName: "Agentique", ProjectSlug: "agentique"},
 	}
-	projects = func() []ProjectRow {
-		return []ProjectRow{
+	projects = func() []assistant.ProjectRow {
+		return []assistant.ProjectRow{
 			{ID: "p1", Name: "riff", Slug: "riff"},
 			{ID: "p2", Name: "Agentique", Slug: "agentique"},
 		}
@@ -137,7 +139,7 @@ func TestJudgeTargetRefusesSomethingNothingMatches(t *testing.T) {
 // directory knows one session and can reach no other, so demanding a target it
 // has no way to verify would only break the single-session call.
 func TestJudgeTargetAcceptsWhenTheFocusCannotBeDescribed(t *testing.T) {
-	bare := SessionRow{ID: "sess-1"}
+	bare := assistant.SessionRow{ID: "sess-1"}
 	for _, spoken := range []string{"", "anything at all"} {
 		if got := judgeTarget(spoken, bare, nil, nil); !got.OK {
 			t.Errorf("refused %q against an unnameable focus: %s", spoken, got.Say)
@@ -163,8 +165,8 @@ func TestJudgeTargetSurvivesWithoutAProjectList(t *testing.T) {
 // never a pick — the rule the rest of this package already follows.
 func TestJudgeTargetDoesNotPickBetweenProjects(t *testing.T) {
 	focus, _, _ := theIncident()
-	projects := func() []ProjectRow {
-		return []ProjectRow{
+	projects := func() []assistant.ProjectRow {
+		return []assistant.ProjectRow{
 			{ID: "p1", Name: "riff", Slug: "riff"},
 			{ID: "p2", Name: "Agentique", Slug: "agentique"},
 			{ID: "p3", Name: "Agentique UI", Slug: "agentique-ui"},
@@ -182,13 +184,13 @@ func TestJudgeTargetDoesNotPickBetweenProjects(t *testing.T) {
 // The whole thing, through the tool: the incident replayed, and nothing sent.
 func TestRunPromptRefusesAPromptAimedAtAnotherProject(t *testing.T) {
 	dir := &fakeDirectory{
-		rows: []SessionRow{
+		rows: []assistant.SessionRow{
 			{ID: "riff-1", Name: "Live Melodikrysset Sessions", ProjectName: "riff",
 				ProjectSlug: "riff", MachineName: "workstation", State: "idle"},
 			{ID: "ag-1", Name: "Voice Reliability", ProjectName: "Agentique",
 				ProjectSlug: "agentique", MachineName: "workstation", State: "idle"},
 		},
-		projects: []ProjectRow{
+		projects: []assistant.ProjectRow{
 			{ID: "p1", Name: "riff", Slug: "riff"},
 			{ID: "p2", Name: "Agentique", Slug: "agentique"},
 		},
@@ -239,7 +241,7 @@ func TestEveryToolAnswerNamesTheFocus(t *testing.T) {
 	c := newToolCall(directoryWithTwo(), &recordingDispatcher{}, "s1")
 
 	for _, ev := range []ToolCallEvent{
-		{ID: "1", Name: ToolListSessions, Args: map[string]any{"filter": FilterAll}},
+		{ID: "1", Name: ToolListSessions, Args: map[string]any{"filter": assistant.FilterAll}},
 		{ID: "2", Name: ToolFindSession, Args: map[string]any{"query": "voice"}},
 		{ID: "3", Name: ToolListProjects},
 	} {
@@ -262,7 +264,7 @@ func TestTheOpeningFocusIsFilledInFromTheDatabase(t *testing.T) {
 		t.Fatalf("the opening focus started out named %q; this test proves nothing", row.Name)
 	}
 
-	if got := displayFor(c.focusRow(context.Background())); got != "Live Voice Dialog in agentique" {
+	if got := assistant.DisplayFor(c.focusRow(context.Background())); got != "Live Voice Dialog in agentique" {
 		t.Errorf("focusRow = %q, want the row from the database", got)
 	}
 	if row, _ := c.offeredRow("s1"); row.Name != "Live Voice Dialog" {

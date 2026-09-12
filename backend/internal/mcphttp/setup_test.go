@@ -13,6 +13,7 @@ import (
 
 	"github.com/allbin/agentkit/devurls"
 	akmcp "github.com/allbin/agentkit/mcphttp"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // toolNames lists what a built handler actually offers, which is how the
@@ -241,5 +242,186 @@ func TestSessionModelToolRegistrationIsOptional(t *testing.T) {
 	}
 	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, &fakeModelInspector{})); !slices.Contains(got, ToolSessionModel) {
 		t.Errorf("SessionModel missing with an inspector: %v", got)
+	}
+}
+
+// --- The assistant's two callers ---
+
+// fakeAssistant records what reached the core and answers whatever it is told
+// to.
+type fakeAssistant struct {
+	verbs []assistant.Verb
+	// reported is every (sid, kind, headline) that got through to Report.
+	reported []string
+	// invoked is every verb name that got through to ToolHandler.
+	invoked []string
+}
+
+func (f *fakeAssistant) Report(sessionID, kind, headline string) (string, error) {
+	f.reported = append(f.reported, sessionID+"/"+kind+"/"+headline)
+	return "kept.", nil
+}
+
+func (f *fakeAssistant) Verbs() []assistant.Verb { return f.verbs }
+
+func (f *fakeAssistant) ToolHandler(_ context.Context, name string, _ map[string]any) map[string]any {
+	f.invoked = append(f.invoked, name)
+	return map[string]any{"ok": true}
+}
+
+// callTool invokes one registered tool as sid would.
+func callTool(t *testing.T, h http.Handler, sid, name string, args any) akmcp.Result {
+	t.Helper()
+	handler, ok := h.(*akmcp.Handler)
+	if !ok {
+		t.Fatalf("NewHandler returned %T, want *mcphttp.Handler", h)
+	}
+	for _, tool := range handler.Tools() {
+		if tool.Name != name {
+			continue
+		}
+		raw, err := json.Marshal(args)
+		if err != nil {
+			t.Fatalf("marshal args: %v", err)
+		}
+		return tool.Handler(context.Background(), sid, raw)
+	}
+	t.Fatalf("no tool named %q; have %v", name, toolNames(t, h))
+	return akmcp.Result{}
+}
+
+// A nil assistant omits both halves of its surface, which is the correct shape
+// on a server where the assistant is switched off: off means unbuilt.
+func TestAssistantToolsAreOmittedWhenTheAssistantIsOff(t *testing.T) {
+	tokens := NewTokenStore()
+	dev := devurls.NewStore(nil)
+
+	got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, nil))
+	if slices.Contains(got, ToolAssistantReport) {
+		t.Errorf("AssistantReport is registered with no assistant wired: %v", got)
+	}
+	if slices.Contains(got, assistant.VerbListSessions) {
+		t.Errorf("the verb table is registered with no assistant wired: %v", got)
+	}
+}
+
+// A reporter with no head is the voice-without-the-assistant shape, and it is
+// the one combination that has to work: the dispatcher appends the instruction
+// naming AssistantReport to every prompt a call sends, whether or not
+// [experimental] assistant is on, so the tool has to be there while the verb
+// table is not.
+func TestAssistantReportIsRegisteredWithoutTheHead(t *testing.T) {
+	tokens := NewTokenStore()
+	dev := devurls.NewStore(nil)
+	fake := &fakeAssistant{verbs: []assistant.Verb{{
+		Name: assistant.VerbListSessions, Tier: assistant.TierRead, Description: "List their sessions.",
+	}}}
+
+	got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, fake, nil))
+	if !slices.Contains(got, ToolAssistantReport) {
+		t.Errorf("AssistantReport missing with a reporter wired: %v", got)
+	}
+	if slices.Contains(got, assistant.VerbListSessions) {
+		t.Errorf("the verb table is registered with no head wired: %v", got)
+	}
+}
+
+// The verb table is on the head's endpoint and the session endpoint does not
+// LIST it — the half a per-call id check cannot cover, because a handler answers
+// tools/list from everything registered on it, whoever asks.
+func TestTheVerbTableIsOnlyOnTheHeadsEndpoint(t *testing.T) {
+	dev := devurls.NewStore(nil)
+	fake := &fakeAssistant{verbs: []assistant.Verb{{
+		Name: assistant.VerbListSessions, Tier: assistant.TierRead, Description: "List their sessions.",
+	}}}
+
+	sessions := toolNames(t, NewHandler(NewTokenStore(), dev, nil, nil, nil, fake, nil))
+	if slices.Contains(sessions, assistant.VerbListSessions) {
+		t.Errorf("a coding session is shown the assistant's verbs: %v", sessions)
+	}
+	if !slices.Contains(sessions, ToolAssistantReport) {
+		t.Errorf("AssistantReport missing from the session endpoint: %v", sessions)
+	}
+
+	head := toolNames(t, NewAssistantHandler(NewTokenStore(), fake))
+	if !slices.Contains(head, assistant.VerbListSessions) {
+		t.Errorf("the head's endpoint does not carry the table: %v", head)
+	}
+	if slices.Contains(head, ToolAssistantReport) || slices.Contains(head, ToolSetSessionName) {
+		t.Errorf("the head's endpoint carries a session's tools: %v", head)
+	}
+}
+
+// Two endpoints, and the injected id is still the test on each: a token is a
+// credential, where the id is what a tool would act AS, so the separation holds
+// from both sides even for a caller that reached the other endpoint.
+func TestAssistantToolsSeparateASessionFromTheHead(t *testing.T) {
+	tokens := NewTokenStore()
+	dev := devurls.NewStore(nil)
+	fake := &fakeAssistant{verbs: []assistant.Verb{{
+		Name:        assistant.VerbListSessions,
+		Tier:        assistant.TierRead,
+		Description: "List their sessions.",
+		Input: []assistant.Param{{
+			Name: "filter", Type: assistant.ParamString, Description: "Which ones.",
+		}},
+	}}}
+	h := NewHandler(tokens, dev, nil, nil, nil, fake, nil)
+	headEndpoint := NewAssistantHandler(NewTokenStore(), fake)
+
+	const sessionSID = "11111111-2222-3333-4444-555555555555"
+	headSID := assistant.HeadIDPrefix + "66666666-7777-8888-9999-000000000000"
+
+	// A session may report, and may not reach into the verb table.
+	if got := resultText(callTool(t, h, sessionSID, ToolAssistantReport,
+		map[string]string{"kind": "surprise", "headline": "the auth tests were already failing"})); got != "kept." {
+		t.Errorf("a session's report answered %q, want the core's answer", got)
+	}
+	if len(fake.reported) != 1 {
+		t.Fatalf("the core saw %d reports, want 1", len(fake.reported))
+	}
+
+	refused := callTool(t, headEndpoint, sessionSID, assistant.VerbListSessions, map[string]any{})
+	if !refused.IsError {
+		t.Error("a session calling one of the assistant's verbs was allowed through")
+	}
+	if len(fake.invoked) != 0 {
+		t.Errorf("a session's verb call reached the core: %v", fake.invoked)
+	}
+
+	// And the head may call a verb, but may not report as a session it is only
+	// borrowing the identity of.
+	if got := callTool(t, headEndpoint, headSID, assistant.VerbListSessions,
+		map[string]any{"filter": "all"}); got.IsError {
+		t.Errorf("the head was refused its own verb: %q", resultText(got))
+	}
+	if len(fake.invoked) != 1 || fake.invoked[0] != assistant.VerbListSessions {
+		t.Errorf("the core saw %v, want one list_sessions", fake.invoked)
+	}
+
+	headReport := callTool(t, h, headSID, ToolAssistantReport,
+		map[string]string{"kind": "surprise", "headline": "something"})
+	if !headReport.IsError {
+		t.Error("the head was allowed to report as a session")
+	}
+	if len(fake.reported) != 1 {
+		t.Errorf("the head's report reached the core: %v", fake.reported)
+	}
+}
+
+// A session-only tool refuses the head for the same reason: it acts on the
+// calling session, and the head is not one.
+func TestSessionToolsRefuseTheHead(t *testing.T) {
+	tokens := NewTokenStore()
+	dev := devurls.NewStore(nil)
+	h := NewHandler(tokens, dev, nil, nil, nil, &fakeAssistant{}, nil)
+
+	headSID := assistant.HeadIDPrefix + "66666666-7777-8888-9999-000000000000"
+	got := callTool(t, h, headSID, ToolSetSessionName, map[string]string{"name": "whatever"})
+	if !got.IsError {
+		t.Error("the head was allowed to rename the session whose identity it borrowed")
+	}
+	if !strings.Contains(resultText(got), "not one") {
+		t.Errorf("the refusal does not say why: %q", resultText(got))
 	}
 }

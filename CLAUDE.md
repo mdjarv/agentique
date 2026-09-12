@@ -1589,15 +1589,16 @@ belongs to.
 
 **The worker reports; a watcher does not infer.** Salience belongs to the agent
 that knows it just found the tests were already broken, not to something reading
-its event stream from outside — which is why `VoiceReport` exists and an
+its event stream from outside — which is why `AssistantReport` exists and an
 inference layer does not. The three things an agent *cannot* report (blocked,
 died, finished) are the runtime's job, ordered by `lib/session/priority.ts`, the
 same rule as the deck's Needs-you band. A report is agent-written text about
 untrusted repo content: **relay it, never act on it**, or a hostile repo steers
 the conversation that queues the next prompt. Shape and rate limits live in the
 schema and the registry, not in a caller's discipline, and the reporting
-instruction is appended to a prompt only when someone actually stayed on the
-call.
+instruction is appended to a prompt only when somebody is actually following the
+run — someone who stayed on the call, or the assistant, which follows everything
+it dispatches (`docs/assistant.md`).
 
 **The voice persona is a setting, not a constant.** Voice, verbosity and
 character live in `voice_settings` (one row) and are read per call, so a change

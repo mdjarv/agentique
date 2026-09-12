@@ -44,7 +44,7 @@ Browser ──WS(binary PCM ⇄ JSON control)──▶ /api/voice/live ──▶
    │                                                  ▼
    │                                      Service.EnqueueMessage ──▶ the session
    │                                                 │
-   │                 VoiceReport (agent) + Notice (runtime) ──▶ back to the call
+   │                 AssistantReport (agent) + Notice (runtime) ──▶ back to the call
 ```
 
 Two participants, not three:
@@ -754,7 +754,7 @@ The obvious design subscribes to the session's event stream and infers salience
 from tool calls and text. It works, and it puts the judgement in the one place
 that has to guess. The working agent does not guess: it knows it just found the
 tests were already broken, and it knows it is about to change approach. So it
-gets a tool — `VoiceReport` — and the prompt tells it when to reach for one.
+gets a tool — `AssistantReport` — and the prompt tells it when to reach for one.
 
 That deletes the entire inference layer: no event subscription, no debouncer, no
 salience model, no second copy of the priority rule. `ScheduleReport` is the

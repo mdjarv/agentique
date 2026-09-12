@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/voice"
 )
 
@@ -16,7 +17,7 @@ import (
 // route — makes a plumbing problem look like a missing feature. The degrade is
 // logged at warn, because silently answering with an echo when someone expected
 // a model would be worse than either.
-func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice.Registry, dispatcher voice.Dispatcher, personas voice.PersonaSource, directory voice.Directory) (*voice.Handler, error) {
+func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *assistant.Registry, dispatcher assistant.Dispatcher, personas voice.PersonaSource, directory assistant.Directory, conversation voice.Conversation) (*voice.Handler, error) {
 	opts, err := resolveVoiceOptions(cfg)
 	if err != nil {
 		return nil, err
@@ -27,6 +28,10 @@ func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *voice
 	opts.Dispatcher = dispatcher
 	opts.Personas = personas
 	opts.Directory = directory
+	// Nil when the assistant is off, and a call then keeps no record beyond its
+	// own transcript. Passed as an interface the caller already narrowed, so a
+	// typed-nil *assistant.Service cannot arrive here looking non-nil.
+	opts.Conversation = conversation
 	return voice.NewHandler(opts)
 }
 

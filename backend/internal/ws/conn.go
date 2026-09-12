@@ -8,6 +8,7 @@ import (
 
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/gorilla/websocket"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/logging"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
@@ -40,6 +41,7 @@ type conn struct {
 	personaSvc      *persona.Service        // nil when experimental teams is disabled
 	browserSvc      *session.BrowserService // nil when browser support is unavailable
 	scheduleSvc     *schedule.Scheduler     // nil when the scheduler is disabled
+	assistantSvc    *assistant.Service      // nil when [experimental] assistant is off
 	catalog         *providers.Catalog      // model catalog; nil = base aliases only
 	sendCh          chan any
 	dispatchCh      chan ClientMessage
@@ -58,7 +60,7 @@ type conn struct {
 	sub *eventbus.Subscription
 }
 
-func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, scheduleSvc *schedule.Scheduler, catalog *providers.Catalog, maxMessageBytes int64) *conn {
+func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service, gitSvc *session.GitService, projectGitSvc *project.GitService, queries *store.Queries, bus *eventbus.Bus, teamSvc *team.Service, personaSvc *persona.Service, browserSvc *session.BrowserService, scheduleSvc *schedule.Scheduler, assistantSvc *assistant.Service, catalog *providers.Catalog, maxMessageBytes int64) *conn {
 	ctx, cancel := context.WithCancel(parentCtx)
 	if maxMessageBytes <= 0 {
 		maxMessageBytes = defaultMaxMessageBytes
@@ -76,6 +78,7 @@ func newConn(parentCtx context.Context, ws *websocket.Conn, svc *session.Service
 		personaSvc:      personaSvc,
 		browserSvc:      browserSvc,
 		scheduleSvc:     scheduleSvc,
+		assistantSvc:    assistantSvc,
 		catalog:         catalog,
 		sendCh:          make(chan any, sendBufSize),
 		dispatchCh:      make(chan ClientMessage, dispatchBufSize),
@@ -271,6 +274,8 @@ var concurrentOps = map[string]bool{
 	"persona.list":              true,
 	"providers.models":          true,
 	"browser.status":            true,
+	"assistant.history":         true,
+	"assistant.journal":         true,
 }
 
 // dispatchConcurrently runs a read-lane handler on its own goroutine once a
@@ -467,6 +472,14 @@ var handlerRegistry = map[string]handlerFunc{
 	"schedule.run-now":     (*conn).handleScheduleRunNow,
 	"schedule.runs":        (*conn).handleScheduleRuns,
 	"schedule.mark-viewed": (*conn).handleScheduleMarkViewed,
+
+	// assistant.* — the durable assistant (docs/assistant.md). The ops are
+	// registered whether or not the feature is on, because this table is
+	// package-level and a read on the concurrent lane must be a registered
+	// handler; with the assistant off each answers in words, naming the switch.
+	"assistant.say":     (*conn).handleAssistantSay,
+	"assistant.history": (*conn).handleAssistantHistory,
+	"assistant.journal": (*conn).handleAssistantJournal,
 
 	// ping
 	"ping": (*conn).handlePing,

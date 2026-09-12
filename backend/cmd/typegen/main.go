@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/allbin/agentkit/worktree"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/browser"
 	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
@@ -496,6 +497,9 @@ func main() {
 	g.register(ws.ProjectDiscardPayload{}, "ProjectDiscardPayload")
 	g.register(ws.ProjectActivityPayload{}, "ProjectActivityPayload")
 	g.register(ws.WireListPayload{}, "WireListPayload")
+	g.register(ws.AssistantSayPayload{}, "AssistantSayPayload")
+	g.register(ws.AssistantHistoryPayload{}, "AssistantHistoryPayload")
+	g.register(ws.AssistantJournalPayload{}, "AssistantJournalPayload")
 
 	// ── Push event payload types ──
 
@@ -600,6 +604,22 @@ func main() {
 	g.addPushEvent("browser.frame", pushBrowserFrame)
 	g.addPushEvent("browser.stopped", pushBrowserStopped)
 	g.addPushEvent("browser.provisioning", pushBrowserProvisioning)
+
+	// ── The assistant (docs/assistant.md) ──
+	//
+	// Leaf-first: a message and a journal entry are what the page, the pushes
+	// and the read results are all made of.
+	assistantMessageRef := g.register(assistant.Message{}, "AssistantMessage")
+	assistantDeltaRef := g.register(assistant.Delta{}, "AssistantDelta")
+	assistantJournalRef := g.register(assistant.JournalEntry{}, "AssistantJournalEntry")
+	g.register(assistant.Page{}, "AssistantPage")
+	g.register(assistant.Update{}, "AssistantUpdate")
+	g.register(ws.AssistantJournalResult{}, "AssistantJournalResult")
+	// All three ride the GLOBAL topic: the conversation is project-less, so
+	// there is no topic to scope them to and no new routing to add.
+	g.addPushEvent("assistant.message", assistantMessageRef)
+	g.addPushEvent("assistant.delta", assistantDeltaRef)
+	g.addPushEvent("assistant.journal", assistantJournalRef)
 
 	// ── Scheduled loops (docs/scheduled-loops.md) ──
 

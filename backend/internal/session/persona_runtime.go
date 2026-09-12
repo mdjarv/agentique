@@ -77,18 +77,32 @@ type sessionlessPersona struct {
 	rt   *runtime.Manager
 	sess *runtime.Session
 
+	// onText, when set, receives assistant text deltas as they stream. Fixed at
+	// construction and never written afterwards, so it needs no lock.
+	onText func(string)
+
 	// done is the per-turn delivery channel for the turn-complete event, swapped
 	// in by Query and read by onEvent. Guarded by mu.
 	mu   sync.Mutex
 	done chan runtime.TurnCompletedEvent
 }
 
-// onEvent is the runtime broadcast hook. It forwards only the turn-complete event
-// to the in-flight Query (if any); everything else (partials, tool events, state
-// changes) is ignored — a discussion contribution is mirrored to the channel
-// timeline once, on completion, exactly like recordContribution does today. Called
-// synchronously from a runtime goroutine, so it must not block.
+// onEvent is the runtime broadcast hook. It forwards the turn-complete event to
+// the in-flight Query (if any), and text deltas to onText when a caller asked
+// for them; everything else (tool events, state changes) is ignored — a
+// discussion contribution is mirrored to the channel timeline once, on
+// completion, exactly like recordContribution does today. Called synchronously
+// from a runtime goroutine, so it must not block.
 func (p *sessionlessPersona) onEvent(_ context.Context, e runtime.Event) {
+	// Streaming is opt-in per persona: a discussion contribution is whole, and
+	// only a caller that renders a reply as it arrives (the assistant's thread)
+	// asks for the deltas that make it possible.
+	if p.onText != nil {
+		if delta, ok := e.(runtime.AssistantTextDeltaEvent); ok {
+			p.onText(delta.Delta)
+			return
+		}
+	}
 	tc, ok := e.(runtime.TurnCompletedEvent)
 	if !ok {
 		return
@@ -146,6 +160,34 @@ type PersonaRuntimeParams struct {
 	Model    string
 	Effort   string
 	WorkDir  string // per-discussion scratch dir — NOT a project worktree
+
+	// ID overrides the generated runtime id. Empty generates one.
+	//
+	// It exists because an MCP bearer is minted per calling id: a persona that
+	// is to reach agentique's own tools needs its token in the store BEFORE the
+	// subprocess starts, which cannot be done for an id this function invents.
+	ID string
+
+	// MCPConfigs are inline JSON or file paths handed to the provider CLI, for
+	// a persona that needs tools of its own. A credential goes in a 0600 FILE
+	// and never inline: /proc/<pid>/cmdline is world-readable.
+	MCPConfigs []string
+
+	// DisallowedTools are provider-native tool names this persona must not
+	// have. Empty leaves the CLI's own default set.
+	//
+	// It matters because a persona runs fullAuto — the approval pump
+	// auto-allows everything, by design, since there is no screen to ask — so
+	// the tools it holds are the tools it can use without anybody agreeing.
+	// A persona whose whole job is to reach the world through its MCP tools
+	// names the native ones here, and the names are the provider's: this is
+	// claude-only, like the rest of the sessionless path.
+	DisallowedTools []string
+
+	// OnText receives assistant text deltas as the reply streams. Optional, and
+	// opting in turns on the provider's partial messages, which is what emits
+	// them. Called from a runtime goroutine, so it must not block.
+	OnText func(delta string)
 }
 
 // StartPersonaRuntime starts a sessionless web-only persona: a raw runtime CLI
@@ -154,8 +196,11 @@ type PersonaRuntimeParams struct {
 // MCP server, or brain recall. claude-only for v1 (the sessionless treatment is
 // claude-adapter specific).
 func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams) (personaRuntime, error) {
-	id := "persona-" + uuid.New().String()
-	pr := &sessionlessPersona{id: id, rt: m.rt}
+	id := p.ID
+	if id == "" {
+		id = "persona-" + uuid.New().String()
+	}
+	pr := &sessionlessPersona{id: id, rt: m.rt, onText: p.OnText}
 
 	// Serialize the routing handshake under routeMu — see Create. The default
 	// connector is claude (only "codex" is registered as an alternate), so
@@ -167,12 +212,18 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	// Detached context: the CLI process lifetime is independent of the request
 	// ctx — see the comment in Create.
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
-		SessionID:   id,
-		WorkDir:     p.WorkDir,
-		Preamble:    p.Preamble,
-		Model:       p.Model,
-		AutoApprove: runtime.AutoApproveAll,
-		Effort:      resolveEffort(p.Effort),
+		SessionID:       id,
+		WorkDir:         p.WorkDir,
+		Preamble:        p.Preamble,
+		Model:           p.Model,
+		AutoApprove:     runtime.AutoApproveAll,
+		Effort:          resolveEffort(p.Effort),
+		MCPConfigs:      p.MCPConfigs,
+		DisallowedTools: p.DisallowedTools,
+		// Partial messages are what emit the text deltas, and they also stream
+		// every other inner API event — so they are on only for a caller that
+		// asked to stream.
+		PartialMessages: p.OnText != nil,
 		SessionOptions: []runtime.SessionOption{
 			runtime.WithBroadcast(pr.onEvent),
 		},

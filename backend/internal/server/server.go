@@ -21,6 +21,7 @@ import (
 	codexadapter "github.com/allbin/agentkit/runtime/cli/codex"
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/brain"
 	"github.com/mdjarv/agentique/backend/internal/browser"
@@ -117,6 +118,13 @@ type Config struct {
 	// flag on and no credentials configured, the socket serves the loopback echo
 	// used to verify the audio path and contacts nothing.
 	Voice config.VoiceConfig
+	// ExperimentalAssistant builds the assistant (docs/assistant.md): the
+	// conversation, the journal, the verb table, the head, and the assistant.*
+	// WS ops and AssistantReport tool that reach them. Off means UNBUILT, on
+	// the brain's precedent — nothing below is constructed, and
+	// `features.assistant` is false so a client never navigates to a surface
+	// the server does not serve.
+	ExperimentalAssistant bool
 
 	// IdleEvictTimeout, when > 0, stops a session idle at least this long to
 	// reclaim its CLI process and browser subtree (it resumes on the next
@@ -247,12 +255,20 @@ This file is shared with the running server. Any command that writes to, overwri
 
 // Server is the main HTTP server for the Agentique backend.
 type Server struct {
-	mux            *http.ServeMux
-	mgr            *session.Manager
-	svc            *session.Service
-	browserSvc     *session.BrowserService
-	authSvc        *auth.Service
-	brainAuto      *brain.Automation
+	mux        *http.ServeMux
+	mgr        *session.Manager
+	svc        *session.Service
+	browserSvc *session.BrowserService
+	authSvc    *auth.Service
+	brainAuto  *brain.Automation
+	// assistantSvc is nil when [experimental] assistant is off. Shutdown closes
+	// it, which is what stops the head's subprocess and drops the credential
+	// file behind it.
+	assistantSvc *assistant.Service
+	// assistantState is the session.state subscription behind the journal's
+	// merge and archive entries, released on shutdown so the bus is not left
+	// delivering into a closed server.
+	assistantState *eventbus.Subscription
 	scheduler      *schedule.Scheduler
 	updateChecker  *update.Checker
 	updateApplier  *update.Applier
@@ -355,6 +371,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 
 	devStore := devurls.NewStore(toAgentkitSlots(cfg.DevURLSlots))
 	mcpTokens := mcphttp.NewTokenStore()
+	// The assistant head's own bearers, in their own store. A tool list is not
+	// scoped to its caller, so the head's verbs live on their own endpoint, and
+	// the only thing that can authenticate to it is a token minted for a head.
+	assistantTokens := mcphttp.NewTokenStore()
 
 	// The connectors double as the answer to "which CLI would this machine
 	// actually spawn": each one owns its client options, so it is the only
@@ -461,10 +481,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"arch": goruntime.GOARCH,
 			},
 			"features": map[string]bool{
-				"browser": cfg.ExperimentalBrowser,
-				"teams":   cfg.ExperimentalTeams,
-				"voice":   cfg.ExperimentalVoice,
-				"brain":   cfg.BrainEnabled && cfg.BrainDir != "",
+				"browser":   cfg.ExperimentalBrowser,
+				"teams":     cfg.ExperimentalTeams,
+				"voice":     cfg.ExperimentalVoice,
+				"assistant": cfg.ExperimentalAssistant,
+				"brain":     cfg.BrainEnabled && cfg.BrainDir != "",
 			},
 		})
 	})
@@ -799,11 +820,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"arch": goruntime.GOARCH,
 			},
 			"capabilities": map[string]bool{
-				"pairing": cfg.AuthEnabled,
-				"browser": cfg.ExperimentalBrowser,
-				"teams":   cfg.ExperimentalTeams,
-				"voice":   cfg.ExperimentalVoice,
-				"brain":   cfg.BrainEnabled && cfg.BrainDir != "",
+				"pairing":   cfg.AuthEnabled,
+				"browser":   cfg.ExperimentalBrowser,
+				"teams":     cfg.ExperimentalTeams,
+				"voice":     cfg.ExperimentalVoice,
+				"assistant": cfg.ExperimentalAssistant,
+				"brain":     cfg.BrainEnabled && cfg.BrainDir != "",
 			},
 		})
 	})
@@ -918,10 +940,98 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		slog.Info("experimental teams feature enabled")
 	}
 
-	// One catalog for both the picker and the voice assistant: a model family
-	// someone can choose on screen is one they can ask for out loud.
+	// One catalog for both the picker and the assistant: a model family someone
+	// can choose on screen is one they can ask for out loud.
 	catalog := modelCatalog(queries, cfg.ModelOverrides)
-	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, Catalog: catalog, AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
+
+	// The assistant (docs/assistant.md), and the collaborators every surface on
+	// it shares.
+	//
+	// The split here is the feature's gate. The COLLABORATORS — the directory,
+	// the report registry, the dispatcher and the runtime facts — are built
+	// whenever anything sits on them, because a live call is a head on this core
+	// and needs all four whether or not the assistant itself is switched on. The
+	// SERVICE is gated on [experimental] assistant, on the brain's precedent:
+	// off means UNBUILT, so no conversation, no journal, no head, no assistant.*
+	// WS ops and no assistant MCP tools, and `features.assistant` says so.
+	var (
+		assistantSvc   *assistant.Service
+		assistantState *eventbus.Subscription
+		reportRegistry *assistant.Registry
+		assistantDir   *assistantDirectory
+		assistantDisp  *assistantDispatcher
+		assistantFacts *assistantTurnFacts
+		summarizer     *sessionSummarizer
+	)
+	if cfg.ExperimentalVoice || cfg.ExperimentalAssistant {
+		// The summariser keeps a session's transcript on this machine: it runs
+		// through the provider CLI and only its paragraph leaves.
+		summarizer = newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)
+		// A cached summary describes a session as it was BEFORE the turn that
+		// just ended, so it is stale the moment one does. Its own listener,
+		// because dropping a cache entry is not a fact about the turn — it is
+		// bookkeeping that has to happen whether or not anybody is following.
+		mgr.AddTurnEndListener(summarizer.Forget)
+
+		reportRegistry = assistant.NewRegistry()
+		assistantDisp = &assistantDispatcher{svc: svc, queries: queries, summarizer: summarizer}
+		assistantFacts = &assistantTurnFacts{svc: svc, queries: queries}
+		// Machine presentation is read per answer rather than captured, so a
+		// rename takes effect without a restart — the same rule the health
+		// endpoint follows.
+		assistantDir = newAssistantDirectory(svc, queries, summarizer, catalog, cfg.MachineID,
+			func(ctx context.Context) string {
+				label, _ := hostPresentation(ctx)
+				return label
+			})
+	}
+	if cfg.ExperimentalAssistant {
+		// Every collaborator below is non-nil by construction: the block above
+		// runs whenever this one does. That matters because these are
+		// interfaces, and a typed-nil pointer in one would look present and
+		// panic on first use.
+		a, err := assistant.New(queries,
+			assistant.WithDirectory(assistantDir),
+			assistant.WithDispatcher(assistantDisp),
+			assistant.WithTurnFacts(assistantFacts),
+			assistant.WithHeadManager(&assistantHeads{
+				mgr:    mgr,
+				tokens: assistantTokens,
+				mcpURL: assistantMCPURL(cfg.MCPInternalURL),
+			}),
+			// The collector answers from cache and never touches the network,
+			// which is what makes it safe to ask inside a verb.
+			assistant.WithAllowances(usageCollector),
+			assistant.WithRegistry(reportRegistry),
+			assistant.WithBroadcaster(bus),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("assistant service: %w", err)
+		}
+		assistantSvc = a
+
+		// ONE turn-end listener: it writes the journal and notifies the
+		// followers, and a live call is one of those followers. Registered here
+		// rather than from assistant.New, which by contract starts nothing.
+		mgr.AddTurnEndListener(assistantSvc.OnTurnEnd)
+		// A merge and an archive arrive on the state push rather than at a turn
+		// ending, because neither of them is something a turn did. The baseline
+		// is primed BEFORE the subscription, and that order is the whole point:
+		// a push announces a write that has already happened, so a baseline
+		// read after subscribing can already contain the transition it is
+		// about to be told of. A read, not a side effect, which is why it may
+		// live here; a failure is logged and the observer primes itself lazily,
+		// fail-closed, on the first push.
+		primeCtx, cancelPrime := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := assistantSvc.PrimeSessionStates(primeCtx); err != nil {
+			slog.Warn("assistant: session state baseline not primed at boot", "error", err)
+		}
+		cancelPrime()
+		assistantState = bus.SubscribeAll(&assistantStateObserver{svc: assistantSvc})
+		slog.Info("assistant enabled")
+	}
+
+	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, AssistantService: assistantSvc, Catalog: catalog, AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
 	mux.Handle("GET /ws", wsh)
 
 	// Live voice. Mounted under /api/ deliberately: the auth middleware
@@ -933,15 +1043,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// A misconfigured [voice] section disables the feature; it never takes down
 	// the server, on the same principle as the brain below.
 	//
-	// voiceRegistry routes a worker's progress reports into the calls following
-	// it, and is shared with the MCP handler below so VoiceReport can reach it.
-	// It stays nil when voice is off, which is what omits the tool entirely.
-	var voiceRegistry *voice.Registry
 	// The live handler outlives this block so the auth service — constructed
 	// later — can be wired in as its session tracker.
 	var liveVoice *voice.Handler
 	if cfg.ExperimentalVoice {
-		voiceRegistry = voice.NewRegistry()
 		// Persona settings are read per call, so a change here takes effect on
 		// the next call rather than the next restart.
 		// Ignore the error here: newVoiceHandler below reports the same bad
@@ -956,29 +1061,29 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		mux.HandleFunc("GET /api/voice/settings", voiceSettings.HandleGet)
 		mux.HandleFunc("PUT /api/voice/settings", voiceSettings.HandlePut)
 		mux.HandleFunc("POST /api/voice/preview", voiceSettings.HandlePreview)
-		// The summariser keeps the session transcript on this machine: it runs
-		// through the provider CLI and only its paragraph reaches the drafter.
-		voiceSummarizer := newSessionSummarizer(runner, queries, cfg.Voice.SummaryModel)
-		dispatcher := &voiceDispatcher{svc: svc, queries: queries, summarizer: voiceSummarizer}
-		// What the call can see beyond the session it opened on. Machine
-		// presentation is read per call rather than captured, so a rename takes
-		// effect on the next call rather than the next restart.
-		directory := newVoiceDirectory(svc, queries, voiceSummarizer, catalog, cfg.MachineID,
-			func(ctx context.Context) string {
-				label, _ := hostPresentation(ctx)
-				return label
-			})
-		if vh, err := newVoiceHandler(cfg, allowedOrigins, voiceRegistry, dispatcher, voiceSettings, directory); err != nil {
+		// Narrowed to the interface here rather than passed as a pointer: a
+		// typed-nil *assistant.Service would arrive at the call looking present
+		// and panic on the first turn it tried to mirror.
+		var conversation voice.Conversation
+		if assistantSvc != nil {
+			conversation = assistantSvc
+		}
+		vh, err := newVoiceHandler(cfg, allowedOrigins, reportRegistry, assistantDisp,
+			voiceSettings, assistantDir, conversation)
+		if err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
-			voiceRegistry = nil
 		} else {
 			mux.Handle("GET /api/voice/live", vh)
 			liveVoice = vh
-			// The runtime half of what a call hears: blocked, died, finished.
-			// A worker reports everything else itself, but it cannot report
-			// these — it is suspended, gone, or done.
-			watcher := newVoiceTurnWatcher(voiceRegistry, svc, queries, voiceSummarizer)
-			mgr.AddTurnEndListener(watcher.OnTurnEnd)
+			if assistantSvc == nil {
+				// The runtime half of what a call hears — blocked, died,
+				// finished — on a server whose assistant is off. With the core
+				// built these come from its one turn-end listener, journal and
+				// all; without it a call must not go deaf, so the same fact
+				// reaches the same registry with nothing written down.
+				watcher := newVoiceTurnWatcher(reportRegistry, assistantFacts)
+				mgr.AddTurnEndListener(watcher.OnTurnEnd)
+			}
 			slog.Info("live voice enabled", "backend", vh.Backend())
 		}
 	}
@@ -1189,19 +1294,39 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if sched != nil {
 		schedCreator = sched
 	}
-	// Same trap: a typed-nil *voice.Registry would register VoiceReport and
-	// then panic on the first call.
-	var voiceReporter mcphttp.VoiceReporter
-	if voiceRegistry != nil {
-		voiceReporter = voiceRegistry
+	// Two halves, two gates. AssistantReport goes wherever a report has
+	// somewhere to go: the service when the assistant is on (journal and
+	// followers), the bare registry when only a call is following — the
+	// instruction that names the tool rides every prompt the dispatcher sends,
+	// so gating it on the service would name a missing tool on every voice
+	// dispatch. The verb table is the head's and exists only with the service.
+	// Same typed-nil trap as above in both cases.
+	var assistantReporter mcphttp.AssistantReporter
+	switch {
+	case assistantSvc != nil:
+		assistantReporter = assistantSvc
+	case reportRegistry != nil:
+		assistantReporter = reportRegistry
 	}
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator, voiceReporter,
-		sessionModelInspector{svc: svc})
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator,
+		assistantReporter, sessionModelInspector{svc: svc})
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)
 	mux.Handle("GET /mcp", mcpHandler)
 	mux.Handle("DELETE /mcp", mcpHandler)
+
+	// The head's endpoint, mounted only with the service and reachable only with
+	// a head's bearer. It is a separate endpoint because `tools/list` answers
+	// from everything registered on a handler, whoever asks: sharing one would
+	// hand the whole verb table — the uncontained tier included — to every
+	// coding session on every turn.
+	if assistantSvc != nil {
+		assistantMCP := mcphttp.NewAssistantHandler(assistantTokens, assistantSvc)
+		mux.Handle("POST "+assistantMCPPath, assistantMCP)
+		mux.Handle("GET "+assistantMCPPath, assistantMCP)
+		mux.Handle("DELETE "+assistantMCPPath, assistantMCP)
+	}
 
 	frontendSub, _ := fs.Sub(frontendFS, "frontend_dist")
 	mux.Handle("GET /", &spaHandler{fs: frontendSub})
@@ -1222,6 +1347,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		svc:            svc,
 		browserSvc:     browserSvc,
 		brainAuto:      brainAuto,
+		assistantSvc:   assistantSvc,
+		assistantState: assistantState,
 		scheduler:      sched,
 		updateChecker:  updateChecker,
 		updateApplier:  updateApplier,
@@ -1295,6 +1422,14 @@ func (s *Server) Shutdown() {
 	}
 	if s.brainAuto != nil {
 		s.brainAuto.Stop()
+	}
+	if s.assistantState != nil {
+		s.assistantState.Unsubscribe()
+	}
+	if s.assistantSvc != nil {
+		if err := s.assistantSvc.Close(); err != nil {
+			slog.Warn("assistant not closed cleanly", "error", err)
+		}
 	}
 	if s.svc != nil {
 		s.svc.Close()

@@ -1,6 +1,10 @@
 package voice
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
+)
 
 // Where a prompt lands is the one thing on this call nobody can see.
 //
@@ -63,7 +67,7 @@ type targetJudgement struct {
 // certain, because it is a database read and the accepting path is the common
 // one — it may be nil, which costs the sentence its sharpest branch and nothing
 // else.
-func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects func() []ProjectRow) targetJudgement {
+func judgeTarget(spoken string, focus assistant.SessionRow, known []assistant.SessionRow, projects func() []assistant.ProjectRow) targetJudgement {
 	// A check that cannot be performed must not refuse — including the check
 	// that a target was given at all, since demanding one buys nothing when
 	// there is nothing to compare it against. A call wired to no directory knows
@@ -73,7 +77,7 @@ func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects f
 		return targetJudgement{OK: true}
 	}
 
-	tokens := normalizeTokens(spoken)
+	tokens := assistant.NormalizeTokens(spoken)
 	if len(tokens) == 0 {
 		return targetJudgement{Reason: targetMissing, Say: "NOTHING WAS SENT: this call needs to be " +
 			"told where the prompt is going. Call it again straight away with `target` set to the " +
@@ -92,7 +96,7 @@ func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects f
 				"different sessions, so the prompt would have gone to the wrong one. If %s is where "+
 				"they agreed it should go, switch to it with %s, read the prompt back naming that "+
 				"session, and send once they say yes.",
-				displayFor(other), displayFor(focus), displayFor(other), ToolFocusSession),
+				assistant.DisplayFor(other), assistant.DisplayFor(focus), assistant.DisplayFor(other), ToolFocusSession),
 		}
 	}
 
@@ -100,7 +104,7 @@ func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects f
 	// this session — its own name, or the project it is in. Either is a fair way
 	// to name where work is going, and one salient word is enough: "the riff one"
 	// and "Live Melodikrysset Sessions" are the same claim.
-	if namesRow(tokens, focus) {
+	if assistant.NamesRow(tokens, focus) {
 		return targetJudgement{OK: true}
 	}
 
@@ -111,7 +115,7 @@ func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects f
 				"not in it. Work belonging in %s cannot go there. If it needs a new session, call %s "+
 				"with that project and this prompt in one call. If it belongs in a session that "+
 				"already exists there, find it with %s and switch to it first.",
-				project.displayName(), displayFor(focus), project.displayName(),
+				project.DisplayName(), assistant.DisplayFor(focus), project.DisplayName(),
 				ToolCreateSession, ToolFindSession),
 		}
 	}
@@ -121,14 +125,14 @@ func judgeTarget(spoken string, focus SessionRow, known []SessionRow, projects f
 		Say: fmt.Sprintf("NOTHING WAS SENT: I cannot tell whether %q is the session this call is "+
 			"aimed at, which is %s. Tell them out loud that it is going to %s and ask whether that is "+
 			"right. If they say yes, send again with `target` set to that name.",
-			spoken, displayFor(focus), displayFor(focus)),
+			spoken, assistant.DisplayFor(focus), assistant.DisplayFor(focus)),
 	}
 }
 
 // describable reports whether there is enough of a row to check a spoken name
 // against. An id alone is not a name, and refusing against it would refuse
 // everything.
-func describable(row SessionRow) bool {
+func describable(row assistant.SessionRow) bool {
 	return row.Name != "" || row.ProjectName != "" || row.ProjectSlug != ""
 }
 
@@ -138,8 +142,8 @@ func describable(row SessionRow) bool {
 // It reuses the matcher the assistant's own `find_session` uses, so "clear
 // enough to act on" means the same thing here as it does there — and, as there,
 // a near-tie is not clear and falls through to the gentler checks.
-func clearlyElsewhere(spoken string, focus SessionRow, known []SessionRow) (SessionRow, bool) {
-	others := make([]SessionRow, 0, len(known))
+func clearlyElsewhere(spoken string, focus assistant.SessionRow, known []assistant.SessionRow) (assistant.SessionRow, bool) {
+	others := make([]assistant.SessionRow, 0, len(known))
 	for _, row := range known {
 		if row.ID == "" || row.ID == focus.ID || !describable(row) {
 			continue
@@ -147,43 +151,20 @@ func clearlyElsewhere(spoken string, focus SessionRow, known []SessionRow) (Sess
 		others = append(others, row)
 	}
 	if len(others) == 0 {
-		return SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 
-	candidates, topIsClear := MatchSessions(spoken, others)
+	candidates, topIsClear := assistant.MatchSessions(spoken, others)
 	if !topIsClear || len(candidates) == 0 {
-		return SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 	// A clear winner among the others is only a wrong target if it beats this
 	// one. "The voice session" against a focus actually called that must not be
 	// refused because a similarly-named session exists somewhere else.
-	if scoreRow(normalizeTokens(spoken), focus) >= candidates[0].Score {
-		return SessionRow{}, false
+	if assistant.ScoreRow(assistant.NormalizeTokens(spoken), focus) >= candidates[0].Score {
+		return assistant.SessionRow{}, false
 	}
 	return candidates[0].Row, true
-}
-
-// namesRow reports whether any salient word of the spoken target belongs to this
-// session — its own name, or the project it sits in.
-//
-// One word, not a mean over all of them. The assistant says "a new session in
-// Agentique" and "the Agentique one", and a scored average punishes both for the
-// words that carry no identity; what matters is whether anything they said is
-// actually this session's.
-func namesRow(tokens []string, row SessionRow) bool {
-	fields := [][]string{
-		normalizeTokens(row.Name),
-		normalizeTokens(row.ProjectName),
-		normalizeTokens(row.ProjectSlug),
-	}
-	for _, token := range tokens {
-		for _, field := range fields {
-			if bestTokenScore(token, field) >= scorePrefix {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // namedProject reports the project the assistant named, when it named one and it
@@ -192,23 +173,23 @@ func namesRow(tokens []string, row SessionRow) bool {
 // This is the shape the incident took — a prompt about one repository sent to a
 // session in another — so it gets its own sentence rather than falling into the
 // generic refusal, and that sentence names the tool that would have been right.
-func namedProject(spoken string, focus SessionRow, projects func() []ProjectRow) (ProjectRow, bool) {
+func namedProject(spoken string, focus assistant.SessionRow, projects func() []assistant.ProjectRow) (assistant.ProjectRow, bool) {
 	if projects == nil {
-		return ProjectRow{}, false
+		return assistant.ProjectRow{}, false
 	}
 	rows := projects()
 	if len(rows) == 0 {
-		return ProjectRow{}, false
+		return assistant.ProjectRow{}, false
 	}
 
-	matched := MatchProjects(spoken, rows)
+	matched := assistant.MatchProjects(spoken, rows)
 	// One match is a name; several is a description, and describing is not
 	// naming. The rule everywhere else in this package: never pick.
 	if len(matched) != 1 {
-		return ProjectRow{}, false
+		return assistant.ProjectRow{}, false
 	}
 	if sameProject(matched[0], focus) {
-		return ProjectRow{}, false
+		return assistant.ProjectRow{}, false
 	}
 	return matched[0], true
 }
@@ -216,7 +197,7 @@ func namedProject(spoken string, focus SessionRow, projects func() []ProjectRow)
 // sameProject reports whether a project row and a session's project are the
 // same place. Compared by name and slug rather than id, because a session row
 // from the browser's world snapshot carries no project id.
-func sameProject(project ProjectRow, row SessionRow) bool {
+func sameProject(project assistant.ProjectRow, row assistant.SessionRow) bool {
 	if project.Name != "" && project.Name == row.ProjectName {
 		return true
 	}

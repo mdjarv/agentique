@@ -17,6 +17,7 @@ import (
 
 	"github.com/allbin/agentkit/devurls"
 	akmcp "github.com/allbin/agentkit/mcphttp"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/procctl"
 )
 
@@ -25,27 +26,31 @@ import (
 // product-internal source of truth even though agentkit's mcphttp package
 // is what actually serves them.
 const (
-	ServerName         = "agentique"
-	ToolSendMessage    = "SendMessage"
-	ToolAcquireDev     = "AcquireDevUrl"
-	ToolReleaseDev     = "ReleaseDevUrl"
-	ToolListDevURLs    = "ListDevUrls"
-	ToolKillDevPort    = "KillDevUrlPort"
-	ToolSetSessionName = "SetSessionName"
-	ToolMemoryAdd      = "MemoryAdd"
-	ToolMemorySearch   = "MemorySearch"
-	ToolMemoryFlag     = "MemoryFlag"
-	ToolMemoryUsed     = "MemoryUsed"
-	ToolSuggestPrompt  = "SuggestSessionPrompt"
-	ToolScheduleCreate = "ScheduleCreate"
-	ToolScheduleReport = "ScheduleReport"
-	ToolScheduleNext   = "ScheduleNext"
-	ToolVoiceReport    = "VoiceReport"
-	ToolSessionModel   = "SessionModel"
+	ServerName          = "agentique"
+	ToolSendMessage     = "SendMessage"
+	ToolAcquireDev      = "AcquireDevUrl"
+	ToolReleaseDev      = "ReleaseDevUrl"
+	ToolListDevURLs     = "ListDevUrls"
+	ToolKillDevPort     = "KillDevUrlPort"
+	ToolSetSessionName  = "SetSessionName"
+	ToolMemoryAdd       = "MemoryAdd"
+	ToolMemorySearch    = "MemorySearch"
+	ToolMemoryFlag      = "MemoryFlag"
+	ToolMemoryUsed      = "MemoryUsed"
+	ToolSuggestPrompt   = "SuggestSessionPrompt"
+	ToolScheduleCreate  = "ScheduleCreate"
+	ToolScheduleReport  = "ScheduleReport"
+	ToolScheduleNext    = "ScheduleNext"
+	ToolAssistantReport = "AssistantReport"
+	ToolSessionModel    = "SessionModel"
 
-	// VoiceReportToolFullName is the name the drafted prompt tells a worker to
-	// call when someone is listening on a live voice call.
-	VoiceReportToolFullName = "mcp__" + ServerName + "__" + ToolVoiceReport
+	// AssistantReportToolFullName is the name the dispatched prompt tells a
+	// worker to call while the assistant is following the run.
+	//
+	// It renamed from VoiceReport with no wire transition, and needs none: the
+	// tool is in-process, and its name reaches a session only through the
+	// instruction that teaches it, which is written from this constant.
+	AssistantReportToolFullName = "mcp__" + ServerName + "__" + ToolAssistantReport
 
 	SendMessageToolFullName    = "mcp__" + ServerName + "__" + ToolSendMessage
 	AcquireDevURLToolFullName  = "mcp__" + ServerName + "__" + ToolAcquireDev
@@ -101,13 +106,73 @@ type ScheduleCreator interface {
 	AgentPace(ctx context.Context, sessionID, runID string, delaySeconds int, reason string, stop bool) (string, error)
 }
 
-// VoiceReporter delivers a worker's progress report to whoever is listening on
-// a live voice call following that session. Implemented by voice.Registry. May
-// be nil — VoiceReport is then not registered, which is the correct surface
-// when live voice is disabled.
-type VoiceReporter interface {
+// The assistant's tool surface has two callers that must never be able to reach
+// each other's half, and the two halves appear and disappear independently — so
+// they are two interfaces, each nil when its caller does not exist, on two
+// ENDPOINTS.
+//
+// A coding SESSION gets [ToolAssistantReport] and nothing else: a worker
+// telling the operator something only it could know. The assistant's own HEAD
+// gets the verb table and nothing else: the closed set of things the assistant
+// is allowed to do, with every refusal, tier gate and rate limit enforced
+// inside it rather than in either prompt.
+//
+// Two endpoints rather than one, because `tools/list` is not scoped to the
+// caller: a handler answers it from everything registered on it, whoever asks.
+// One shared endpoint therefore handed twenty verbs — merge_session,
+// delete_session and the rest of the uncontained tier included, which exist in
+// the table only to be refused — to every coding session on every turn. That is
+// context those sessions pay for, tool names they can never call, and, for a
+// prompt-injected one, the assistant's own vocabulary to aim a crafted report
+// at. [NewAssistantHandler] is the head's, mounted for head tokens only;
+// [registerHeadTool] stays as the second belt, since the id test is what makes
+// the separation total rather than a matter of which URL a config named.
+
+// AssistantReporter relays one worker report to whoever is following the run.
+//
+// It exists whenever a report has somewhere to go, which is NOT the same as the
+// assistant being switched on: a live call follows runs through the report
+// registry alone, and the instruction that teaches a worker this tool rides
+// every prompt the dispatcher sends on a call. Gating the tool on the assistant
+// service would name a tool that is not registered in every voice dispatch on a
+// server whose assistant is off.
+//
+// Implemented by *assistant.Service (journal and followers) and by
+// *assistant.Registry (followers only). May be nil — [ToolAssistantReport] is
+// then not registered.
+type AssistantReporter interface {
+	// Report relays one worker report. Nobody following is a normal answer, not
+	// an error: the message says so, and the worker can stop calling.
 	Report(sessionID, kind, headline string) (string, error)
 }
+
+// AssistantHead is the verb table, and it exists exactly when the assistant
+// does: the head is what calls a verb, and every rule that matters lives in
+// [AssistantHead.ToolHandler] rather than in a prompt.
+//
+// Implemented by *assistant.Service. It is served by [NewAssistantHandler] on
+// the head's own endpoint, so a coding session's tool list never grows by the
+// table.
+type AssistantHead interface {
+	// Verbs is the closed table, in enough detail to build a tool schema from.
+	Verbs() []assistant.Verb
+	// ToolHandler runs one verb and always answers — the caller is a model that
+	// stays paused until it is, so a refusal is a payload and never an error.
+	ToolHandler(ctx context.Context, name string, args map[string]any) map[string]any
+}
+
+// headOnlyRefusal is what a coding session is told when it calls a verb that
+// belongs to the assistant's head.
+//
+// Written for a model to read and stop: the verbs are not a capability a session
+// has been given badly, they are somebody else's tools sharing one endpoint.
+const headOnlyRefusal = "That tool belongs to the assistant, not to a session. It is not yours to " +
+	"call; ask the operator to do it from the assistant instead."
+
+// sessionOnlyRefusal is the mirror: the assistant's head calling a tool that
+// acts on the session whose identity it would be borrowing.
+const sessionOnlyRefusal = "That tool acts on a coding session, and you are not one. Use your own " +
+	"tools instead."
 
 // SessionModelReport is the JSON the SessionModel tool answers with: which
 // upstream model a session is actually running on, and how strong that reading
@@ -130,15 +195,20 @@ type SessionModelInspector interface {
 	InspectSessionModel(ctx context.Context, sessionID string) (SessionModelReport, error)
 }
 
-// NewHandler returns the configured /mcp http.Handler. renamer may be nil in
-// tests that don't exercise SetSessionName — calls to that tool will then
-// return an error result. mem may be nil to omit the brain memory tools;
-// sched may be nil to omit ScheduleCreate; voice may be nil to omit VoiceReport;
-// models may be nil to omit SessionModel.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, voice VoiceReporter, models SessionModelInspector) http.Handler {
+// NewHandler returns the configured /mcp http.Handler — the endpoint every
+// coding session reaches. renamer may be nil in tests that don't exercise
+// SetSessionName — calls to that tool will then return an error result. mem may
+// be nil to omit the brain memory tools; sched may be nil to omit
+// ScheduleCreate; reporter may be nil to omit AssistantReport; models may be
+// nil to omit SessionModel.
+//
+// The assistant's verb table is deliberately NOT here: it is the head's, on the
+// head's own endpoint ([NewAssistantHandler]), because a tool list is not scoped
+// to the caller.
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, reporter AssistantReporter, models SessionModelInspector) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolSendMessage,
 		Description: "Send a message to a teammate in this channel.",
 		InputSchema: akmcp.ObjectProp{
@@ -164,7 +234,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		},
 	})
 
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolAcquireDev,
 		Description: "Lease a publicly-routable HTTPS URL that points at a local TCP port on this machine. Bind any HTTP service to the returned port and it becomes reachable at the returned URL (TLS terminated by the reverse proxy — valid certificate, so HTTPS-only features like passkeys/WebAuthn, secure cookies, and service workers work). Returns {slot, url, publicHost, port}. Idempotent — re-calling returns the existing lease for this session.",
 		Handler: func(ctx context.Context, sid string, _ json.RawMessage) akmcp.Result {
@@ -172,7 +242,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		},
 	})
 
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolReleaseDev,
 		Description: "Release any dev URL slot leased by this session. Idempotent — no-op if nothing is held. Slots also auto-release when the session ends.",
 		Handler: func(_ context.Context, sid string, _ json.RawMessage) akmcp.Result {
@@ -180,7 +250,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		},
 	})
 
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolListDevURLs,
 		Description: "List all configured dev URL slots, their current holders, and whether each port is actually bound. Includes external-owner details (pid, cmdline, cwd) when a port is bound by a process not tracked by the lease store — useful for spotting orphans that need KillDevUrlPort.",
 		Handler: func(ctx context.Context, _ string, _ json.RawMessage) akmcp.Result {
@@ -191,7 +261,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 	type setNameArgs struct {
 		Name string `json:"name"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolSetSessionName,
 		Description: "Rename the current Agentique session. Use when the session's topic becomes clear or the user asks for a rename. Keep the name short (a few words, max 80 chars) and descriptive of what the session is about — it appears in the sidebar. The UI updates immediately.",
 		InputSchema: akmcp.ObjectProp{
@@ -210,7 +280,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 	type killSlotArgs struct {
 		Slot string `json:"slot"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolKillDevPort,
 		Description: "Terminate the process currently listening on a dev URL slot's TCP port. Use when AcquireDevUrl skipped a slot or ListDevUrls reports an external/orphan owner. SIGTERM → 2s wait → SIGKILL. Destructive — requires user confirmation each call. After success, retry AcquireDevUrl.",
 		InputSchema: akmcp.ObjectProp{
@@ -231,7 +301,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		Prompt  string `json:"prompt"`
 		Project string `json:"project"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name: ToolSuggestPrompt,
 		Description: "Surface a ready-to-launch session prompt to the user as a clickable card. " +
 			"Use when you spot independent work that could run as its own parallel session — call " +
@@ -261,7 +331,7 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		SessionID string `json:"sessionId"`
 	}
 	if models != nil {
-		register(h, akmcp.Tool{
+		registerSessionTool(h, akmcp.Tool{
 			Name: ToolSessionModel,
 			Description: "Report which upstream model an Agentique session is actually running on. " +
 				"The requested model is an alias (\"opus\", \"sonnet\") that moves between releases, so it " +
@@ -290,35 +360,64 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 	if sched != nil {
 		registerScheduleTools(h, sched)
 	}
-	if voice != nil {
-		registerVoiceTools(h, voice)
+	if reporter != nil {
+		registerAssistantReportTool(h, reporter)
 	}
 
 	return h
 }
 
-// registerVoiceTools exposes the worker's side of a live voice call.
+// NewAssistantHandler returns the http.Handler for the assistant head's own MCP
+// endpoint: the verb table, and nothing else on it.
 //
-// The direction matters: the worker pushes what it decides is worth saying,
+// Its own TokenStore as well as its own path, so the only caller that can
+// authenticate to it is one the head manager minted a token for. A coding
+// session's bearer is not in this store, which is what makes "a session never
+// sees the verb table" true of the LISTING and not only of the calls.
+func NewAssistantHandler(tokens *TokenStore, head AssistantHead) http.Handler {
+	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
+	if head == nil {
+		return h
+	}
+	// Every verb is registered, uncontained ones included: the table is what the
+	// head is allowed to KNOW about as well as what it may do, and a verb it
+	// cannot see is one it invents a way around.
+	for _, verb := range head.Verbs() {
+		registerVerbTool(h, head, verb)
+	}
+	return h
+}
+
+// registerAssistantReportTool exposes the worker's half of the assistant's tool
+// surface: what a session tells the assistant.
+//
+// The direction matters: the worker pushes what IT decides is worth saying,
 // rather than a watcher inferring salience from its event stream. Only the
 // worker knows it just found the tests were already broken, so the judgement
-// lives where the knowledge is.
-func registerVoiceTools(h *akmcp.Handler, voice VoiceReporter) {
-	type voiceReportArgs struct {
+// lives where the knowledge is — and the inference layer that would otherwise be
+// needed does not exist.
+//
+// The verbs run the other way and are the head's. Every rule that matters is
+// inside them ([AssistantHead.ToolHandler]) rather than in the head's prompt,
+// which is what makes two heads on one body safe: a call and the thread hit the
+// same refusals.
+func registerAssistantReportTool(h *akmcp.Handler, a AssistantReporter) {
+	type assistantReportArgs struct {
 		Kind     string `json:"kind"`
 		Headline string `json:"headline"`
 	}
-	register(h, akmcp.Tool{
-		Name: ToolVoiceReport,
-		Description: "Say something to the person listening on the live voice call following this run. " +
+	registerSessionTool(h, akmcp.Tool{
+		Name: ToolAssistantReport,
+		Description: "Tell the operator's assistant something about this run, so it reaches whoever is " +
+			"following — read aloud on a live call, and kept in the assistant's journal either way. " +
 			"Call it at decision points and surprises — the things that would change what they'd ask " +
 			"you to do next (a test suite that was already failing, a file that isn't where the task " +
 			"assumed, an approach you've abandoned). Do NOT report progress: opening files, running " +
 			"commands and finishing routine steps are all visible on their screen. Expect two or three " +
 			"calls in a ten-minute run, not twenty — reporting too often trains them to stop listening. " +
-			"You do not need to report finishing; that is delivered automatically. The headline is READ " +
-			"ALOUD, so write one plain spoken sentence: no markdown, no bullets, no code. If nobody is " +
-			"listening the call is a no-op and tells you so.",
+			"You do not need to report finishing; that is delivered automatically. The headline may be " +
+			"READ ALOUD, so write one plain spoken sentence: no markdown, no bullets, no code. If nobody " +
+			"is following, it is kept rather than spoken, and the answer says so.",
 		InputSchema: akmcp.ObjectProp{
 			Properties: map[string]akmcp.Property{
 				"kind": akmcp.StringProp{
@@ -334,14 +433,85 @@ func registerVoiceTools(h *akmcp.Handler, voice VoiceReporter) {
 			},
 			Required: []string{"kind", "headline"},
 		},
-		Handler: akmcp.TypedHandler(func(_ context.Context, sid string, args voiceReportArgs) akmcp.Result {
-			msg, err := voice.Report(sid, args.Kind, args.Headline)
+		Handler: akmcp.TypedHandler(func(_ context.Context, sid string, args assistantReportArgs) akmcp.Result {
+			msg, err := a.Report(sid, args.Kind, args.Headline)
 			if err != nil {
-				return akmcp.ErrorResultf("voice report failed: %v", err)
+				return akmcp.ErrorResultf("assistant report failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),
 	})
+}
+
+// registerVerbTool exposes one verb from the closed table to the head.
+//
+// Asking for an uncontained one answers a refusal naming its tier, which until
+// proposals exist (M3) is the whole of the answer.
+func registerVerbTool(h *akmcp.Handler, a AssistantHead, verb assistant.Verb) {
+	registerHeadTool(h, akmcp.Tool{
+		Name:        verb.Name,
+		Description: verb.Description,
+		InputSchema: verbSchema(verb),
+		Handler: func(ctx context.Context, _ string, raw json.RawMessage) akmcp.Result {
+			args := map[string]any{}
+			if len(raw) > 0 {
+				if err := json.Unmarshal(raw, &args); err != nil {
+					// Not an error result: the model is paused until it is
+					// answered, and "your arguments did not parse" is something it
+					// can act on where a transport failure is not.
+					return akmcp.TextResult("Those arguments did not parse as JSON. Say plainly that it " +
+						"did not go through, and try once more.")
+				}
+			}
+			return verbResult(a.ToolHandler(ctx, verb.Name, args))
+		},
+	})
+}
+
+// verbSchema turns one verb's parameter list into a tool schema.
+//
+// The table describes its arguments in its own terms ([assistant.Param]) so that
+// package never has to know what an MCP schema looks like; this is the one place
+// the two vocabularies meet.
+func verbSchema(verb assistant.Verb) akmcp.ObjectProp {
+	schema := akmcp.ObjectProp{Properties: map[string]akmcp.Property{}}
+	for _, param := range verb.Input {
+		switch param.Type {
+		case assistant.ParamBoolean:
+			schema.Properties[param.Name] = akmcp.BoolProp{Description: param.Description}
+		case assistant.ParamInteger:
+			schema.Properties[param.Name] = akmcp.NumberProp{Description: param.Description}
+		default:
+			schema.Properties[param.Name] = akmcp.StringProp{
+				Description: param.Description,
+				Enum:        param.Enum,
+			}
+		}
+		if param.Required {
+			schema.Required = append(schema.Required, param.Name)
+		}
+	}
+	return schema
+}
+
+// verbResult renders a verb's payload for the head.
+//
+// A refusal comes back as an `error` key rather than as a Go error, because the
+// caller is a model paused until it is answered and an unanswered tool call is
+// indistinguishable from the whole thing having died. It is still marked as an
+// error result, so the head reads it as a refusal rather than as data.
+func verbResult(payload map[string]any) akmcp.Result {
+	if payload == nil {
+		return akmcp.TextResult("{}")
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return akmcp.ErrorResultf("encode verb result: %v", err)
+	}
+	if _, refused := payload["error"].(string); refused {
+		return akmcp.ErrorResult(string(body))
+	}
+	return akmcp.TextResult(string(body))
 }
 
 func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
@@ -352,7 +522,7 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 		At      string `json:"at"`
 		Dynamic bool   `json:"dynamic"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolScheduleCreate,
 		Description: "Propose a scheduled loop on THIS session: agentique will re-send the prompt as a fresh turn on the schedule, durably (survives restarts and idle eviction). The schedule is created PAUSED, awaiting the user's approval in the UI — it never fires before approval, and this call returns immediately (do not wait for approval; tell the user and move on). Provide exactly one of `cron` (recurring), `at` (one-shot reminder), or `dynamic: true` (self-paced: first fire immediate, then the agent picks each delay via ScheduleNext).",
 		InputSchema: akmcp.ObjectProp{
@@ -379,7 +549,7 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 		Status  string `json:"status"`
 		Summary string `json:"summary"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolScheduleReport,
 		Description: "Report the outcome of the scheduled run you are currently executing (the runId is in the [scheduled-run:…] footer of the prompt that started this turn). Call it once, when the run's work is done: status `ok` (worked), `action-needed` (a human must look — this raises attention without failing the loop), or `failed` (the run genuinely failed). The summary becomes the run's one-line history entry. Only valid for runs fired into THIS session.",
 		InputSchema: akmcp.ObjectProp{
@@ -408,7 +578,7 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 		Reason       string `json:"reason"`
 		Stop         bool   `json:"stop"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolScheduleNext,
 		Description: "Self-paced loops only: choose when this loop should fire again (the runId is in the [scheduled-run:…] footer of this turn's prompt). Pass delaySeconds + a short reason shown to the user (\"waiting for CI run to finish\"), or stop=true when the loop's goal is complete — the loop then parks visibly and the user can resume it later. Delays are clamped to the server's configured bounds. Without a call, one fallback fire happens; a loop that stops rescheduling is parked.",
 		InputSchema: akmcp.ObjectProp{
@@ -435,7 +605,7 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 		Text     string `json:"text"`
 		Category string `json:"category"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolMemoryAdd,
 		Description: "Save a durable fact to your persistent memory ('brain') for this project. Use for things worth remembering across sessions: user preferences, project conventions, architectural decisions, gotchas. Keep each fact short and self-contained. Do NOT save transient task state or secrets.",
 		InputSchema: akmcp.ObjectProp{
@@ -460,7 +630,7 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 	type searchArgs struct {
 		Query string `json:"query"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolMemorySearch,
 		Description: "Search your persistent memory ('brain') for facts relevant to a query, plus always-included pinned facts. Call this at the start of a task to recall what you already know about this project and the user's preferences.",
 		InputSchema: akmcp.ObjectProp{
@@ -482,7 +652,7 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 		ID     string `json:"id"`
 		Reason string `json:"reason"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolMemoryFlag,
 		Description: "Flag a memory from your 'brain' as wrong or outdated when something you found this session contradicts it. Pass the fact's id (shown by MemorySearch) and a short reason. This does NOT delete it — it weakens the fact and queues it for the user to confirm, correct, or remove. Use it whenever a recalled fact turns out to be incorrect.",
 		InputSchema: akmcp.ObjectProp{
@@ -504,7 +674,7 @@ func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
 	type usedArgs struct {
 		ID string `json:"id"`
 	}
-	register(h, akmcp.Tool{
+	registerSessionTool(h, akmcp.Tool{
 		Name:        ToolMemoryUsed,
 		Description: "Confirm that a recalled memory from your 'brain' was actually useful — it was correct and you acted on it this session. Pass the fact's id (shown by MemorySearch and in recalled-memory blocks). This is the positive counterpart to MemoryFlag: it strengthens the fact and raises its confidence, so well-proven preferences graduate into standing instructions. Call it whenever a recalled fact genuinely helped, so the brain learns what to trust.",
 		InputSchema: akmcp.ObjectProp{
@@ -530,6 +700,40 @@ func register(h *akmcp.Handler, t akmcp.Tool) {
 	if err := h.Register(t); err != nil {
 		panic(fmt.Sprintf("mcphttp: register %q: %v", t.Name, err))
 	}
+}
+
+// registerSessionTool is [register] for a tool that only a coding session may
+// call.
+//
+// One endpoint serves two kinds of caller now: every session, and the
+// assistant's own head. They are told apart by the injected id and nothing else
+// — a session's is a UUID, the head's carries [assistant.HeadIDPrefix] — so the
+// test lives here, at the one place a tool is registered, rather than at the top
+// of each handler where the next tool would forget it. A tool that acts on "the
+// calling session" must refuse a caller that is not one: the head would
+// otherwise be renaming, or sending as, a session it has merely borrowed the
+// identity of.
+func registerSessionTool(h *akmcp.Handler, t akmcp.Tool) {
+	inner := t.Handler
+	t.Handler = func(ctx context.Context, sid string, args json.RawMessage) akmcp.Result {
+		if assistant.IsHeadID(sid) {
+			return akmcp.ErrorResult(sessionOnlyRefusal)
+		}
+		return inner(ctx, sid, args)
+	}
+	register(h, t)
+}
+
+// registerHeadTool is the mirror: a tool only the assistant's head may call.
+func registerHeadTool(h *akmcp.Handler, t akmcp.Tool) {
+	inner := t.Handler
+	t.Handler = func(ctx context.Context, sid string, args json.RawMessage) akmcp.Result {
+		if !assistant.IsHeadID(sid) {
+			return akmcp.ErrorResult(headOnlyRefusal)
+		}
+		return inner(ctx, sid, args)
+	}
+	register(h, t)
 }
 
 // --- tool implementations ---

@@ -910,6 +910,20 @@ export const WireListPayloadSchema = z.object({
   limit: z.number(),
 });
 
+export const AssistantSayPayloadSchema = z.object({
+  text: z.string().optional(),
+});
+
+export const AssistantHistoryPayloadSchema = z.object({
+  before: z.string().optional(),
+  limit: z.number().optional(),
+});
+
+export const AssistantJournalPayloadSchema = z.object({
+  since: z.string().optional(),
+  limit: z.number().optional(),
+});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -1132,6 +1146,48 @@ export const PushBrowserProvisioningSchema = z.object({
   state: z.string(),
 });
 
+export const AssistantMessageSchema = z.object({
+  id: z.string().optional(),
+  role: z.string().optional(),
+  text: z.string().optional(),
+  surface: z.string().optional(),
+  callId: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export const AssistantDeltaSchema = z.object({
+  surface: z.string().optional(),
+  text: z.string().optional(),
+});
+
+export const AssistantJournalEntrySchema = z.object({
+  id: z.number().optional(),
+  at: z.string().optional(),
+  kind: z.string().optional(),
+  sessionId: z.string().optional(),
+  projectId: z.string().optional(),
+  summary: z.string().optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
+  untrusted: z.boolean().optional(),
+  notable: z.boolean().optional(),
+});
+
+export const AssistantPageSchema = z.object({
+  messages: z.array(AssistantMessageSchema).optional(),
+  before: z.string().optional(),
+});
+
+export const AssistantUpdateSchema = z.object({
+  journal: z.array(AssistantJournalEntrySchema).optional(),
+  messages: z.array(AssistantMessageSchema).optional(),
+  since: z.string().optional(),
+  lookedAt: z.string().optional(),
+});
+
+export const AssistantJournalResultSchema = z.object({
+  entries: z.array(AssistantJournalEntrySchema).optional(),
+});
+
 export const ScheduleInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -1229,6 +1285,9 @@ export const pushSchemaMap = {
   "browser.frame": PushBrowserFrameSchema,
   "browser.stopped": PushBrowserStoppedSchema,
   "browser.provisioning": PushBrowserProvisioningSchema,
+  "assistant.message": AssistantMessageSchema,
+  "assistant.delta": AssistantDeltaSchema,
+  "assistant.journal": AssistantJournalEntrySchema,
   "schedule.updated": ScheduleInfoSchema,
   "schedule.deleted": ScheduleInfoSchema,
   "schedule.run": ScheduleRunInfoSchema,

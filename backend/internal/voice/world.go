@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // viewingNoteInterval is how often the call may mention what the operator is
@@ -26,7 +28,7 @@ func (c *call) setWorld(rows []wireSessionRow) {
 	if len(rows) > maxWorldRows {
 		rows = rows[:maxWorldRows]
 	}
-	converted := make([]SessionRow, 0, len(rows))
+	converted := make([]assistant.SessionRow, 0, len(rows))
 	for _, row := range rows {
 		converted = append(converted, row.toRow())
 	}
@@ -37,7 +39,7 @@ func (c *call) setWorld(rows []wireSessionRow) {
 }
 
 // worldRows returns the latest snapshot.
-func (c *call) worldRows() []SessionRow {
+func (c *call) worldRows() []assistant.SessionRow {
 	c.worldMu.Lock()
 	defer c.worldMu.Unlock()
 	return c.world
@@ -89,7 +91,7 @@ func (c *call) injectViewingNote(sessionID string) {
 
 	row, known := c.lookupRow(ctx, sessionID)
 	if !known {
-		row = SessionRow{ID: sessionID}
+		row = assistant.SessionRow{ID: sessionID}
 	}
 	// The id is now something the server told the model, so focusing it is
 	// allowed — the operator only has to ask.
@@ -112,7 +114,7 @@ func (c *call) injectViewingNote(sessionID string) {
 
 // whereClause places a session for the listener: the project it is in, and the
 // machine it runs on when that is not this one's business to assume.
-func whereClause(row SessionRow) string {
+func whereClause(row assistant.SessionRow) string {
 	switch {
 	case row.ProjectName != "" && row.MachineName != "":
 		return fmt.Sprintf(" in %s on %s", row.ProjectName, row.MachineName)
@@ -127,7 +129,7 @@ func whereClause(row SessionRow) string {
 
 // offer records that the server named these sessions to the model, so
 // focus_session will accept them.
-func (c *call) offer(rows ...SessionRow) {
+func (c *call) offer(rows ...assistant.SessionRow) {
 	c.offeredMu.Lock()
 	defer c.offeredMu.Unlock()
 	for _, row := range rows {
@@ -150,7 +152,7 @@ func (c *call) offer(rows ...SessionRow) {
 // it is not a permission boundary — the operator could open a session on screen
 // — but it is the difference between creating one in a project the server
 // listed and creating one in an id a speech model assembled from a transcript.
-func (c *call) offerProjects(rows ...ProjectRow) {
+func (c *call) offerProjects(rows ...assistant.ProjectRow) {
 	c.offeredMu.Lock()
 	defer c.offeredMu.Unlock()
 	for _, row := range rows {
@@ -162,7 +164,7 @@ func (c *call) offerProjects(rows ...ProjectRow) {
 }
 
 // offeredProject returns a project the server has already named to the model.
-func (c *call) offeredProject(projectID string) (ProjectRow, bool) {
+func (c *call) offeredProject(projectID string) (assistant.ProjectRow, bool) {
 	c.offeredMu.Lock()
 	defer c.offeredMu.Unlock()
 	row, ok := c.offeredProjects[projectID]
@@ -170,7 +172,7 @@ func (c *call) offeredProject(projectID string) (ProjectRow, bool) {
 }
 
 // offeredRow returns a session the server has already named to the model.
-func (c *call) offeredRow(sessionID string) (SessionRow, bool) {
+func (c *call) offeredRow(sessionID string) (assistant.SessionRow, bool) {
 	c.offeredMu.Lock()
 	defer c.offeredMu.Unlock()
 	row, ok := c.offered[sessionID]
@@ -183,10 +185,10 @@ func (c *call) offeredRow(sessionID string) (SessionRow, bool) {
 // what it has been told about, so a wrong target is nearly always one of these
 // rather than an invention. Ordering is a map's, which is fine — the only
 // consumer ranks them.
-func (c *call) knownRows() []SessionRow {
+func (c *call) knownRows() []assistant.SessionRow {
 	c.offeredMu.Lock()
 	defer c.offeredMu.Unlock()
-	rows := make([]SessionRow, 0, len(c.offered))
+	rows := make([]assistant.SessionRow, 0, len(c.offered))
 	for _, row := range c.offered {
 		rows = append(rows, row)
 	}
@@ -195,9 +197,9 @@ func (c *call) knownRows() []SessionRow {
 
 // lookupRow finds what the call knows about a session: this machine's database
 // first, then the browser's snapshot, then whatever was already offered.
-func (c *call) lookupRow(ctx context.Context, sessionID string) (SessionRow, bool) {
+func (c *call) lookupRow(ctx context.Context, sessionID string) (assistant.SessionRow, bool) {
 	if sessionID == "" {
-		return SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 	if c.directory != nil {
 		if row, ok := c.directory.SessionBrief(ctx, sessionID); ok {
@@ -212,7 +214,7 @@ func (c *call) lookupRow(ctx context.Context, sessionID string) (SessionRow, boo
 	if row, ok := c.offeredRow(sessionID); ok && row.Name != "" {
 		return row, true
 	}
-	return SessionRow{}, false
+	return assistant.SessionRow{}, false
 }
 
 // mergedRows is everything the call can see, local rows first.
@@ -222,8 +224,8 @@ func (c *call) lookupRow(ctx context.Context, sessionID string) (SessionRow, boo
 // the ones on machines this server cannot reach at all. Dedupe by id with the
 // local row winning, because the browser's copy of a local session is a render
 // of a push that may be a round trip behind.
-func (c *call) mergedRows(ctx context.Context, filter string) []SessionRow {
-	var rows []SessionRow
+func (c *call) mergedRows(ctx context.Context, filter string) []assistant.SessionRow {
+	var rows []assistant.SessionRow
 	seen := make(map[string]bool)
 
 	if c.directory != nil {
@@ -248,7 +250,7 @@ func (c *call) mergedRows(ctx context.Context, filter string) []SessionRow {
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := AttentionRank(rows[i].Attention), AttentionRank(rows[j].Attention)
+		a, b := assistant.AttentionRank(rows[i].Attention), assistant.AttentionRank(rows[j].Attention)
 		if a != b {
 			return a < b
 		}
@@ -262,12 +264,12 @@ func (c *call) mergedRows(ctx context.Context, filter string) []SessionRow {
 //
 // An unknown filter keeps the row: a mis-transcribed word must not turn into an
 // empty answer, which over a call is indistinguishable from "there is nothing".
-func matchesFilter(row SessionRow, filter string) bool {
+func matchesFilter(row assistant.SessionRow, filter string) bool {
 	switch filter {
-	case FilterNeedsAttention:
-		return row.hasAttention()
-	case FilterRunning:
-		return row.State == stateRunning
+	case assistant.FilterNeedsAttention:
+		return row.HasAttention()
+	case assistant.FilterRunning:
+		return row.State == assistant.StateRunning
 	default:
 		return true
 	}
@@ -280,12 +282,12 @@ func matchesFilter(row SessionRow, filter string) bool {
 //
 // A call with no directory is the single-session call this feature grew out of:
 // it knows one session, the one it opened on, and that one is local.
-func (c *call) localRow(ctx context.Context, sessionID string) (SessionRow, bool) {
+func (c *call) localRow(ctx context.Context, sessionID string) (assistant.SessionRow, bool) {
 	if sessionID == "" {
-		return SessionRow{}, false
+		return assistant.SessionRow{}, false
 	}
 	if c.directory == nil {
-		return SessionRow{ID: sessionID}, true
+		return assistant.SessionRow{ID: sessionID}, true
 	}
 	return c.directory.SessionBrief(ctx, sessionID)
 }
@@ -299,14 +301,14 @@ func (c *call) isLocal(ctx context.Context, sessionID string) bool {
 // bestKnownRow is the most complete description the call has of a session it
 // does not own: the snapshot's row, then whatever was already offered, then the
 // bare id — which is still something to answer with.
-func (c *call) bestKnownRow(ctx context.Context, sessionID string) SessionRow {
+func (c *call) bestKnownRow(ctx context.Context, sessionID string) assistant.SessionRow {
 	if row, ok := c.lookupRow(ctx, sessionID); ok {
 		return row
 	}
 	if row, ok := c.offeredRow(sessionID); ok {
 		return row
 	}
-	return SessionRow{ID: sessionID}
+	return assistant.SessionRow{ID: sessionID}
 }
 
 // cacheSummary stores a delivered summary for the rest of the call.

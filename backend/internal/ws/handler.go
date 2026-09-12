@@ -7,6 +7,7 @@ import (
 
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/gorilla/websocket"
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/persona"
@@ -29,6 +30,7 @@ type Handler struct {
 	PersonaService    *persona.Service        // nil when experimental teams is disabled
 	BrowserService    *session.BrowserService // nil when browser support is unavailable
 	ScheduleService   *schedule.Scheduler     // nil when the scheduler is disabled
+	AssistantService  *assistant.Service      // nil when [experimental] assistant is off
 	Catalog           *providers.Catalog      // model catalog; nil falls back to base aliases
 	AllowedOrigins    map[string]bool         // additional origins; same-origin is always accepted
 	AllowTicketOrigin bool                    // auth middleware validated wsTicket before this handler
@@ -79,7 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("ws connected", "remote", r.RemoteAddr)
-	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Bus, h.TeamService, h.PersonaService, h.BrowserService, h.ScheduleService, h.Catalog, h.MaxMessageBytes)
+	c := newConn(r.Context(), wsConn, h.Service, h.GitService, h.ProjectGitService, h.Queries, h.Bus, h.TeamService, h.PersonaService, h.BrowserService, h.ScheduleService, h.AssistantService, h.Catalog, h.MaxMessageBytes)
 	if h.SessionTracker != nil {
 		session := auth.UserFromContext(r.Context())
 		untrack, err := h.SessionTracker.TrackWebSocket(session, c.close)

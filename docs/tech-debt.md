@@ -14,6 +14,19 @@ it is still true.
 
 ## P1 — Surprising or limiting
 
+### Idle eviction cannot see a CLI's background tasks
+The idle sweep judges a session by turn activity, and a Claude Code `Workflow`
+or a backgrounded `Bash` runs *inside* the CLI after the turn that launched it
+has returned. Observed 2026-09-12: a session whose turn had ended two hours
+earlier was evicted ("evicting idle session to reclaim resources ...
+idle_for=2h4m19s") while a multi-agent workflow was three hours into a build
+inside its CLI, and the eviction killed the workflow with no record of it
+anywhere agentique shows. The CLI does report these as `task` events
+(`docs/workflows.md`, `docs/session-dock.md`), so the server has the signal; the
+sweep should treat an open task as not idle, or at least the eviction log line
+should say a task was in flight. Until then, a long workflow needs a user
+message inside the TTL. → `internal/session` idle sweep, `TurnInFlight`.
+
 ### Brain: promoted-fact merge inputs are forward-only (backfill shipped, not yet run)
 The review surface's headline feature — showing a cross-scope promotion as *inputs →
 output* — depends on `Record.Subsumed`, snapshotted at apply time. It is **not

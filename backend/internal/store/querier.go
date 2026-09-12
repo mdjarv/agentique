@@ -31,6 +31,7 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CountWebAuthnCredentials(ctx context.Context) (int64, error)
 	CreateAgentProfile(ctx context.Context, arg CreateAgentProfileParams) (AgentProfile, error)
+	CreateAssistantChannel(ctx context.Context, arg CreateAssistantChannelParams) (Channel, error)
 	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
 	CreateBrainJob(ctx context.Context, arg CreateBrainJobParams) (BrainJob, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
@@ -49,6 +50,7 @@ type Querier interface {
 	DeleteAgentProfile(ctx context.Context, id string) error
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
+	DeleteAssistantFollow(ctx context.Context, sessionID string) error
 	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
 	DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error)
@@ -67,6 +69,17 @@ type Querier interface {
 	GetActiveSessionByAgentProfile(ctx context.Context, agentProfileID sql.NullString) (Session, error)
 	GetAdminUser(ctx context.Context) (User, error)
 	GetAgentProfile(ctx context.Context, id string) (AgentProfile, error)
+	// The conversation, found without the state row. The oldest wins: if a second
+	// one was ever created, the first is the one the history is in.
+	GetAssistantChannel(ctx context.Context) (Channel, error)
+	GetAssistantFollow(ctx context.Context, sessionID string) (AssistantFollow, error)
+	// The assistant's state, journal, follow list and conversation channel.
+	// See docs/assistant.md and migration 056.
+	//
+	// Keep this file ASCII. sqlc expands `SELECT *` by byte offset, so one
+	// multi-byte character shifts those offsets and corrupts the generated code
+	// for LATER queries.
+	GetAssistantState(ctx context.Context) (AssistantState, error)
 	GetAuthSession(ctx context.Context, tokenHash string) (GetAuthSessionRow, error)
 	GetChannel(ctx context.Context, id string) (Channel, error)
 	GetCredentialByID(ctx context.Context, id string) (WebauthnCredential, error)
@@ -88,6 +101,17 @@ type Querier interface {
 	GetUser(ctx context.Context, id string) (User, error)
 	GetUserByDisplayName(ctx context.Context, displayName string) (User, error)
 	GetVoiceSettings(ctx context.Context) (GetVoiceSettingsRow, error)
+	InsertAssistantJournalEntry(ctx context.Context, arg InsertAssistantJournalEntryParams) (AssistantJournal, error)
+	// One message of the conversation.
+	//
+	// Its own insert rather than InsertMessage because created_at is passed IN.
+	// The table's default stamps milliseconds, and an ask and its reply can land
+	// in the same millisecond -- at which point the only tiebreak left is the
+	// uuid, and the two read back in no order at all. A fixed-width nanosecond
+	// stamp sorts lexicographically, which for this column is the only kind of
+	// sorting there is. Nothing else writes to an assistant channel, so the
+	// sharper format is consistent within the timeline that reads it.
+	InsertAssistantMessage(ctx context.Context, arg InsertAssistantMessageParams) (Message, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertEventWithMessageID(ctx context.Context, arg InsertEventWithMessageIDParams) error
 	InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error)
@@ -96,9 +120,27 @@ type Querier interface {
 	ListAgentMessagesByChannel(ctx context.Context, channelID string) ([]SessionEvent, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
+	ListAssistantFollows(ctx context.Context) ([]AssistantFollow, error)
+	ListAssistantJournalSince(ctx context.Context, arg ListAssistantJournalSinceParams) ([]AssistantJournal, error)
+	ListAssistantJournalUnseen(ctx context.Context, arg ListAssistantJournalUnseenParams) ([]AssistantJournal, error)
+	// One page of the conversation, newest first. An empty `before` starts at the
+	// newest message; otherwise it is a created_at cursor.
+	//
+	// rowid breaks the tie, not id. messages.created_at has millisecond precision
+	// and a message's id is a uuid, so two turns written in the same millisecond --
+	// an ask and a mirrored reply -- would come back in uuid order, which is to say
+	// in no order. rowid is insertion order, which is the order they were said in.
+	ListAssistantMessagesBefore(ctx context.Context, arg ListAssistantMessagesBeforeParams) ([]Message, error)
+	// What has been said in the conversation since a surface last looked, oldest
+	// first: this is read to be pasted into a preamble or a strip, in order.
+	ListAssistantMessagesSince(ctx context.Context, arg ListAssistantMessagesSinceParams) ([]Message, error)
 	ListAuthSessions(ctx context.Context) ([]ListAuthSessionsRow, error)
 	ListBrainJobs(ctx context.Context) ([]BrainJob, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
+	// Ordinary channels only. The assistant's conversation is a channel with
+	// kind = 'assistant' and is not one of a project's channels: it has no project,
+	// it has no roster, and a row for it in the channel list would offer every
+	// channel gesture (dissolve, add a member) against the thread.
 	ListChannelsByProject(ctx context.Context, projectID sql.NullString) ([]Channel, error)
 	ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error)
 	ListCredentialsByUser(ctx context.Context, userID string) ([]WebauthnCredential, error)
@@ -123,6 +165,12 @@ type Querier interface {
 	ListSchedules(ctx context.Context) ([]Schedule, error)
 	ListSchedulesBySession(ctx context.Context, sessionID string) ([]Schedule, error)
 	ListSessionChannels(ctx context.Context, sessionID string) ([]ListSessionChannelsRow, error)
+	// The session.state observer's baseline: what every session's two outcome
+	// facts already were before the observer started watching. A push is a whole
+	// snapshot, not a transition, so without this the first push for a session
+	// archived last month reads as news -- and on the first boot with the
+	// assistant on, that was one entry per archived session ever.
+	ListSessionOutcomeBaseline(ctx context.Context) ([]ListSessionOutcomeBaselineRow, error)
 	ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error)
 	ListTeamMembers(ctx context.Context, teamID string) ([]AgentProfile, error)
 	ListTeams(ctx context.Context) ([]Team, error)
@@ -130,6 +178,20 @@ type Querier interface {
 	ListUnfinishedRunsForSchedule(ctx context.Context, scheduleID string) ([]ScheduleRun, error)
 	ListUnfinishedScheduleRuns(ctx context.Context) ([]ScheduleRun, error)
 	ListUsers(ctx context.Context) ([]User, error)
+	// Stamps everything this surface has now been shown, THROUGH the newest row it
+	// was handed.
+	//
+	// Through a boundary rather than row by row, because a look is bounded and the
+	// journal is not: stamping only the rows returned left a backlog larger than
+	// one page unseen, so the next look answered with the next fifty OLDER entries
+	// and announced last week as news. The boundary is the newest row of the look,
+	// so what it means is "you are caught up to here" -- which is the only reading
+	// that is monotonic in time.
+	//
+	// Already-stamped rows are left alone: a second surface's mark must not be
+	// rewritten, and re-stamping the whole history on every look would be an
+	// UPDATE over the table.
+	MarkAssistantJournalSeenThrough(ctx context.Context, arg MarkAssistantJournalSeenThroughParams) error
 	MarkScheduleRunFired(ctx context.Context, arg MarkScheduleRunFiredParams) error
 	MarkScheduleViewed(ctx context.Context, arg MarkScheduleViewedParams) error
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
@@ -146,6 +208,18 @@ type Querier interface {
 	// database) where the turn count needs only the index and the cost only the
 	// result rows.
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
+	SetAssistantChannel(ctx context.Context, arg SetAssistantChannelParams) error
+	SetAssistantFollowBriefed(ctx context.Context, arg SetAssistantFollowBriefedParams) error
+	SetAssistantModel(ctx context.Context, arg SetAssistantModelParams) error
+	// Records that a surface has looked. json_set on the existing object rather
+	// than a rewrite, so two surfaces cannot overwrite each other's mark.
+	//
+	// The DO UPDATE clause uses ?1/?2 rather than sqlc.arg(): sqlc does NOT rewrite
+	// a named parameter inside an upsert's DO UPDATE, it copies the text through,
+	// and `sqlc.arg(surface)` reaching SQLite is a runtime error in a statement
+	// whose failure this code only logs. The numbers are the same parameters the
+	// VALUES clause names.
+	SetAssistantSurfaceMark(ctx context.Context, arg SetAssistantSurfaceMarkParams) error
 	SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error
 	SetScheduleAttention(ctx context.Context, arg SetScheduleAttentionParams) error
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
@@ -224,6 +298,7 @@ type Querier interface {
 	UpdateTeam(ctx context.Context, arg UpdateTeamParams) (Team, error)
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
+	UpsertAssistantFollow(ctx context.Context, arg UpsertAssistantFollowParams) error
 	// platform_os keeps its stored value when the caller sends empty: a client
 	// that predates the field re-upserts rows on re-pair, and blanking a known
 	// platform would strip the glyph until the next fresh pair.

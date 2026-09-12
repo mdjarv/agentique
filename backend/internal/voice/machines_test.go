@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 )
 
 // CAN THE VOICE ASSISTANT LIST THE MACHINES PAIRED WITH AGENTIQUE?
@@ -115,7 +117,7 @@ func connectedWorld() []wireSessionRow {
 			MachineID:      "m-mini",
 			MachineName:    "mac-mini",
 			State:          "idle",
-			Attention:      AttentionUnread,
+			Attention:      assistant.AttentionUnread,
 			LastActivityAt: "2026-08-28T11:00:00Z",
 		},
 	}
@@ -124,7 +126,7 @@ func connectedWorld() []wireSessionRow {
 // localDirectory stands in for this server's own database — the one machine a
 // call has authority over.
 func localDirectory() *fakeDirectory {
-	return &fakeDirectory{rows: []SessionRow{{
+	return &fakeDirectory{rows: []assistant.SessionRow{{
 		ID:           "sess-local",
 		Name:         "Träffbild ML",
 		ProjectName:  "Träffbild",
@@ -142,7 +144,7 @@ func TestListSessionsNamesEveryMachineThatHasASession(t *testing.T) {
 	c := newToolCall(localDirectory(), &fakeDispatcher{}, "")
 	c.setWorld(connectedWorld())
 
-	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 
 	got := machinesIn(t, answer)
 	want := []string{"mac-mini", "thinkpad", "workstation"}
@@ -166,7 +168,7 @@ func TestAPairedMachineWithNoSessionsIsInvisible(t *testing.T) {
 	// machine with none contributes no rows, so there is nothing to omit.
 	c.setWorld(connectedWorld())
 
-	for _, filter := range []string{FilterAll, FilterRecent, FilterRunning, FilterNeedsAttention} {
+	for _, filter := range []string{assistant.FilterAll, assistant.FilterRecent, assistant.FilterRunning, assistant.FilterNeedsAttention} {
 		answer := c.toolListSessions(context.Background(), map[string]any{"filter": filter})
 		if strings.Contains(strings.ToLower(rendered(answer)), "printer-room") {
 			t.Errorf("filter %q surfaced an idle paired machine — the capability changed", filter)
@@ -177,7 +179,7 @@ func TestAPairedMachineWithNoSessionsIsInvisible(t *testing.T) {
 	// removed, the assistant is back to knowing about one machine, even though
 	// both are still paired and connected.
 	c.setWorld(nil)
-	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	if got := machinesIn(t, answer); len(got) != 1 || got[0] != "workstation" {
 		t.Fatalf("with no remote sessions the call should know only its own machine, got %v", got)
 	}
@@ -200,10 +202,10 @@ func TestFindSessionAlsoCarriesTheMachine(t *testing.T) {
 // machine has no name — the assistant must still be able to form the sentence
 // explaining why work cannot start there.
 func TestUnnamedMachineDegradesToWords(t *testing.T) {
-	if got := machineWords(SessionRow{MachineID: "m-x"}); got != "another machine" {
+	if got := machineWords(assistant.SessionRow{MachineID: "m-x"}); got != "another machine" {
 		t.Errorf("machineWords with no name = %q, want %q", got, "another machine")
 	}
-	if got := machineWords(SessionRow{MachineName: "thinkpad"}); got != "thinkpad" {
+	if got := machineWords(assistant.SessionRow{MachineName: "thinkpad"}); got != "thinkpad" {
 		t.Errorf("machineWords = %q, want %q", got, "thinkpad")
 	}
 }
@@ -279,7 +281,7 @@ func TestAnUnlabelledMachineLosesItsIdToo(t *testing.T) {
 		LastActivityAt: "2026-08-28T12:00:00Z",
 	}})
 
-	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	rows, ok := answer["sessions"].([]map[string]any)
 	if !ok || len(rows) != 1 {
 		t.Fatalf("sessions = %v, want one row", answer["sessions"])
@@ -327,7 +329,7 @@ func TestTheSpokenCapCanHideAMachineEntirely(t *testing.T) {
 	c := newToolCall(nil, &fakeDispatcher{}, "")
 	c.setWorld(rows)
 
-	answer := c.toolListSessions(context.Background(), map[string]any{"filter": FilterAll})
+	answer := c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
 	for _, name := range machinesIn(t, answer) {
 		if name == "mac-mini" {
 			t.Fatal("the cap no longer drops the quietest machine — update this test")
