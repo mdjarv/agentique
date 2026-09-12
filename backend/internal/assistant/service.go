@@ -117,6 +117,7 @@ type Service struct {
 	heads HeadManager
 	allow Allowances
 	facts TurnFacts
+	mem   Memory
 	reg   *Registry
 	bus   eventbus.Broadcaster
 	log   *slog.Logger
@@ -150,7 +151,7 @@ type Service struct {
 }
 
 // Option configures a [Service]. Functional options because every
-// collaborator is optional and there are eight of them; a positional
+// collaborator is optional and there are nine of them; a positional
 // constructor would be one transposition away from handing the assistant its
 // logger as its directory.
 type Option func(*Service)

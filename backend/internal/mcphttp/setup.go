@@ -33,10 +33,6 @@ const (
 	ToolListDevURLs     = "ListDevUrls"
 	ToolKillDevPort     = "KillDevUrlPort"
 	ToolSetSessionName  = "SetSessionName"
-	ToolMemoryAdd       = "MemoryAdd"
-	ToolMemorySearch    = "MemorySearch"
-	ToolMemoryFlag      = "MemoryFlag"
-	ToolMemoryUsed      = "MemoryUsed"
 	ToolSuggestPrompt   = "SuggestSessionPrompt"
 	ToolScheduleCreate  = "ScheduleCreate"
 	ToolScheduleReport  = "ScheduleReport"
@@ -84,17 +80,6 @@ func NewTokenStore() *TokenStore { return akmcp.NewTokenStore() }
 // SessionRenamer renames an existing session. Implemented by session.Service.
 type SessionRenamer interface {
 	RenameSession(ctx context.Context, sessionID, name string) error
-}
-
-// MemoryStore is the agent-facing contract for the brain memory tools. It is
-// scoped per session by the implementation (an agent only sees its own project's
-// memories plus global). Implemented by brain.MCPAdapter. May be nil — the
-// memory tools are then not registered.
-type MemoryStore interface {
-	MemoryAdd(ctx context.Context, sessionID, text, category string) (string, error)
-	MemorySearch(ctx context.Context, sessionID, query string) (string, error)
-	MemoryFlag(ctx context.Context, sessionID, id, reason string) (string, error)
-	MemoryUsed(ctx context.Context, sessionID, id string) (string, error)
 }
 
 // ScheduleCreator is the scheduled-loops tool surface: propose a schedule
@@ -197,15 +182,19 @@ type SessionModelInspector interface {
 
 // NewHandler returns the configured /mcp http.Handler — the endpoint every
 // coding session reaches. renamer may be nil in tests that don't exercise
-// SetSessionName — calls to that tool will then return an error result. mem may
-// be nil to omit the brain memory tools; sched may be nil to omit
-// ScheduleCreate; reporter may be nil to omit AssistantReport; models may be
-// nil to omit SessionModel.
+// SetSessionName — calls to that tool will then return an error result. sched
+// may be nil to omit ScheduleCreate; reporter may be nil to omit
+// AssistantReport; models may be nil to omit SessionModel.
+//
+// A coding session reaches no memory tool. The brain is the assistant's
+// long-term memory and sessions never write facts (docs/assistant.md, the M2
+// contract); what a session learns travels as an [ToolAssistantReport], which is
+// untrusted text in the journal.
 //
 // The assistant's verb table is deliberately NOT here: it is the head's, on the
 // head's own endpoint ([NewAssistantHandler]), because a tool list is not scoped
 // to the caller.
-func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, mem MemoryStore, sched ScheduleCreator, reporter AssistantReporter, models SessionModelInspector) http.Handler {
+func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, sched ScheduleCreator, reporter AssistantReporter, models SessionModelInspector) http.Handler {
 	h := akmcp.New(ServerName, tokens, akmcp.WithServerVersion(serverVersion))
 
 	registerSessionTool(h, akmcp.Tool{
@@ -354,9 +343,6 @@ func NewHandler(tokens *TokenStore, dev *devurls.Store, renamer SessionRenamer, 
 		})
 	}
 
-	if mem != nil {
-		registerMemoryTools(h, mem)
-	}
 	if sched != nil {
 		registerScheduleTools(h, sched)
 	}
@@ -594,99 +580,6 @@ func registerScheduleTools(h *akmcp.Handler, sched ScheduleCreator) {
 			msg, err := sched.AgentPace(ctx, sid, args.RunID, args.DelaySeconds, args.Reason, args.Stop)
 			if err != nil {
 				return akmcp.ErrorResultf("schedule next failed: %v", err)
-			}
-			return akmcp.TextResult(msg)
-		}),
-	})
-}
-
-func registerMemoryTools(h *akmcp.Handler, mem MemoryStore) {
-	type addArgs struct {
-		Text     string `json:"text"`
-		Category string `json:"category"`
-	}
-	registerSessionTool(h, akmcp.Tool{
-		Name:        ToolMemoryAdd,
-		Description: "Save a durable fact to your persistent memory ('brain') for this project. Use for things worth remembering across sessions: user preferences, project conventions, architectural decisions, gotchas. Keep each fact short and self-contained. Do NOT save transient task state or secrets.",
-		InputSchema: akmcp.ObjectProp{
-			Properties: map[string]akmcp.Property{
-				"text": akmcp.StringProp{Description: "The fact to remember, phrased as a standalone statement."},
-				"category": akmcp.StringProp{
-					Enum:        []string{"fact", "identity", "preference", "contact", "project", "goal", "task"},
-					Description: "Kind of fact. 'identity' facts are auto-pinned.",
-				},
-			},
-			Required: []string{"text"},
-		},
-		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args addArgs) akmcp.Result {
-			msg, err := mem.MemoryAdd(ctx, sid, args.Text, args.Category)
-			if err != nil {
-				return akmcp.ErrorResultf("memory add failed: %v", err)
-			}
-			return akmcp.TextResult(msg)
-		}),
-	})
-
-	type searchArgs struct {
-		Query string `json:"query"`
-	}
-	registerSessionTool(h, akmcp.Tool{
-		Name:        ToolMemorySearch,
-		Description: "Search your persistent memory ('brain') for facts relevant to a query, plus always-included pinned facts. Call this at the start of a task to recall what you already know about this project and the user's preferences.",
-		InputSchema: akmcp.ObjectProp{
-			Properties: map[string]akmcp.Property{
-				"query": akmcp.StringProp{Description: "What you want to recall (keywords or a short question)."},
-			},
-			Required: []string{"query"},
-		},
-		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args searchArgs) akmcp.Result {
-			msg, err := mem.MemorySearch(ctx, sid, args.Query)
-			if err != nil {
-				return akmcp.ErrorResultf("memory search failed: %v", err)
-			}
-			return akmcp.TextResult(msg)
-		}),
-	})
-
-	type flagArgs struct {
-		ID     string `json:"id"`
-		Reason string `json:"reason"`
-	}
-	registerSessionTool(h, akmcp.Tool{
-		Name:        ToolMemoryFlag,
-		Description: "Flag a memory from your 'brain' as wrong or outdated when something you found this session contradicts it. Pass the fact's id (shown by MemorySearch) and a short reason. This does NOT delete it — it weakens the fact and queues it for the user to confirm, correct, or remove. Use it whenever a recalled fact turns out to be incorrect.",
-		InputSchema: akmcp.ObjectProp{
-			Properties: map[string]akmcp.Property{
-				"id":     akmcp.StringProp{Description: "The id of the memory to flag (from MemorySearch output)."},
-				"reason": akmcp.StringProp{Description: "Briefly, what contradicts this fact or why it's outdated."},
-			},
-			Required: []string{"id"},
-		},
-		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args flagArgs) akmcp.Result {
-			msg, err := mem.MemoryFlag(ctx, sid, args.ID, args.Reason)
-			if err != nil {
-				return akmcp.ErrorResultf("memory flag failed: %v", err)
-			}
-			return akmcp.TextResult(msg)
-		}),
-	})
-
-	type usedArgs struct {
-		ID string `json:"id"`
-	}
-	registerSessionTool(h, akmcp.Tool{
-		Name:        ToolMemoryUsed,
-		Description: "Confirm that a recalled memory from your 'brain' was actually useful — it was correct and you acted on it this session. Pass the fact's id (shown by MemorySearch and in recalled-memory blocks). This is the positive counterpart to MemoryFlag: it strengthens the fact and raises its confidence, so well-proven preferences graduate into standing instructions. Call it whenever a recalled fact genuinely helped, so the brain learns what to trust.",
-		InputSchema: akmcp.ObjectProp{
-			Properties: map[string]akmcp.Property{
-				"id": akmcp.StringProp{Description: "The id of the memory that helped (from MemorySearch or a recalled-memory block)."},
-			},
-			Required: []string{"id"},
-		},
-		Handler: akmcp.TypedHandler(func(ctx context.Context, sid string, args usedArgs) akmcp.Result {
-			msg, err := mem.MemoryUsed(ctx, sid, args.ID)
-			if err != nil {
-				return akmcp.ErrorResultf("memory used failed: %v", err)
 			}
 			return akmcp.TextResult(msg)
 		}),

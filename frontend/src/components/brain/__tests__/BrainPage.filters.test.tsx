@@ -91,6 +91,28 @@ describe("BrainPage tier filters", () => {
     expect(screen.getByText("ARCHIVED TWO")).toBeTruthy();
   });
 
+  // `reported` is the second capture tier (memory.Source.Staged()): agent-written text
+  // about a repository nobody here authored. Treating it as durable would show an
+  // agent's claim in the default list as a settled fact, which is the one thing the M2
+  // provenance split exists to prevent.
+  it("files a reported fact in the capture tier, not among durable facts", () => {
+    useBrainStore.setState({
+      memories: [
+        mem({ id: "n1", text: "NORMAL FACT" }),
+        mem({ id: "c1", text: "CAPTURE FACT", source: "capture" }),
+        mem({ id: "r1", text: "REPORTED FACT", source: "reported" }),
+      ],
+    });
+    render(<BrainPage />);
+    fireEvent.click(screen.getByTitle("List view"));
+
+    expect(screen.queryByText("REPORTED FACT")).toBeNull();
+    const capturesBtn = screen.getByRole("button", { name: /Captures \(2\)/ });
+
+    fireEvent.click(capturesBtn);
+    expect(screen.getByText("REPORTED FACT")).toBeTruthy();
+  });
+
   it("hides the captures toggle in graph view (the graph has no captures), keeps archived", () => {
     render(<BrainPage />); // default view is graph
     expect(screen.queryByRole("button", { name: /Captures/ })).toBeNull();
@@ -129,5 +151,15 @@ describe("BrainPage tier filters", () => {
     // Now active → it has left the archived set (toggle gone), but stays visible as a live fact.
     await waitFor(() => expect(screen.queryByRole("button", { name: /Archived/ })).toBeNull());
     expect(screen.getByText("COLD FACT")).toBeTruthy();
+  });
+});
+
+// The page moved under the assistant and the word changed with it: what the
+// operator reads is "Memory", and the old name must not survive in the band.
+describe("BrainPage header", () => {
+  it("names the page Memory", () => {
+    render(<BrainPage />);
+    expect(screen.getByText("Memory")).toBeTruthy();
+    expect(screen.queryByText("Brain")).toBeNull();
   });
 });

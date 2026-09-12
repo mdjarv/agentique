@@ -41,7 +41,7 @@ describe("BrainHealth", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Health/ }));
 
-    expect(screen.getByText("Brain health")).toBeTruthy();
+    expect(screen.getByText("Memory health")).toBeTruthy();
     // Pipeline summary labels + the two unique values.
     expect(screen.getByText("Total facts")).toBeTruthy();
     expect(screen.getByText("10")).toBeTruthy(); // total
@@ -52,5 +52,19 @@ describe("BrainHealth", () => {
     expect(screen.getByText("stated")).toBeTruthy(); // evidence user_stated
     expect(screen.getByText("evergreen")).toBeTruthy(); // volatility
     expect(screen.getByText("extracted")).toBeTruthy(); // confidence tier
+  });
+
+  // bySource counts every source separately, so the capture tier is a SUM: reading
+  // `capture` alone undercounts the backlog by everything that arrived reported.
+  it("counts both capture tiers in the pending backlog", () => {
+    useBrainStore.setState({
+      counts: { ...COUNTS, bySource: { human: 2, agent: 5, capture: 3, reported: 4 } },
+    });
+    render(<BrainHealth />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Health/ }));
+
+    const pending = screen.getByText("Captures pending").closest("div");
+    expect(pending?.textContent).toContain("7");
   });
 });

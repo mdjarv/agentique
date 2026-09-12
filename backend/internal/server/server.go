@@ -178,10 +178,6 @@ type Config struct {
 	// calibration). An explicit BrainSemanticThreshold/BrainVectorVeto still wins.
 	// Inert without an embedder.
 	BrainCalibrate bool
-	// BrainRecall toggles auto-recall (pinned facts + per-turn task-relevant facts in the
-	// preamble). Default on; resolved from AGENTIQUE_BRAIN_RECALL (env, wins) or [brain]
-	// recall (config file), off only when explicitly disabled.
-	BrainRecall bool
 	// BrainConsolidateInterval enables scheduled (automatic) consolidation across all
 	// scopes when set to a positive duration (e.g. "6h"); empty disables it. Resolved from
 	// the AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL env var (preferred) or the [brain]
@@ -191,15 +187,6 @@ type Config struct {
 	// reorganization; empty = deterministic dedup/decay only. From
 	// AGENTIQUE_BRAIN_CONSOLIDATE_MODEL or [brain] consolidate-model.
 	BrainConsolidateModel string
-	// BrainLearnModel enables session-end auto-encode (distill durable facts from a
-	// finished transcript) when set to haiku|sonnet|opus; empty disables it. From
-	// AGENTIQUE_BRAIN_LEARN_MODEL or [brain] learn-model.
-	BrainLearnModel string
-	// BrainOutcomeModel enables the session-end automatic outcome emitter — judge from the
-	// transcript whether recalled facts helped or were contradicted, feeding
-	// MarkAutoHelped/Flag — when set to haiku|sonnet|opus; empty disables it. From
-	// AGENTIQUE_BRAIN_OUTCOME_MODEL or [brain] outcome-model.
-	BrainOutcomeModel string
 	// BrainGraph tunes the knowledge-graph view: semantic kNN edge density (backend) and the
 	// force-layout curves (frontend). Resolved from [brain.graph] with AGENTIQUE_BRAIN_GRAPH_*
 	// env overrides; zero fields take brain's built-in defaults.
@@ -214,9 +201,6 @@ type Config struct {
 	// faded from recall. From AGENTIQUE_BRAIN_ARCHIVE_FLOOR or [brain] archive-confidence-floor;
 	// 0 = brain's default (0.35).
 	BrainArchiveFloor float64
-	// BrainRetryMax bounds session-end learn/outcome job retries before dead-lettering. From
-	// AGENTIQUE_BRAIN_RETRY_MAX or [brain] retry-max; 0 = brain's default (5).
-	BrainRetryMax int
 }
 
 // serviceInstalled reports whether a service manager would bring agentique
@@ -944,6 +928,146 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// can choose on screen is one they can ask for out loud.
 	catalog := modelCatalog(queries, cfg.ModelOverrides)
 
+	// Persistent memory ("the brain"). Opt-in: [brain] enabled is the master switch
+	// and is off by default, so nothing below is constructed unless an operator asked
+	// for it — no routes, no background loops. BrainDir must also be set, since it
+	// names the store.
+	//
+	// It reaches no coding session. As of M2 the assistant is the brain's only
+	// reader: memory is pulled through the head's own recall verb, never injected
+	// into a session's preamble or turn, and no session tool writes a fact
+	// (docs/assistant.md, the M2 contract).
+	//
+	// Failure to initialize must not take down the server — memory is an enhancement,
+	// so we log and continue without it.
+	//
+	// It is constructed HERE, above the assistant, because the assistant takes it as a
+	// collaborator through an option and options run in New: a brain built after that call
+	// could only be handed over by a setter, and nothing else on this service arrives that
+	// way. Nothing between the two positions reads either one.
+	var (
+		brainSvc  *brain.Service
+		brainAuto *brain.Automation
+	)
+	if cfg.BrainEnabled && cfg.BrainDir != "" {
+		// Couple the read-time recall fade to archiving being ENABLED: it activates only when
+		// archive-after parses to a positive duration, so a stray archive-confidence-floor can
+		// never silently evict live facts from recall while the churn isn't archiving (the
+		// deploy-safety contract). When enabled, an unset floor takes the built-in default.
+		recallArchiveFloor := 0.0
+		if d, perr := time.ParseDuration(cfg.BrainArchiveAfter); cfg.BrainArchiveAfter != "" && perr == nil && d > 0 {
+			recallArchiveFloor = cfg.BrainArchiveFloor
+			if recallArchiveFloor <= 0 {
+				recallArchiveFloor = memory.DefaultArchiveConfidenceFloor
+			}
+		}
+		newBrain, err := brain.New(context.Background(), brain.Config{
+			Dir:               cfg.BrainDir,
+			ChromaURL:         cfg.BrainChromaURL,
+			EmbedURL:          cfg.BrainEmbedURL,
+			EmbedModel:        cfg.BrainEmbedModel,
+			EmbedAPIKey:       cfg.BrainEmbedKey,
+			SemanticThreshold: cfg.BrainSemanticThreshold,
+			VectorVetoScore:   cfg.BrainVectorVeto,
+			Calibrate:         cfg.BrainCalibrate,
+			SnapshotRetain:    cfg.BrainSnapshotRetain,
+			ArchiveFloor:      recallArchiveFloor,
+			Graph: brain.GraphConfig{
+				EdgeCap:          cfg.BrainGraph.EdgeCap,
+				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,
+				LinkStrengthBase: cfg.BrainGraph.LinkStrengthBase,
+				LinkStrengthSpan: cfg.BrainGraph.LinkStrengthSpan,
+				LinkDistanceBase: cfg.BrainGraph.LinkDistanceBase,
+				LinkDistanceSpan: cfg.BrainGraph.LinkDistanceSpan,
+				Gravity:          cfg.BrainGraph.Gravity,
+			},
+		})
+		if err != nil {
+			slog.Error("brain: disabled (init failed)", "error", err)
+		} else {
+			brainSvc = newBrain
+			bh := &brain.Handler{Service: brainSvc, Runner: runner, Bus: bus}
+			mux.Handle("GET /api/brain/memories", httperror.HandlerFunc(bh.HandleList))
+			mux.Handle("POST /api/brain/memories", httperror.HandlerFunc(bh.HandleCreate))
+			mux.Handle("GET /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleGet))
+			mux.Handle("PUT /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleUpdate))
+			mux.Handle("DELETE /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleDelete))
+			mux.Handle("POST /api/brain/memories/{id}/pin", httperror.HandlerFunc(bh.HandlePin))
+			mux.Handle("POST /api/brain/memories/{id}/lock", httperror.HandlerFunc(bh.HandleLock))
+			mux.Handle("POST /api/brain/memories/{id}/confirm", httperror.HandlerFunc(bh.HandleConfirm))
+			mux.Handle("POST /api/brain/memories/{id}/flag", httperror.HandlerFunc(bh.HandleFlag))
+			mux.Handle("POST /api/brain/memories/{id}/refine", httperror.HandlerFunc(bh.HandleRefine))
+			mux.Handle("POST /api/brain/memories/{id}/restore", httperror.HandlerFunc(bh.HandleRestore))
+			mux.Handle("GET /api/brain/search", httperror.HandlerFunc(bh.HandleSearch))
+			mux.Handle("GET /api/brain/graph", httperror.HandlerFunc(bh.HandleGraph))
+			mux.Handle("POST /api/brain/consolidate", httperror.HandlerFunc(bh.HandleConsolidate))
+			mux.Handle("POST /api/brain/consolidate/preview", httperror.HandlerFunc(bh.HandlePreviewConsolidate))
+			mux.Handle("POST /api/brain/consolidate/apply", httperror.HandlerFunc(bh.HandleApplyConsolidate))
+			mux.Handle("POST /api/brain/consolidate/global/preview", httperror.HandlerFunc(bh.HandlePreviewGlobal))
+			mux.Handle("POST /api/brain/consolidate/global/apply", httperror.HandlerFunc(bh.HandleApplyGlobal))
+			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleConsolidateAll))
+			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
+			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
+			mux.Handle("GET /api/brain/snapshots", httperror.HandlerFunc(bh.HandleListSnapshots))
+			mux.Handle("POST /api/brain/snapshots", httperror.HandlerFunc(bh.HandleCreateSnapshot))
+			mux.Handle("POST /api/brain/snapshots/{id}/restore", httperror.HandlerFunc(bh.HandleRestoreSnapshot))
+			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
+
+			// The assistant is the brain's only reader. With the store on and the
+			// assistant off, memory is written and browsable and nothing recalls it —
+			// say so, because a subsystem that is on and inert is the kind of thing
+			// somebody re-derives at midnight. Never a refusal to boot: the store, the
+			// routes and the page all work, and turning the assistant on is the fix.
+			if !cfg.ExperimentalAssistant {
+				slog.Info("brain: memory is stored and browsable, and nothing recalls it — " +
+					"the assistant is the brain's only reader and [experimental] assistant is off " +
+					"(set AGENTIQUE_EXPERIMENTAL_ASSISTANT=1 to turn it on)")
+			}
+
+			// The other half of that pairing, and the one that accumulates. With the
+			// assistant on, every notable journal entry is staged as a capture — and
+			// the ONLY path from a capture to a recallable fact is scheduled
+			// consolidation with a model, because promotion is LLM-only. Without both
+			// keys those sentences pile up forever, visible only behind the memory
+			// page's capture toggle (docs/brain.md, "Automation").
+			if cfg.ExperimentalAssistant && (cfg.BrainConsolidateInterval == "" || cfg.BrainConsolidateModel == "") {
+				slog.Warn("brain: notable entries are staged as captures and nothing can promote them — " +
+					"promotion is LLM-only, so set both [brain] consolidate-interval and " +
+					"consolidate-model (or the captures accumulate unread)")
+			}
+
+			// Scheduled consolidation (opt-in): automatic consolidation across all scopes on
+			// a timer. Resolved from AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL (env, preferred) or
+			// [brain] consolidate-interval (config file); empty = off. Same for the model.
+			if iv := cfg.BrainConsolidateInterval; iv != "" {
+				if d, derr := time.ParseDuration(iv); derr != nil || d <= 0 {
+					slog.Warn("brain: scheduled consolidation off (bad interval)", "value", iv, "error", derr)
+				} else {
+					var sm claudecli.Model
+					if smName := cfg.BrainConsolidateModel; smName != "" {
+						if m, merr := brain.ParseModel(smName); merr == nil {
+							sm = m
+						} else {
+							slog.Warn("brain: consolidation model invalid; deterministic dedup only", "model", smName, "error", merr)
+						}
+					}
+					// Disuse-aging archival (M5): "" archive-after = off (inert policy). A bad
+					// duration logs a warning and leaves archiving disabled.
+					archiveAfter := time.Duration(0)
+					if aa := cfg.BrainArchiveAfter; aa != "" {
+						if ad, aerr := time.ParseDuration(aa); aerr == nil && ad > 0 {
+							archiveAfter = ad
+						} else {
+							slog.Warn("brain: archiving disabled (bad archive-after)", "value", aa, "error", aerr)
+						}
+					}
+					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm, archiveAfter, cfg.BrainArchiveFloor)
+					brainAuto.Start()
+				}
+			}
+		}
+	}
+
 	// The assistant (docs/assistant.md), and the collaborators every surface on
 	// it shares.
 	//
@@ -990,7 +1114,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// runs whenever this one does. That matters because these are
 		// interfaces, and a typed-nil pointer in one would look present and
 		// panic on first use.
-		a, err := assistant.New(queries,
+		opts := []assistant.Option{
 			assistant.WithDirectory(assistantDir),
 			assistant.WithDispatcher(assistantDisp),
 			assistant.WithTurnFacts(assistantFacts),
@@ -1004,7 +1128,21 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			assistant.WithAllowances(usageCollector),
 			assistant.WithRegistry(reportRegistry),
 			assistant.WithBroadcaster(bus),
-		)
+		}
+		// The brain is the assistant's long-term memory and nothing else's, and
+		// it is the one collaborator that is genuinely optional at runtime: the
+		// two switches are independent, and `[brain] enabled` off means there is
+		// no store to read. Only handed over when one was actually built, which
+		// is what keeps the four memory verbs out of the table on a server with
+		// no memory — a verb that cannot work must not be offered.
+		//
+		// Built from the pointer INSIDE the branch rather than narrowed to the
+		// interface outside it: a typed-nil *brain.Service in an interface reads
+		// as present, and the table would then carry four verbs that panic.
+		if brainSvc != nil {
+			opts = append(opts, assistant.WithMemory(newAssistantMemory(brainSvc, queries)))
+		}
+		a, err := assistant.New(queries, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("assistant service: %w", err)
 		}
@@ -1088,207 +1226,6 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		}
 	}
 
-	// Persistent agent memory ("the brain"). Opt-in: [brain] enabled is the master
-	// switch and is off by default, so nothing below is constructed unless an operator
-	// asked for it — no routes, no MCP memory tools, no recall, no background loops.
-	// BrainDir must also be set, since it names the store.
-	//
-	// Failure to initialize must not take down the server — memory is an enhancement,
-	// so we log and continue without it.
-	var memProvider mcphttp.MemoryStore
-	var brainAuto *brain.Automation
-	if cfg.BrainEnabled && cfg.BrainDir != "" {
-		// Couple the read-time recall fade to archiving being ENABLED: it activates only when
-		// archive-after parses to a positive duration, so a stray archive-confidence-floor can
-		// never silently evict live facts from recall while the churn isn't archiving (the
-		// deploy-safety contract). When enabled, an unset floor takes the built-in default.
-		recallArchiveFloor := 0.0
-		if d, perr := time.ParseDuration(cfg.BrainArchiveAfter); cfg.BrainArchiveAfter != "" && perr == nil && d > 0 {
-			recallArchiveFloor = cfg.BrainArchiveFloor
-			if recallArchiveFloor <= 0 {
-				recallArchiveFloor = memory.DefaultArchiveConfidenceFloor
-			}
-		}
-		brainSvc, err := brain.New(context.Background(), brain.Config{
-			Dir:               cfg.BrainDir,
-			ChromaURL:         cfg.BrainChromaURL,
-			EmbedURL:          cfg.BrainEmbedURL,
-			EmbedModel:        cfg.BrainEmbedModel,
-			EmbedAPIKey:       cfg.BrainEmbedKey,
-			SemanticThreshold: cfg.BrainSemanticThreshold,
-			VectorVetoScore:   cfg.BrainVectorVeto,
-			Calibrate:         cfg.BrainCalibrate,
-			SnapshotRetain:    cfg.BrainSnapshotRetain,
-			ArchiveFloor:      recallArchiveFloor,
-			Graph: brain.GraphConfig{
-				EdgeCap:          cfg.BrainGraph.EdgeCap,
-				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,
-				LinkStrengthBase: cfg.BrainGraph.LinkStrengthBase,
-				LinkStrengthSpan: cfg.BrainGraph.LinkStrengthSpan,
-				LinkDistanceBase: cfg.BrainGraph.LinkDistanceBase,
-				LinkDistanceSpan: cfg.BrainGraph.LinkDistanceSpan,
-				Gravity:          cfg.BrainGraph.Gravity,
-			},
-		})
-		if err != nil {
-			slog.Error("brain: disabled (init failed)", "error", err)
-		} else {
-			scopeResolver := func(ctx context.Context, sessionID string) memory.Scope {
-				s, err := queries.GetSession(ctx, sessionID)
-				if err != nil {
-					return memory.ScopeGlobal
-				}
-				return brain.ScopeForProject(s.ProjectID)
-			}
-			mcpAdapter := brain.NewMCPAdapter(brainSvc, scopeResolver)
-			mcpAdapter.SetBus(bus)
-			memProvider = mcpAdapter
-
-			bh := &brain.Handler{Service: brainSvc, Runner: runner, Bus: bus}
-			mux.Handle("GET /api/brain/memories", httperror.HandlerFunc(bh.HandleList))
-			mux.Handle("POST /api/brain/memories", httperror.HandlerFunc(bh.HandleCreate))
-			mux.Handle("GET /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleGet))
-			mux.Handle("PUT /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleUpdate))
-			mux.Handle("DELETE /api/brain/memories/{id}", httperror.HandlerFunc(bh.HandleDelete))
-			mux.Handle("POST /api/brain/memories/{id}/pin", httperror.HandlerFunc(bh.HandlePin))
-			mux.Handle("POST /api/brain/memories/{id}/lock", httperror.HandlerFunc(bh.HandleLock))
-			mux.Handle("POST /api/brain/memories/{id}/confirm", httperror.HandlerFunc(bh.HandleConfirm))
-			mux.Handle("POST /api/brain/memories/{id}/flag", httperror.HandlerFunc(bh.HandleFlag))
-			mux.Handle("POST /api/brain/memories/{id}/refine", httperror.HandlerFunc(bh.HandleRefine))
-			mux.Handle("POST /api/brain/memories/{id}/restore", httperror.HandlerFunc(bh.HandleRestore))
-			mux.Handle("GET /api/brain/search", httperror.HandlerFunc(bh.HandleSearch))
-			mux.Handle("GET /api/brain/graph", httperror.HandlerFunc(bh.HandleGraph))
-			mux.Handle("POST /api/brain/consolidate", httperror.HandlerFunc(bh.HandleConsolidate))
-			mux.Handle("POST /api/brain/consolidate/preview", httperror.HandlerFunc(bh.HandlePreviewConsolidate))
-			mux.Handle("POST /api/brain/consolidate/apply", httperror.HandlerFunc(bh.HandleApplyConsolidate))
-			mux.Handle("POST /api/brain/consolidate/global/preview", httperror.HandlerFunc(bh.HandlePreviewGlobal))
-			mux.Handle("POST /api/brain/consolidate/global/apply", httperror.HandlerFunc(bh.HandleApplyGlobal))
-			mux.Handle("POST /api/brain/consolidate/all", httperror.HandlerFunc(bh.HandleConsolidateAll))
-			mux.Handle("GET /api/brain/consolidate/job", httperror.HandlerFunc(bh.HandleConsolidateJob))
-			mux.Handle("GET /api/brain/status", httperror.HandlerFunc(bh.HandleStatus))
-			mux.Handle("GET /api/brain/snapshots", httperror.HandlerFunc(bh.HandleListSnapshots))
-			mux.Handle("POST /api/brain/snapshots", httperror.HandlerFunc(bh.HandleCreateSnapshot))
-			mux.Handle("POST /api/brain/snapshots/{id}/restore", httperror.HandlerFunc(bh.HandleRestoreSnapshot))
-			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
-
-			// --- Memory automation (the recall → encode → consolidate loop) ---
-
-			// Auto-recall (default on): inject pinned facts into every session's
-			// system preamble so the brain shapes behaviour without the agent having
-			// to call MemorySearch. Resolved from AGENTIQUE_BRAIN_RECALL (env) or
-			// [brain] recall (config); disable with either set to off/false/0/no.
-			if cfg.BrainRecall {
-				mgr.MemoryPreambleFn = brainSvc.PinnedPreamble
-				mgr.MemoryRecallFn = brainSvc.RecallBlock
-				// Explain the <brain> recall envelope once in the system preamble so the
-				// per-turn recall block stays a compact tagged block (see RecallBlock).
-				mgr.MemoryRecallPreamble = brain.RecallPreamble
-				// Operating contract: high-confidence preferences become acted-on standing
-				// instructions in the preamble, not just soft context (brain.md#the-outcome-signal).
-				mgr.MemoryContractFn = brainSvc.OperatingContract
-				slog.Info("brain: auto-recall enabled (pinned facts + operating contract in preamble + task-relevant recall on the first turn)")
-			}
-
-			// Session-end learning (opt-in): when a session is deleted, run up to two
-			// best-effort transcript passes — auto-encode (distill durable facts) and the
-			// automatic outcome emitter (judge whether the facts recall surfaced this session
-			// actually helped or were contradicted, feeding MarkAutoHelped/Flag). Each is gated
-			// by its own model (env wins over the [brain] config value, resolved in serve.go);
-			// the two share the single captured transcript through one onSessionEnd hook.
-			var encodeEx *brain.ClaudeExtractor
-			if lm := cfg.BrainLearnModel; lm != "" {
-				if m, perr := brain.ParseModel(lm); perr != nil {
-					slog.Warn("brain: auto-encode disabled (bad model)", "model", lm, "error", perr)
-				} else {
-					encodeEx = brain.NewClaudeExtractor(runner, m)
-					slog.Info("brain: auto-encode enabled", "model", lm)
-				}
-			}
-			var outcomeJudge *brain.ClaudeOutcomeJudge
-			if om := cfg.BrainOutcomeModel; om != "" {
-				if m, perr := brain.ParseModel(om); perr != nil {
-					slog.Warn("brain: auto-outcome emitter disabled (bad model)", "model", om, "error", perr)
-				} else {
-					outcomeJudge = brain.NewClaudeOutcomeJudge(runner, m)
-					slog.Info("brain: auto-outcome emitter enabled", "model", om)
-				}
-			}
-			// Durable retry queue (M7): the session-end learn/outcome passes run as durable,
-			// idempotent jobs (brain_jobs) so a restart mid-extraction never loses the work —
-			// drained on startup + on enqueue, retried then dead-lettered. The handler bodies call
-			// the exact same Service methods as before, just routed through durability. Two
-			// INDEPENDENT jobs so a learn failure can't force an outcome re-run.
-			handlers := map[string]brain.JobHandler{}
-			if encodeEx != nil {
-				handlers[brain.JobKindLearn] = func(ctx context.Context, j brain.Job) (bool, error) {
-					n, err := brainSvc.LearnFromTranscript(ctx, j.Scope, j.Events, encodeEx)
-					return n > 0, err
-				}
-			}
-			if outcomeJudge != nil {
-				handlers[brain.JobKindOutcome] = func(ctx context.Context, j brain.Job) (bool, error) {
-					rep, err := brainSvc.ApplyOutcomesFromTranscript(ctx, j.Scope, j.Events, outcomeJudge)
-					return rep.Helped > 0 || rep.Flagged > 0, err
-				}
-			}
-			if len(handlers) > 0 {
-				jq := brain.NewJobQueue(queries, bus, cfg.BrainRetryMax, handlers)
-				go jq.Drain(context.Background()) // startup recovery: resume crash-left jobs
-				svc.SetOnSessionEnd(func(projectID string, events []store.SessionEvent) {
-					tevents := make([]brain.TranscriptEvent, len(events))
-					for i, e := range events {
-						tevents[i] = brain.TranscriptEvent{Type: e.Type, Data: e.Data}
-					}
-					if _, ok := handlers[brain.JobKindLearn]; ok {
-						if err := jq.Enqueue(context.Background(), brain.JobKindLearn, projectID, tevents); err != nil {
-							slog.Warn("brain: enqueue learn job failed", "project", projectID, "error", err)
-						}
-					}
-					if _, ok := handlers[brain.JobKindOutcome]; ok {
-						if err := jq.Enqueue(context.Background(), brain.JobKindOutcome, projectID, tevents); err != nil {
-							slog.Warn("brain: enqueue outcome job failed", "project", projectID, "error", err)
-						}
-					}
-				})
-				// Learn-on-completion (M3): also fire the ingest sink when a session cleanly
-				// completes (StateDone), not only on delete. MUST be retained, or learn-on-
-				// completion is silently disabled. M3's completion ingest flows through the same
-				// svc.onSessionEnd, so it gains queue durability automatically.
-				mgr.OnSessionComplete = svc.HandleSessionComplete
-			}
-
-			// Scheduled consolidation (opt-in): automatic consolidation across all scopes on
-			// a timer. Resolved from AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL (env, preferred) or
-			// [brain] consolidate-interval (config file); empty = off. Same for the model.
-			if iv := cfg.BrainConsolidateInterval; iv != "" {
-				if d, derr := time.ParseDuration(iv); derr != nil || d <= 0 {
-					slog.Warn("brain: scheduled consolidation off (bad interval)", "value", iv, "error", derr)
-				} else {
-					var sm claudecli.Model
-					if smName := cfg.BrainConsolidateModel; smName != "" {
-						if m, merr := brain.ParseModel(smName); merr == nil {
-							sm = m
-						} else {
-							slog.Warn("brain: consolidation model invalid; deterministic dedup only", "model", smName, "error", merr)
-						}
-					}
-					// Disuse-aging archival (M5): "" archive-after = off (inert policy). A bad
-					// duration logs a warning and leaves archiving disabled.
-					archiveAfter := time.Duration(0)
-					if aa := cfg.BrainArchiveAfter; aa != "" {
-						if ad, aerr := time.ParseDuration(aa); aerr == nil && ad > 0 {
-							archiveAfter = ad
-						} else {
-							slog.Warn("brain: archiving disabled (bad archive-after)", "value", aa, "error", aerr)
-						}
-					}
-					brainAuto = brain.NewAutomation(brainSvc, runner, bus, d, sm, archiveAfter, cfg.BrainArchiveFloor)
-					brainAuto.Start()
-				}
-			}
-		}
-	}
-
 	// A typed-nil *Scheduler must not become a non-nil interface.
 	var schedCreator mcphttp.ScheduleCreator
 	if sched != nil {
@@ -1308,7 +1245,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	case reportRegistry != nil:
 		assistantReporter = reportRegistry
 	}
-	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, memProvider, schedCreator,
+	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, schedCreator,
 		assistantReporter, sessionModelInspector{svc: svc})
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.

@@ -18,7 +18,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 )
 
-// Handler serves the Brain tab HTTP API over a Service. Runner backs the LLM
+// Handler serves the memory page's HTTP API over a Service. Runner backs the LLM
 // reorganization during consolidation preview; it may be nil, in which case
 // preview falls back to deterministic dedup/decay only. Bus broadcasts job
 // progress and memory-change events to every connected tab.
@@ -44,8 +44,8 @@ type memoryDTO struct {
 	Pinned   bool   `json:"pinned"`
 	Locked   bool   `json:"locked"`
 	Uses     int    `json:"uses"`
-	// Helped counts confirmed-useful outcomes (MemoryUsed) — a stronger signal than a
-	// bare injection (Uses); it raises strength and confidence (RFC-LD D2 positive half).
+	// Helped counts confirmed-useful outcomes — a stronger signal than a bare recall
+	// (Uses); it raises strength and confidence (RFC-LD D2 positive half).
 	Helped      int       `json:"helped"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -306,7 +306,7 @@ func (h *Handler) HandleConfirm(w http.ResponseWriter, r *http.Request) error {
 }
 
 // HandleFlag POST /api/brain/memories/{id}/flag {reason} — mark a fact contradicted
-// (RFC-LD D2): weaken it and queue it for review. Mirrors the agent MemoryFlag tool.
+// (RFC-LD D2): weaken it and queue it for review. Mirrors the assistant's flag_memory verb.
 func (h *Handler) HandleFlag(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Reason string `json:"reason"`
@@ -390,6 +390,11 @@ func (h *Handler) HandleRefine(w http.ResponseWriter, r *http.Request) error {
 var refineTimeout = 2 * time.Minute
 
 // HandleSearch GET /api/brain/search?q=&scope=
+//
+// The browsing recall ([Service.Recall]), not the assistant's pull: this answers the
+// memory page's search box, where a fact that has faded but not yet been archived is
+// still a live row in the list beside it. [Service.RecallForPull] is the half that
+// fades one out, because that answer goes to a model.
 func (h *Handler) HandleSearch(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query().Get("q")
 	scope := memory.Scope(r.URL.Query().Get("scope"))
@@ -440,7 +445,7 @@ func toReportDTO(rep memory.Report) reportDTO {
 
 // HandleConsolidate POST /api/brain/consolidate  {scope}
 // Deterministic dedup/decay only (no model), one-shot. Retained for callers that
-// don't want the preview→apply flow; the Brain tab uses preview/apply below.
+// don't want the preview→apply flow; the memory page uses preview/apply below.
 func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) error {
 	var body struct {
 		Scope string `json:"scope"`

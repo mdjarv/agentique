@@ -1,7 +1,6 @@
 import {
   ArchiveRestore,
   ArrowUpToLine,
-  Brain,
   Check,
   ChevronRight,
   ClipboardCheck,
@@ -20,12 +19,12 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AssistantHeader } from "~/components/assistant/AssistantHeader";
 import { BrainGraph } from "~/components/brain/BrainGraph";
 import { BrainHealth } from "~/components/brain/BrainHealth";
 import { BrainSnapshots } from "~/components/brain/BrainSnapshots";
 import { MemoryLabels } from "~/components/brain/MemoryLabels";
 import { MemoryReview } from "~/components/brain/MemoryReview";
-import { PageHeader } from "~/components/layout/PageHeader";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -38,6 +37,7 @@ import {
   needsConfirmation,
   refineMemory,
 } from "~/lib/brain-api";
+import { isCapture } from "~/lib/brain-labels";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
@@ -156,7 +156,7 @@ export function BrainPage() {
     let captures = 0;
     let archived = 0;
     for (const m of memories) {
-      if (m.source === "capture") captures++;
+      if (isCapture(m)) captures++;
       if (m.lifecycle === "archived") archived++;
     }
     return { captures, archived };
@@ -165,8 +165,7 @@ export function BrainPage() {
   // visible composes the two tier toggles: by default drop captures and archived; a toggle
   // re-includes its tier. Shared by the list (groups) and the graph (graphMemories).
   const visible = useCallback(
-    (m: Memory) =>
-      (showCaptures || m.source !== "capture") && (showArchived || m.lifecycle !== "archived"),
+    (m: Memory) => (showCaptures || !isCapture(m)) && (showArchived || m.lifecycle !== "archived"),
     [showCaptures, showArchived],
   );
 
@@ -251,9 +250,7 @@ export function BrainPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <PageHeader>
-        <Brain className="size-4 text-primary" />
-        <span className="font-semibold">Brain</span>
+      <AssistantHeader title="Memory">
         <Badge variant={semantic ? "default" : "secondary"} className="ml-1">
           {semantic ? "Semantic" : "Keyword"}
         </Badge>
@@ -280,7 +277,7 @@ export function BrainPage() {
           <button
             type="button"
             onClick={() => setView("graph3d")}
-            title="3D graph view — memories orbiting the brain"
+            title="3D graph view — memories in orbit"
             className={`flex size-8 items-center justify-center ${view === "graph3d" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
             <Orbit className="size-4" />
@@ -333,7 +330,7 @@ export function BrainPage() {
           variant="outline"
           disabled={reviewQueue.length === 0}
           onClick={() => setReviewing(true)}
-          title="Review the brain's least-trusted facts: confirm, edit, or drop them"
+          title="Review memory's least-trusted facts: confirm, edit, or drop them"
         >
           <ClipboardCheck className="size-4" /> Review
           {reviewQueue.length > 0 && (
@@ -347,14 +344,14 @@ export function BrainPage() {
           size="sm"
           variant="outline"
           onClick={() => setSnapshotsOpen(true)}
-          title="Brain snapshots — list, take, or roll the whole brain back"
+          title="Memory snapshots — list, take, or roll the whole of memory back"
         >
           <History className="size-4" /> Snapshots
         </Button>
         <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
           <Plus className="size-4" /> Add
         </Button>
-      </PageHeader>
+      </AssistantHeader>
 
       {snapshotsOpen && (
         <BrainSnapshots onClose={() => setSnapshotsOpen(false)} jobActive={jobActive} />
@@ -827,6 +824,9 @@ function MemoryCard({ memory }: { memory: Memory }) {
 
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         <Badge className={categoryColor(memory.category)}>{memory.category}</Badge>
+        {/* The plain `capture` source is dropped because MemoryLabels already badges
+            the tier; `reported` is NOT, because which door a staged sentence came
+            through is the whole reason it is a separate source. */}
         {memory.source !== "capture" && (
           <span className="text-[10px] text-muted-foreground">{memory.source}</span>
         )}

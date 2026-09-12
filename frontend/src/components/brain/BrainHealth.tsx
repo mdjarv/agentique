@@ -2,6 +2,7 @@ import { Activity } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { type BrainCounts, EVIDENCE_VALUES, VOLATILITY_VALUES } from "~/lib/brain-api";
+import { pendingCaptures } from "~/lib/brain-labels";
 import { useBrainStore } from "~/stores/brain-store";
 
 const CONFIDENCE_TIERS = ["extracted", "inferred", "ambiguous"] as const;
@@ -33,7 +34,7 @@ export function BrainHealth() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="outline" title="Brain health — the Band-1 pipeline at a glance">
+        <Button size="sm" variant="outline" title="Memory health — the Band-1 pipeline at a glance">
           <Activity className="size-4" /> Health
         </Button>
       </PopoverTrigger>
@@ -51,12 +52,12 @@ export function BrainHealth() {
 function HealthBody({ counts }: { counts: BrainCounts }) {
   return (
     <div className="space-y-3 text-xs">
-      <div className="text-sm font-medium">Brain health</div>
+      <div className="text-sm font-medium">Memory health</div>
 
       {/* Pipeline summary — the load-bearing numbers. */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
         <Stat label="Total facts" value={counts.total} />
-        <Stat label="Captures pending" value={counts.bySource.capture ?? 0} accent />
+        <Stat label="Captures pending" value={pendingCaptures(counts.bySource)} accent />
         <Stat label="Archived" value={counts.byLifecycle.archived ?? 0} />
         <Stat label="Superseded" value={counts.byLifecycle.superseded ?? 0} />
         <Stat label="Review queue" value={counts.reviewQueue} accent />

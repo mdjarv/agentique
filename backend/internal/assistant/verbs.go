@@ -45,12 +45,16 @@ const (
 	VerbListProjects     = "list_projects"
 	VerbAllowances       = "allowances"
 	VerbJournal          = "journal"
+	VerbRecall           = "recall"
 
 	VerbCreateSession   = "create_session"
 	VerbRunPrompt       = "run_prompt"
 	VerbFollowSession   = "follow_session"
 	VerbUnfollowSession = "unfollow_session"
 	VerbNote            = "note"
+	VerbRemember        = "remember"
+	VerbConfirmMemory   = "confirm_memory"
+	VerbFlagMemory      = "flag_memory"
 
 	VerbMergeSession    = "merge_session"
 	VerbRebaseSession   = "rebase_session"
@@ -73,6 +77,10 @@ const (
 	maxListedSessions  = 40
 	maxListedProjects  = 40
 	maxJournalVerbRows = 50
+	// maxRecalledFacts bounds one pull. A head that asked a question gets the
+	// facts that answer it; a head that gets forty facts has been handed the
+	// push this design took out.
+	maxRecalledFacts = 8
 )
 
 // Handler runs one verb.
@@ -225,8 +233,14 @@ func refuse(reason, say string) map[string]any {
 
 // buildVerbs is the table. Read first, then contained, then the uncontained
 // ones that exist only to be refused with their tier named.
+//
+// The four memory verbs are in it only when a [Memory] is wired. That is not a
+// feature flag being polite: a verb in the table is a verb the head is told
+// exists, in a section of its instruction that says nothing outside the list is
+// real, and a tool that answers "I have no memory" to every call teaches it to
+// stop asking. A verb that cannot work must not be offered.
 func (s *Service) buildVerbs() []Verb {
-	return []Verb{
+	verbs := []Verb{
 		{
 			Name:        VerbOrientation,
 			Tier:        TierRead,
@@ -392,7 +406,13 @@ func (s *Service) buildVerbs() []Verb {
 			},
 			handler: s.verbNote,
 		},
+	}
 
+	if s.mem != nil {
+		verbs = append(verbs, s.memoryVerbs()...)
+	}
+
+	return append(verbs,
 		// Uncontained. Listed with their tier and no handler: a head can see
 		// that they exist and that they are not its to perform, which is what
 		// stops it inventing a way round one. M3 turns each into a proposal.
@@ -404,7 +424,7 @@ func (s *Service) buildVerbs() []Verb {
 		uncontained(VerbDissolveChannel, "Remove a channel's workers, worktrees and branches."),
 		uncontained(VerbSetSessionModel, "Change which model another session runs."),
 		uncontained(VerbSetSessionMode, "Change another session's permission mode."),
-	}
+	)
 }
 
 // uncontained builds a verb that exists to be refused.
@@ -825,9 +845,29 @@ func (s *Service) verbNote(ctx context.Context, args map[string]any) (map[string
 		return refuse("empty-note", "There was nothing to keep, so nothing was written."), nil
 	}
 
+	// A note about a session is a note about that session's repository, so the
+	// entry says so — and a notable entry is staged as a capture in its project's
+	// own scope, where the global scope means "true everywhere". Filing a note
+	// about one repository as true everywhere is the one mistake `remember`
+	// refuses to make, and it cannot be seen afterwards from the fact itself.
+	//
+	// The session is the only thing the head names here, so the project is
+	// resolved FROM it rather than asked for twice: two arguments that can
+	// disagree about the same subject is a second way to get this wrong. A
+	// session this machine does not hold resolves to nothing and the note stays
+	// global, which is what an unplaceable note is.
+	sessionID := strings.TrimSpace(stringArg(args, "session_id"))
+	projectID := ""
+	if sessionID != "" && s.dir != nil {
+		if row, ok := s.dir.SessionBrief(ctx, sessionID); ok {
+			projectID = row.ProjectID
+		}
+	}
+
 	entry, err := s.appendJournal(ctx, journalWrite{
 		Kind:      JournalNote,
-		SessionID: strings.TrimSpace(stringArg(args, "session_id")),
+		SessionID: sessionID,
+		ProjectID: projectID,
 		Summary:   text,
 		// Notable by construction: a note is written because somebody thought
 		// it was worth a second look, which is exactly what the flag means.

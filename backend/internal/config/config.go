@@ -299,6 +299,26 @@ type BackupConfig struct {
 	Disabled bool   `toml:"disabled"`
 }
 
+// RetiredKey is a config key that no longer does anything, kept so a file carrying
+// it can still be named in a boot warning.
+//
+// It holds whatever TOML value the key was written with — a string, a bool, a number
+// — because a retired key must **never refuse to boot**, whatever type it was
+// documented as in the release the operator is upgrading from. A typed field turns a
+// stale line into a decode error, and a server that will not start over a setting
+// that is ignored is the worst possible reading of "ignored".
+//
+// It is an alias rather than `any` spelled inline so the name can say that the loose
+// type is the point rather than an oversight, and an alias rather than a defined type
+// so the field stays a plain empty interface to the TOML codec: a defined interface
+// type cannot carry the method that would otherwise report presence, and a struct
+// wrapper would encode back into config.toml as an empty table.
+//
+// nil is "the config did not carry this key" — the test a boot warning makes. Any
+// written value counts as carried, the zero value of its type included: the operator
+// typed the line, and that is the fact being reported.
+type RetiredKey = any
+
 // BrainConfig configures the persistent agent memory ("brain"). Each field has an
 // equivalent AGENTIQUE_BRAIN_* env var which, when set, takes precedence over the file
 // value (env is the runtime override; the file is the persistent default). An empty value
@@ -306,15 +326,17 @@ type BackupConfig struct {
 // as when no env var is set.
 type BrainConfig struct {
 	// Enabled is the master switch for the whole subsystem, and it is OFF by default.
-	// Off means the brain is never constructed: no /api/brain routes, no memory MCP
-	// tools, no recall, no session-end learning, no scheduled consolidation, and the
-	// Brain tab is hidden (the "brain" entry in the health features map). The markdown
-	// store on disk is never touched either way, so this is reversible by flipping the
-	// flag back.
+	// Off means the brain is never constructed: no /api/brain routes, no scheduled
+	// consolidation, and the memory page is not offered (the "brain" entry in the health
+	// features map). The markdown store on disk is never touched either way, so this is
+	// reversible by flipping the flag back.
+	//
+	// On, it is the store, its routes and its page. The assistant is its only reader
+	// (docs/assistant.md, the M2 contract), so Enabled with [experimental] assistant off
+	// stores memory nobody recalls, and says so at boot.
 	//
 	// It is a plain bool precisely because it defaults off: unset and false mean the
-	// same thing, so there is no third state to encode. Contrast Recall below, which
-	// defaults ON and therefore cannot be one.
+	// same thing, so there is no third state to encode.
 	// Env: AGENTIQUE_BRAIN_ENABLED.
 	Enabled bool `toml:"enabled"`
 
@@ -326,16 +348,17 @@ type BrainConfig struct {
 	// reorganization (haiku|sonnet|opus). Empty = deterministic dedup/decay only.
 	// Env: AGENTIQUE_BRAIN_CONSOLIDATE_MODEL.
 	ConsolidateModel string `toml:"consolidate-model"`
-	// LearnModel enables session-end auto-encode — distilling durable facts from a
-	// finished session's transcript when it is deleted (haiku|sonnet|opus). Empty = off.
-	// Env: AGENTIQUE_BRAIN_LEARN_MODEL.
-	LearnModel string `toml:"learn-model"`
-	// OutcomeModel enables the session-end automatic outcome emitter — an LLM judge over
-	// the finished transcript that decides whether the facts recall surfaced during the
-	// session helped (→ strengthen) or were contradicted (→ flag for review), feeding the
-	// outcome signal automatically instead of relying on agents to call MemoryUsed/MemoryFlag
-	// (haiku|sonnet|opus). Empty = off. Env: AGENTIQUE_BRAIN_OUTCOME_MODEL.
-	OutcomeModel string `toml:"outcome-model"`
+	// LearnModel is a NO-OP as of M2 and is kept only so a config carrying it still
+	// decodes and can be named in a boot warning (see warnBrainNoopKeys in serve.go).
+	// It named the model for session-end auto-encode; sessions no longer write facts at
+	// all — captures come from the assistant's conversation and from notable journal
+	// entries (docs/assistant.md, the M2 contract). Env: AGENTIQUE_BRAIN_LEARN_MODEL.
+	LearnModel RetiredKey `toml:"learn-model"`
+	// OutcomeModel is a NO-OP as of M2, kept for the same reason as LearnModel. It named
+	// the model for the session-end outcome judge; the outcome signal is conversational
+	// now — "yes" and "no, we changed that" are in-band, which is the human confirmation
+	// the design ranks above corroboration. Env: AGENTIQUE_BRAIN_OUTCOME_MODEL.
+	OutcomeModel RetiredKey `toml:"outcome-model"`
 
 	// SnapshotRetain bounds how many pre-churn brain snapshots are kept under
 	// brain/.snapshots/. 0 = the built-in default (7); do not duplicate that default here.
@@ -352,9 +375,10 @@ type BrainConfig struct {
 	// archived/faded from recall. 0 = the built-in default (0.35). Env: AGENTIQUE_BRAIN_ARCHIVE_FLOOR.
 	ArchiveConfidenceFloor float64 `toml:"archive-confidence-floor"`
 
-	// RetryMax bounds how many times a session-end learn/outcome job is retried before it is
-	// dead-lettered. 0 = the built-in default (5). Env: AGENTIQUE_BRAIN_RETRY_MAX.
-	RetryMax int `toml:"retry-max"`
+	// RetryMax is a NO-OP as of M2, kept for the same reason as LearnModel. It bounded the
+	// session-end learn/outcome job queue's retries; that queue is gone with the passes it
+	// carried (the brain_jobs table stays, unused). Env: AGENTIQUE_BRAIN_RETRY_MAX.
+	RetryMax RetiredKey `toml:"retry-max"`
 
 	// --- Semantic recall (the embedder + vector DB). All optional; when ChromaURL,
 	// EmbedURL and EmbedModel are all set and Chroma answers a heartbeat, recall becomes
@@ -384,10 +408,19 @@ type BrainConfig struct {
 	// Env: AGENTIQUE_BRAIN_AUTOCAL.
 	Autocal bool `toml:"autocal"`
 
-	// Recall toggles auto-recall (pinned facts + per-turn task-relevant facts injected into
-	// the preamble). It is ON by default; set to "off" (or false/0/no) to disable. Empty =
-	// default on. Env: AGENTIQUE_BRAIN_RECALL (wins when set).
-	Recall string `toml:"recall"`
+	// Recall is a NO-OP as of M2, kept for the same reason as LearnModel. It toggled
+	// auto-recall into every session's preamble and turn; knowledge is pulled now, through
+	// the assistant's own recall verb, and nothing injects memory into a coding session
+	// (docs/assistant.md, "Knowledge is pulled; only news is pushed").
+	// Env: AGENTIQUE_BRAIN_RECALL.
+	//
+	// This is the retired key an upgrading config is most likely to carry, and the one
+	// whose spelling is a trap: it USED to default on, so it was a quoted string whose
+	// off switch was `recall = "false"` — and `recall = false`, the spelling anyone
+	// would write, was a decode error. That is exactly why [RetiredKey] takes any
+	// scalar: refusing to boot over the value of a key that does nothing is the one
+	// outcome M2's contract rules out.
+	Recall RetiredKey `toml:"recall"`
 
 	// Graph tunes the brain knowledge-graph view: the semantic kNN edge density computed on
 	// the backend and the force-layout curves sent to the frontend. All optional; any field

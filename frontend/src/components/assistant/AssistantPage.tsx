@@ -1,12 +1,10 @@
-import { Phone } from "lucide-react";
 import { type UIEvent, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { AssistantComposer } from "~/components/assistant/AssistantComposer";
 import { AssistantConversation } from "~/components/assistant/AssistantConversation";
+import { AssistantThreadHeader } from "~/components/assistant/AssistantHeader";
 import { AssistantUpdatesStrip } from "~/components/assistant/AssistantUpdatesStrip";
-import { PageHeader } from "~/components/layout/PageHeader";
 import { HaloOrb } from "~/components/voice/HaloOrb";
-import { useCallView } from "~/components/voice/use-call-view";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { history, journal, markSeen as markSeenRpc, say } from "~/lib/assistant/rpc";
 import { getErrorMessage } from "~/lib/utils";
@@ -20,7 +18,6 @@ import {
   useAssistantStore,
 } from "~/stores/assistant-store";
 import { useFeatureStore } from "~/stores/feature-store";
-import { useVoiceStore } from "~/stores/voice-store";
 
 /**
  * The thread — `/assistant`, the page the rail's assistant row opens.
@@ -134,7 +131,7 @@ export function AssistantPage() {
   if (featuresLoaded && !enabled) {
     return (
       <div className="flex flex-col h-full">
-        <AssistantHeader />
+        <AssistantThreadHeader />
         <div className="flex-1 flex items-center justify-center px-6 text-center">
           <p className="text-sm text-muted-foreground max-w-sm">
             The assistant is off on this machine. Set <code>[experimental] assistant</code> in the
@@ -149,7 +146,7 @@ export function AssistantPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <AssistantHeader />
+      <AssistantThreadHeader />
       <AssistantUpdatesStrip entries={entries} />
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         {error && !loaded ? (
@@ -162,41 +159,6 @@ export function AssistantPage() {
       </div>
       <AssistantComposer replying={replying} onSend={handleSend} />
     </div>
-  );
-}
-
-/**
- * The header is the assistant: its orb, its name, and the call as one of its
- * controls, on both layouts.
- *
- * The orb is the same mark the rail row wears, and during a call it takes the
- * call's state — the face awake — so the page and the row cannot disagree
- * about whether a line is open. The phone button places an UNFOCUSED call: it
- * means "talk to this instead of typing", where a session composer's phone
- * means "talk about this session". It steps aside while a call exists, because
- * the call's own surfaces carry its controls and a second phone would read as
- * a second line.
- */
-function AssistantHeader() {
-  const voiceEnabled = useFeatureStore((s) => s.features.voice);
-  const start = useVoiceStore((s) => s.start);
-  const view = useCallView();
-  return (
-    <PageHeader>
-      <HaloOrb size={20} state={view.active ? view.orbState : "idle"} glyph="none" />
-      <span className="font-medium truncate">Assistant</span>
-      {voiceEnabled && !view.active && (
-        <button
-          type="button"
-          onClick={() => start()}
-          aria-label="Start a live call with the assistant"
-          title="Talk instead (⌥V)"
-          className="ml-auto h-8 w-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer text-muted-foreground hover:text-agent hover:bg-muted/80"
-        >
-          <Phone className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </PageHeader>
   );
 }
 

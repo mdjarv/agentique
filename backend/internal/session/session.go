@@ -238,20 +238,6 @@ type Session struct {
 	// live CDP endpoint to attach to. Guarded by mu.
 	onEnsureBrowser func() error
 
-	// recallFn, when wired by the Manager, returns a task-relevant memory recall block
-	// to prepend to a turn plus the fact ids it surfaced. It fires every turn (not just
-	// the first), passing recalledIDs so each turn injects only newly-relevant facts —
-	// delta recall that follows the conversation. recalledIDs accumulates every id ever
-	// surfaced this session. Both guarded by mu.
-	recallFn    func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)
-	recalledIDs map[string]struct{}
-
-	// onComplete, when wired by the Manager, fires once per clean completion
-	// (runtime StateDone — "conversation complete") so the brain can learn from the
-	// finished transcript without the session being deleted. Async, best-effort; nil
-	// disables it. Guarded by mu.
-	onComplete func()
-
 	// onIdle, when wired by the Manager, fires on every runtime →Idle
 	// transition (async). The scheduler uses it to deliver queued runs at the
 	// next idle boundary instead of waiting for the following tick. Guarded
@@ -417,10 +403,6 @@ func (s *Session) agentiqueInterceptors() map[string]runtime.ToolInterceptor {
 		AgentiqueReleaseDevURLTool:  allow,
 		AgentiqueListDevURLsTool:    allow,
 		AgentiqueSetSessionNameTool: allow,
-		AgentiqueMemoryAddTool:      allow,
-		AgentiqueMemorySearchTool:   allow,
-		AgentiqueMemoryFlagTool:     allow,
-		AgentiqueMemoryUsedTool:     allow,
 		AgentiqueSuggestPromptTool:  allow,
 		AgentiqueScheduleCreateTool: allow,
 		AgentiqueScheduleReportTool: allow,
@@ -906,26 +888,6 @@ func coalescePending(msgs []pendingMessage) (string, []QueryAttachment) {
 	return strings.Join(prompts, "\n\n"), atts
 }
 
-// recallTimeout bounds the one-time recall lookup so a slow or hung vector backend
-// can never stall the first turn (reliability-first): on timeout we inject nothing.
-const recallTimeout = 3 * time.Second
-
-// SetRecallFn wires the one-time task-relevant memory recall callback. The Manager
-// binds the project; the Session fires it once, on its first turn. nil disables it.
-func (s *Session) SetRecallFn(fn func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string)) {
-	s.mu.Lock()
-	s.recallFn = fn
-	s.mu.Unlock()
-}
-
-// SetOnComplete wires the per-session completion callback fired once on a clean
-// completion (runtime StateDone). The Manager binds the project/session; nil disables it.
-func (s *Session) SetOnComplete(fn func()) {
-	s.mu.Lock()
-	s.onComplete = fn
-	s.mu.Unlock()
-}
-
 // SetOnIdle wires the per-session idle callback fired on every runtime →Idle
 // transition. The Manager binds the session id; nil disables it.
 func (s *Session) SetOnIdle(fn func()) {
@@ -939,43 +901,6 @@ func (s *Session) SetOnIdle(fn func()) {
 // start; this exists for observers that learn the turn index out of band.
 func (s *Session) SubscribeTurn(turnIndex int) <-chan TurnOutcome {
 	return s.turnReg.Subscribe(turnIndex)
-}
-
-// injectRecall prepends a task-relevant memory recall block to the turn's prompt. It
-// fires on every turn, passing the ids already surfaced this session so recall returns
-// only what's newly relevant (delta) — the recall follows the conversation rather than
-// being front-loaded once. Best-effort: a disabled brain, a slow/failed recall, a
-// too-thin prompt, or nothing new returns the prompt unchanged.
-func (s *Session) injectRecall(prompt string) string {
-	s.mu.Lock()
-	fn := s.recallFn
-	if fn == nil {
-		s.mu.Unlock()
-		return prompt
-	}
-	if s.recalledIDs == nil {
-		s.recalledIDs = make(map[string]struct{})
-	}
-	// Snapshot the seen-set so the recall call (which does I/O) doesn't read it under
-	// lock or race a concurrent merge.
-	exclude := make(map[string]struct{}, len(s.recalledIDs))
-	for id := range s.recalledIDs {
-		exclude[id] = struct{}{}
-	}
-	s.mu.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), recallTimeout)
-	defer cancel()
-	block, ids := fn(ctx, prompt, exclude)
-	if strings.TrimSpace(block) == "" {
-		return prompt
-	}
-	s.mu.Lock()
-	for _, id := range ids {
-		s.recalledIDs[id] = struct{}{}
-	}
-	s.mu.Unlock()
-	return block + "\n\n" + prompt
 }
 
 // Query sends a prompt (with optional images) to the CLI session and starts
@@ -1018,17 +943,6 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	rt, wasArchived, wasMerged, err := s.validateAndPrepareQuery(origin)
 	if err != nil {
 		return 0, nil, err
-	}
-
-	// Inject task-relevant recall only after validation passes, so a rejected
-	// query doesn't consume the one-shot. The augmented prompt is persisted, sent
-	// to the model, and broadcast — so the recalled facts are visible in the
-	// transcript and seen by the agent. Schedule-origin turns skip recall:
-	// eviction between fires resets the per-session seen-set, so a loop would
-	// re-inject the same facts every fire and inflate their `uses` counters
-	// with no outcome signal (see QueryOrigin).
-	if origin.Kind == "" {
-		prompt = s.injectRecall(prompt)
 	}
 
 	turnIndex := s.pipeline.AdvanceTurn()

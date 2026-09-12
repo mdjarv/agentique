@@ -269,7 +269,7 @@ func PlanConsolidation(ctx context.Context, store Store, ex Extractor, scope Sco
 	}
 	var captures, durable []Record
 	for _, r := range all {
-		if r.Source == SourceCapture {
+		if r.Source.Staged() {
 			captures = append(captures, r)
 		} else if !isArchived(r) { // archived facts are the cold tier — never reorganized/promoted-against
 			durable = append(durable, r)
@@ -336,7 +336,7 @@ func ApplyPlan(ctx context.Context, store Store, scope Scope, p Plan, opts Conso
 	}
 	var durable []Record
 	for _, r := range all {
-		if r.Source != SourceCapture && !isArchived(r) { // archived = cold tier, excluded from the churn
+		if !r.Source.Staged() && !isArchived(r) { // archived = cold tier, excluded from the churn
 			durable = append(durable, r)
 		}
 	}

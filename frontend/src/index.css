@@ -784,25 +784,31 @@
   }
 }
 
-/* --- Brain flare (the brain updated: memory added/changed, consolidation applied) --- */
-@keyframes brain-flare {
+/* --- Memory flare (memory updated: a fact added/changed, a consolidation
+   applied) — the assistant's orb pulses its track once. The track is what the
+   orb looks like at rest, so the pulse reads as the mark itself brightening
+   rather than as a badge appearing beside it. --- */
+@keyframes orb-track-flare {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent);
+    stroke: var(--border);
+    opacity: 0.6;
   }
-  40% {
-    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--primary) 50%, transparent);
+  35% {
+    stroke: var(--primary);
+    opacity: 1;
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
+    stroke: var(--border);
+    opacity: 0.6;
   }
 }
 
-.brain-flare {
-  animation: brain-flare 1.1s ease-out 2;
+.orb-track-flare {
+  animation: orb-track-flare 1.1s ease-out 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .brain-flare {
+  .orb-track-flare {
     animation: none;
   }
 }

@@ -176,27 +176,24 @@ additive change in claudecli-go (`Process.PID` + `ProcessInfo.PID`) and agentkit
 (`runtime.ProcessInfo.PID` + adapter mapping); then agentique bumps both and
 targets exact PIDs. Handed off as session prompts 2026-07-04.
 
-### Brain: new signals are inert / headless on the live corpus
-Several shipped features can't yet show value because their inputs don't exist in
-practice:
+### Brain: the strength and outcome signals start over on the assistant's traffic
+M2 removed both of the things that used to feed them, so the corpus's `uses` and
+`helped` counters now describe a consumer that no longer exists:
 - **Two-factor strength + strength-weighted decay (D1):** `RetrievalStrength` decays
-  from `LastUsedAt`, which is only stamped by `MemorySearch`/per-turn recall injection
-  (`BumpUses`) and the new `MemoryUsed` outcome tool — and `uses`/`helped` are `0` across
-  the entire live corpus (recall injection is recent; agents rarely call the explicit
-  tools). So retrieval ≈ storage and `DecayPolicy.StrengthWeighted` is a near-no-op until
-  real recall/outcome traffic accrues. The mechanism is correct; it's starved of signal.
-- **Outcome signal v1 (D2 positive half, 2026-06-21) — automatic emitter SHIPPED 2026-06-22.**
-  `MemoryUsed` / `MarkHelped` / `Record.Helped` + confidence calibration shipped, but the explicit
-  signal is **agent-volunteered** (`helped` was `0` everywhere on the live corpus). The durable fix —
-  the **automatic emitter** (session-end LLM judge over the transcript) — is now built
-  (`brain.md#the-outcome-signal` ADR addendum; `internal/brain/outcome.go`): on session delete it recovers
-  the facts recall injected (from the persisted `<brain>` envelopes), judges helped/contradicted/neutral
-  conservatively, and applies `MarkAutoHelped` (gentler `0.25` gap-close — a machine inference weighs
-  half an explicit acknowledgement) / `Flag`. Opt-in via `AGENTIQUE_BRAIN_OUTCOME_MODEL` / `[brain]
-  outcome-model`, off by default. Verified end-to-end with a live Haiku judge and against an isolated
-  copy of the live brain. **Remaining (now narrower):** the emitter is dormant on the live server until
-  the model is configured, and its precision/recall over *organic* (not authored) sessions — plus the
-  `0.25` weight — want a live multi-turn soak to calibrate. The **operating contract** remains the
+  from `LastUsedAt`, which is stamped only by a pull — now the assistant's `recall`
+  verb through `MarkUsed`, where it used to be per-turn session injection. The counters
+  on the live corpus were near-zero already, and what is on them was earned by a path
+  that is gone, so retrieval ≈ storage and `DecayPolicy.StrengthWeighted` stays a
+  near-no-op until conversational recall traffic accrues. The mechanism is correct;
+  it is starved of signal, and the signal now has one source instead of three.
+- **The positive outcome signal has no producer.** `MarkHelped` and `MarkAutoHelped`
+  survive with their calibration (`0.25` weighs half an explicit acknowledgement) and
+  no caller: the `MemoryUsed` tool and the session-end transcript judge both went with
+  the session surface. The conversational replacement is `confirm_memory`, which maps
+  to `Confirm` (→1.0) rather than to a corroboration step — so the whole
+  0.8→0.95 corroboration band is currently unreachable. Whether anything other
+  than the operator should ever move trust is the open question
+  (`brain.md`, "Corroboration without a human"). The **operating contract** remains the
   already-non-inert piece (8 human-confirmed global prefs act today via `Confirm`→1.0).
 - **Interference + due-for-review (D5/D6):** computed and served in `GET /graph`'s
   report (`interference`, `dueForReview`) but **rendered nowhere** — no frontend
@@ -256,27 +253,15 @@ precision guard (`singleTokenMinShare=0.40`), and the outcome-signal constants
 `ActOnConfidence=0.85`) — no flags/config to tune per deployment or scope size. The
 recall + outcome constants in particular are calibration choices made on a small data
 sample (one real mis-recall, the live pref distribution) and want revisiting once there
-is real `MemoryUsed`/recall traffic to measure against.
+is real conversational recall and confirmation traffic to measure against.
 
-### Brain: durable job queue is at-least-once (outcome double-count on replay)
-The session-end learn/outcome passes now run through a durable retry queue (`brain/jobqueue.go`,
-`brain_jobs` table, M7) so a crash mid-extraction no longer loses the work — drained on startup,
-retried, then dead-lettered. Delivery is **at-least-once**: the row is deleted only after a
-successful handler, so a crash *after* the LLM pass mutated memory but *before* `DeleteBrainJob`
-replays the job on restart. `LearnFromTranscript` is self-healing under replay (`Add` dedups + M4
-reinforces), but `ApplyOutcomesFromTranscript` is **not** idempotent — a replay can re-increment
-`Helped`. This is an accepted bound for Band 1; the follow-up is a per-`(scope, fact-id)` applied
-marker (exactly-once outcomes). Also: `DeleteSession` holds `endEvents` in memory and enqueues
-after the row delete, so a `kill -9` in that gap loses one transcript (pre-existing, smaller than
-the bug M7 fixes; `Enqueue` is a single fast insert to minimise it).
-→ `internal/brain/jobqueue.go`, `internal/server/server.go`.
-
-### Brain: per-turn recall `BumpUses` is intentionally unlocked (approximate counters)
+### Brain: recall's `BumpUses` is intentionally unlocked (approximate counters)
 The durable single-fact writers — `Add`/`Capture` (reinforce), `Consolidate` (churn), and
 `mutate` (Confirm/Flag/SetPinned) — all funnel through `Service.mu`, so human actions and
-reinforcements can't clobber each other. The hot per-turn recall path (`MarkUsed` → `memory.BumpUses`)
-is **deliberately left unlocked**: locking it would serialise recall against a long consolidation
-pass and stall the per-turn injection. The accepted cost is that `Uses`/`LastUsedAt` increments on a
+reinforcements can't clobber each other. The pull path (`MarkUsed` → `memory.BumpUses`,
+now the assistant's `recall` verb) is **deliberately left unlocked**: locking it would
+serialise recall against a long consolidation pass and stall a head mid-turn. The
+accepted cost is that `Uses`/`LastUsedAt` increments on a
 fact being recalled *at the same instant* it is reinforced/curated can occasionally be lost
 (last-writer-wins) — a counter is approximate and the increment re-accrues on the next turn; no
 durable curated state (score/lifecycle/pin) is at risk since those go through `mutate`. If exact
@@ -331,13 +316,6 @@ clears on the next server write) — no TTL backstop. Also `List`/`Get` return r
 share slice backing with the cache: safe under the current replace-field-then-`Put` write
 pattern, but a future in-place mutation of `Related`/`Embedding` would corrupt the cache
 (documented in-code, not enforced). → `internal/memory/cachestore/cachestore.go`.
-
-### Brain: per-turn recall injection is cumulatively unbounded
-Fluid recall bounds each turn (≤K, delta-deduped against a per-session seen-set), but the
-seen-set only suppresses repeats — across a long, topic-drifting session the *total*
-injected (and the `BumpUses` churn) grows unbounded. Low risk (K small, low-content gate),
-but a per-session injection budget would cap it. → `internal/session/session.go`
-(`injectRecall`), `internal/brain/brain.go` (`RecallBlock`).
 
 ### `claudecli` still imported in session-package files for narrow reasons
 
@@ -398,20 +376,23 @@ the backup header, so correctness risk is low. If the schema changes
 
 ### Brain: the orchestration layer is untested
 The deterministic cores are well covered (Plan/Apply, promote, relink, associative
-recall, extractor parsing, and — new — `MarkHelped`/`MarkHelpedWith`/`OperatingContract`/the recall
-lone-token guard, the `MemoryUsed` adapter scope check, and — 2026-06-22 — the automatic outcome
-emitter: `ApplyOutcomesFromTranscript` with a fake judge, `<brain>`-envelope id extraction, the
-scope guard, anti-hallucination, the gentler auto weight, and judge parsing, plus a live env-gated
-`TestOutcomeEmitterLive`). Untested: the async job
-runners (`runScopeJob`/`runGlobalJob`/`runConsolidateAllJob`), the `server.go` automation wiring
-(auto-recall preamble, auto-encode + auto-outcome on delete, scheduled consolidation), and the CLI
-`export`/`import` interactive resolution — they need a live runner / DB / stdin. **New
-gaps from the outcome-signal work:** `MemoryUsed` over the real `/mcp` HTTP transport
-(token minted per-session → needs a model-backed session) and the operating-contract
-preamble wiring (`MemoryContractFn` → `Manager.memoryContract` → the three
-create/resume/reconnect assembly sites) have no end-to-end test — same "needs a live
-runner" shape. → `internal/brain/job.go`, `internal/session/manager.go`,
-`internal/server/server.go`, `cmd/agentique/brain.go`.
+recall, extractor parsing, `MarkHelped`/`MarkHelpedWith`/`OperatingContract` and the
+recall lone-token guard). Untested: the async job
+runners (`runScopeJob`/`runGlobalJob`/`runConsolidateAllJob`), the `server.go` automation
+wiring (scheduled consolidation), and the CLI
+`export`/`import` interactive resolution — they need a live runner / DB / stdin.
+→ `internal/brain/job.go`, `internal/server/server.go`, `cmd/agentique/brain.go`.
+
+M2 narrowed this rather than widening it: the session-side wiring that had no
+end-to-end test (`MemoryUsed` over the real `/mcp` transport, the operating-contract
+preamble through `Manager.memoryContract`, auto-encode and auto-outcome on delete) is
+gone rather than covered. What replaced it — the assistant's four memory verbs over
+`assistant.Memory` — IS tested, on both sides of the seam
+(`internal/assistant/memory_test.go`, `internal/server/assistant_memory_test.go`).
+Two cases still want a live runner: the recall semantics behind the `recall` verb are
+exercised through `Service.RecallBlock`, which nothing calls (see its doc comment), and
+the `<brain>`-envelope renderer is now reachable only from transcripts recorded before
+M2.
 
 ### Brain: `react-force-graph-2d` added, loosely typed
 The graph view pulled in `react-force-graph-2d` (canvas force-graph). It wasn't

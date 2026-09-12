@@ -213,9 +213,17 @@ type SessionRow struct {
 	ID string
 	// Name is what the operator calls it.
 	Name string
-	// ProjectSlug and ProjectName place it in a repository.
+	// ProjectSlug and ProjectName place it in a repository, for a reader.
 	ProjectSlug string
 	ProjectName string
+	// ProjectID is that repository's id, for a caller that has to FILE something
+	// under it — a journal entry's subject, and through that the scope a capture
+	// is staged in. Never shown: an id is noise to a reader and to a listener.
+	//
+	// Set for this machine's own rows only. A row from the browser's world
+	// snapshot describes a project on another machine, whose id means nothing to
+	// anything here, so it is left empty rather than carried over and trusted.
+	ProjectID string
 	// MachineID and MachineName say where it runs. A row whose machine is not
 	// this one can be talked about, never dispatched to.
 	MachineID   string

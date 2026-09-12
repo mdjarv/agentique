@@ -44,9 +44,9 @@ func distillTo(text string, cat memory.Category) canExtractor {
 	}}
 }
 
-// TestE2E_InjectionGate is the headline: writing is cheap, injection is earned. A session's
-// transcript stages a RAW capture that recall will NOT inject; only the churn promotes it to a
-// consolidated fact, after which recall injects it (with provenance back to the capture).
+// TestE2E_InjectionGate is the headline: writing is cheap, recall is earned. A staged RAW
+// capture is not returned by recall; only the churn promotes it to a consolidated fact,
+// after which recall returns it (with provenance back to the capture).
 func TestE2E_InjectionGate(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc(t)
@@ -54,21 +54,18 @@ func TestE2E_InjectionGate(t *testing.T) {
 	fact := "The project build tool is just, never raw npx commands."
 	ex := distillTo(fact, memory.CategoryPreference)
 
-	// 1. A finished session is ingested → staged as a capture (NOT injectable).
-	staged, err := svc.LearnFromTranscript(ctx, scope, []TranscriptEvent{
-		promptEvent(t, "remember we always run the build with just, never raw npx"),
-	}, ex)
-	if err != nil || staged != 1 {
-		t.Fatalf("expected 1 capture staged, got %d (err %v)", staged, err)
+	// 1. A capture is staged (NOT recallable).
+	if _, err := svc.Capture(ctx, scope, fact, memory.CategoryPreference); err != nil {
+		t.Fatal(err)
 	}
 	all, _ := svc.List(ctx, scope)
 	if len(all) != 1 || all[0].Source != memory.SourceCapture {
-		t.Fatalf("ingest must stage exactly one capture, got %+v", all)
+		t.Fatalf("staging must write exactly one capture, got %+v", all)
 	}
 
-	// 2. Recall does NOT inject the capture (the gate).
+	// 2. Recall does NOT return the capture (the gate).
 	if block, ids := svc.RecallBlock(ctx, "proj", "what build tool does the project use", nil); strings.TrimSpace(block) != "" || len(ids) != 0 {
-		t.Fatalf("a raw capture must not be injected: block=%q ids=%v", block, ids)
+		t.Fatalf("a raw capture must not be recalled: block=%q ids=%v", block, ids)
 	}
 
 	// 3. The nightly churn promotes capture → consolidated (with DerivedFrom provenance).
@@ -83,10 +80,10 @@ func TestE2E_InjectionGate(t *testing.T) {
 		t.Fatalf("the promoted capture must be consumed, got %+v", rep.CapturesConsumed)
 	}
 
-	// 4. NOW recall injects the earned fact.
+	// 4. NOW recall returns the earned fact.
 	block, ids := svc.RecallBlock(ctx, "proj", "what build tool does the project use", nil)
 	if !strings.Contains(block, "build tool") || len(ids) == 0 {
-		t.Fatalf("after promotion the fact must be injectable: block=%q ids=%v", block, ids)
+		t.Fatalf("after promotion the fact must be recallable: block=%q ids=%v", block, ids)
 	}
 }
 
@@ -230,39 +227,5 @@ func TestE2E_SnapshotRestoreReversibility(t *testing.T) {
 	all, _ := svc2.List(ctx, scope)
 	if len(all) != 1 || !strings.Contains(all[0].Text, "original") {
 		t.Fatalf("restore must roll the brain back to the snapshot, got %+v", all)
-	}
-}
-
-// TestE2E_DurableJobSurvivesRestart: a session-end learn job persisted before a "crash" is
-// replayed by a fresh queue and still ingests — no silent loss.
-func TestE2E_DurableJobSurvivesRestart(t *testing.T) {
-	ctx := context.Background()
-	svc := newSvc(t)
-	db := newFakeJobStore()
-	ex := distillTo("The deploy runbook lives in docs/deploy.md.", memory.CategoryFact)
-	learn := func(_ context.Context, j Job) (bool, error) {
-		n, err := svc.LearnFromTranscript(ctx, j.Scope, j.Events, ex)
-		return n > 0, err
-	}
-
-	// "Process 1" enqueues the job durably, then crashes before draining.
-	q1 := NewJobQueue(db, nil, 5, map[string]JobHandler{}) // no handler → nothing drains
-	if err := q1.Enqueue(ctx, JobKindLearn, "proj", []TranscriptEvent{promptEvent(t, "the deploy runbook is in docs/deploy.md")}); err != nil {
-		t.Fatal(err)
-	}
-	if db.count() != 1 {
-		t.Fatalf("job must be durable before any drain, got %d rows", db.count())
-	}
-
-	// "Process 2" restarts with the learn handler and drains on startup — the job replays.
-	q2 := NewJobQueue(db, nil, 5, map[string]JobHandler{JobKindLearn: learn})
-	q2.Drain(ctx)
-
-	all, _ := svc.List(ctx, ScopeForProject("proj"))
-	if len(all) != 1 || all[0].Source != memory.SourceCapture {
-		t.Fatalf("the resumed job must have ingested the transcript as a capture, got %+v", all)
-	}
-	if db.count() != 0 {
-		t.Fatalf("the completed job must be deleted, got %d rows", db.count())
 	}
 }

@@ -24,8 +24,13 @@
 // uncontained is ever performed — asking for one answers
 // [ProposalRequiredError] until M3 gives it a card and a yes.
 //
-// Dependencies point one way. This package imports the store, the event bus and
-// internal/usage, and is handed everything else — the directory, the
-// dispatcher, the head manager — through narrow interfaces the server
-// implements. It never imports internal/session or internal/voice.
+// Dependencies point one way. This package imports the store, the event bus,
+// internal/usage and internal/memory — the last for value types only
+// (memory.Category, memory.Source, memory.ConfidenceTier), because a closed set
+// spelled twice is how one surface files a fact the other cannot read. It is
+// handed everything else — the directory, the dispatcher, the head manager, the
+// long-term [Memory] — through narrow interfaces the server implements, and it
+// never imports internal/session, internal/brain or internal/voice: the brain's
+// scope vocabulary is agentique policy and stays on the server's side of the
+// seam.
 package assistant

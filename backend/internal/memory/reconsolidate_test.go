@@ -49,7 +49,7 @@ func TestMarkContradictedTruncatesReason(t *testing.T) {
 	}
 }
 
-// A positive outcome (MemoryUsed) increments Helped, refreshes recency, and raises a
+// A positive outcome increments Helped, refreshes recency, and raises a
 // non-protected fact's confidence by closing half the gap to the ceiling each time —
 // asymptotically, never reaching ground truth.
 func TestMarkHelpedRaisesConfidenceTowardCeiling(t *testing.T) {

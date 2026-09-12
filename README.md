@@ -507,9 +507,14 @@ exclude-dynamic-system-prompt-sections = false  # move cwd/env/git-status out of
 [brain]
 # The master switch, and it is OFF by default: nothing below applies until you
 # turn it on. Off means the subsystem is never built — no /api/brain routes, no
-# memory MCP tools, no recall, no session-end learning, no scheduled
-# consolidation, and the Brain entry is absent from the sidebar menu. The
-# markdown store on disk is never touched either way, so this is reversible.
+# scheduled consolidation, and the memory page is unreachable. The markdown
+# store on disk is never touched either way, so this is reversible.
+#
+# The assistant is the brain's only reader. Memory reaches no coding session:
+# it is pulled through the assistant's recall verb, never injected into a
+# session's preamble or turn, and no session tool writes a fact. So this switch
+# with [experimental] assistant off stores memory that nothing recalls, and
+# says so at boot. Nothing refuses to boot over it.
 enabled = false
 # Semantic recall. Without these, recall and clustering fall back to
 # keyword/Jaccard over the markdown files, which works but is weaker.
@@ -522,22 +527,21 @@ embed-key   = ""
 semantic-threshold = 0.45
 vector-veto        = 0.15
 autocal            = false
-recall             = "on"   # "off" disables per-turn fact injection. Quoted:
-                            # it defaults ON, so it is a string rather than a
-                            # bool to tell "unset" from "off". `recall = false`
-                            # is a type error and refuses to boot.
-# Optional LLM helpers. Unset means off. Values: haiku, sonnet, opus.
-learn-model          = ""   # distil memories from a finished session on delete
-outcome-model        = ""   # session-end judge: did recalled facts help?
+# Optional LLM helper for consolidation. Unset means off. Values: haiku, sonnet, opus.
 consolidate-model    = ""   # unset falls back to deterministic dedup
 consolidate-interval = ""   # e.g. "6h"; unset disables scheduled consolidation
 # 0 and "" mean "use the built-in default", noted after each.
 snapshot-retain          = 0     # kept snapshots under brain/.snapshots/ (7)
-retry-max                = 0     # retries before a learn/outcome job is dead-lettered (5)
 archive-after            = ""    # e.g. "720h": disuse-aging archival. "" is off:
                                  # no recall fade-out, no archive.
 archive-confidence-floor = 0.0   # effective confidence below which a faded fact
-                                 # is archived (0.35)
+                                 # is archived, and below which the assistant's
+                                 # pull stops returning it (0.35). The memory
+                                 # page's own search still shows it.
+# Retired in M2 and ignored: recall, learn-model, outcome-model, retry-max. A
+# config carrying one still decodes and boots whatever value it holds (recall
+# used to be a string, so `recall = false` has to boot too); each is named in a
+# warning at startup. See docs/assistant.md.
 
 [brain.graph]
 edge-cap             = 6      # semantic kNN edge density
@@ -640,7 +644,7 @@ Inside it:
 - `agentique.db` — SQLite: sessions, projects, events, auth, machines. Plus its
   `-wal` and `-shm` sidecars.
 - `backups/` — automatic snapshots. `agentique restore` lists and restores them.
-- `brain/` — persistent agent memory, markdown as the source of truth.
+- `brain/` — the assistant's long-term memory, markdown as the source of truth.
 - `worktrees/` — one git worktree per session. Created on first session.
 - `session-files/` — files agents attach or produce, served back at
   `/api/sessions/{id}/files/…`. Only provably inert types render inline. HTML,
@@ -862,7 +866,7 @@ Subsystem docs, all describing what is built today:
 | [upgrades.md](docs/upgrades.md) | In-app upgrades across machines. |
 | [scheduled-loops.md](docs/scheduled-loops.md) | Recurring prompts with run history and health. |
 | [model-catalog.md](docs/model-catalog.md) | Listing models without shipping a release per upstream model. |
-| [brain.md](docs/brain.md) | Persistent cross-session agent memory, and why it works that way. |
+| [brain.md](docs/brain.md) | The assistant's long-term memory store, and why it works that way. |
 | [channels.md](docs/channels.md) | Channels, teams, `@spawn` delegation, and web-only personas. |
 | [voice.md](docs/voice.md) | Live spoken dialog: the transport, the drafter, and what it refuses to do. |
 | [agent-browser.md](docs/agent-browser.md) | The browser an agent can drive. |

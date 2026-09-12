@@ -57,7 +57,7 @@ export function BrainSnapshots({
     setRestoringId(id);
     try {
       await restoreSnapshot(id);
-      toast.success("Brain restored — a safety snapshot was taken first");
+      toast.success("Memory restored — a safety snapshot was taken first");
       // The brain.updated push refetches the memory list; refresh the snapshot list too
       // (the pre-restore safety snapshot is new).
       await refresh();
@@ -83,7 +83,7 @@ export function BrainSnapshots({
               className="ml-auto"
               disabled={busy}
               onClick={take}
-              title="Take a snapshot of the whole brain now (non-destructive)"
+              title="Take a snapshot of the whole of memory now (non-destructive)"
             >
               {taking ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
               Take snapshot
@@ -115,7 +115,7 @@ export function BrainSnapshots({
                   {confirmId === s.id ? (
                     <div className="flex flex-col gap-2">
                       <div className="text-xs text-foreground">
-                        This rolls the <span className="font-medium">entire brain</span> back to{" "}
+                        This rolls <span className="font-medium">all of memory</span> back to{" "}
                         {relativeTime(s.createdAt)}. A safety snapshot is taken first.
                       </div>
                       <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export function BrainSnapshots({
                         title={
                           jobActive
                             ? "Can't restore while a consolidation is running"
-                            : "Roll the entire brain back to this snapshot"
+                            : "Roll all of memory back to this snapshot"
                         }
                       >
                         {restoringId === s.id ? (

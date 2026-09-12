@@ -34,12 +34,6 @@ const (
 	AgentiqueReleaseDevURLTool  = "mcp__" + AgentiqueMCPServerName + "__ReleaseDevUrl"
 	AgentiqueListDevURLsTool    = "mcp__" + AgentiqueMCPServerName + "__ListDevUrls"
 	AgentiqueSetSessionNameTool = "mcp__" + AgentiqueMCPServerName + "__SetSessionName"
-	// Brain memory tools — read/write the session's persistent memory. Both are
-	// safe (scoped to the session's own project + global) so they auto-allow.
-	AgentiqueMemoryAddTool    = "mcp__" + AgentiqueMCPServerName + "__MemoryAdd"
-	AgentiqueMemorySearchTool = "mcp__" + AgentiqueMCPServerName + "__MemorySearch"
-	AgentiqueMemoryFlagTool   = "mcp__" + AgentiqueMCPServerName + "__MemoryFlag"
-	AgentiqueMemoryUsedTool   = "mcp__" + AgentiqueMCPServerName + "__MemoryUsed"
 	// AgentiqueSuggestPromptTool surfaces a launchable session-prompt card. It has
 	// no server-side side effect (the card renders from the tool_use event), so it
 	// auto-allows like the other affordance tools.

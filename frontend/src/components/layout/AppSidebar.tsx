@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { SyncDock } from "~/components/layout/git/SyncDock";
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
@@ -16,25 +16,7 @@ import {
 import { VoiceDock } from "~/components/voice/VoiceDock";
 import { dismissSidebar } from "~/lib/sidebar-nav";
 import { cn } from "~/lib/utils";
-import { useBrainStore } from "~/stores/brain-store";
 import { useFeatureStore } from "~/stores/feature-store";
-
-// useBrainFlare returns true for a short window after the brain changes (a memory
-// added/edited/removed, or a consolidation applied — anywhere, any tab), so the
-// nav button can pulse to signal the brain is alive.
-function useBrainFlare(): boolean {
-  const flareSeq = useBrainStore((s) => s.flareSeq);
-  const [flaring, setFlaring] = useState(false);
-  const seenRef = useRef(flareSeq);
-  useEffect(() => {
-    if (flareSeq === seenRef.current) return; // skip the initial value
-    seenRef.current = flareSeq;
-    setFlaring(true);
-    const t = setTimeout(() => setFlaring(false), 2200);
-    return () => clearTimeout(t);
-  }, [flareSeq]);
-  return flaring;
-}
 
 interface AppSidebarProps {
   className?: string;
@@ -58,11 +40,12 @@ export function AppSidebar({ className }: AppSidebarProps) {
 }
 
 function SidebarHeader() {
-  const flaring = useBrainFlare();
-  // The brain is off by default, and off means the server mounts no /api/brain
-  // routes — so the row is absent rather than leading somewhere that errors.
-  const brainEnabled = useFeatureStore((s) => s.features.brain);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // Memory's home is the assistant's header, and this is the case where that
+  // home does not exist — see the row below.
+  const brainEnabled = useFeatureStore((s) => s.features.brain);
+  const assistantEnabled = useFeatureStore((s) => s.features.assistant);
+  const orphanedMemory = brainEnabled && !assistantEnabled;
 
   return (
     <div className="px-4 border-b flex items-center justify-between h-12">
@@ -82,14 +65,7 @@ function SidebarHeader() {
             <button
               type="button"
               aria-label="More tools"
-              className={cn(
-                "size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50 cursor-pointer",
-                // The brain-alive pulse survives the collapse: it flares the
-                // trigger when the menu is the only thing visible.
-                flaring
-                  ? "text-primary brain-flare"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
+              className="size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50 cursor-pointer text-muted-foreground hover:text-foreground"
             >
               <Ellipsis className="size-4" />
             </button>
@@ -105,10 +81,22 @@ function SidebarHeader() {
             was only length. Discussions is an action taken on a set of personas,
             so it is an entry point on the Teams page rather than a peer of it.
 
-            What is left all reports something: channels with traffic, a brain
-            that flares, loops that run. The assistant is not here because it
-            has a home already: the row above the footer, where the operator's
+            What is left all reports something: channels with traffic, loops
+            that run. Memory is normally not here: it lives under the
+            assistant, at /assistant/memory, and its flare rides the
+            assistant's own row. The assistant is not here because it has a
+            home already: the row above the footer, where the operator's
             companion sits (see VoiceDock). One destination, one home.
+
+            The exception is the brain on with the assistant OFF, a
+            configuration the server explicitly supports and logs about. The
+            assistant's row is not drawn then (VoiceDock), so the header that
+            carries the Memory link is unreachable and the page exists only as
+            a URL — which on the phone, where this app is an installed PWA with
+            no address bar, is a page that does not exist at all. The one-home
+            rule is about two homes competing, not about a destination having
+            none, so Memory comes back here for exactly that case: still one
+            home, chosen by which owner exists.
           */}
           {/* `useSidebarDismissOnNavigate` closes the mobile sheet on arrival;
               these dismiss on the click as well, because a menu item can name
@@ -127,15 +115,6 @@ function SidebarHeader() {
                 <span className="ml-auto text-muted-foreground-faint">channels & personas</span>
               </Link>
             </DropdownMenuItem>
-            {brainEnabled && (
-              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
-                <Link to="/brain">
-                  <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
-                  Brain
-                  <span className="ml-auto text-muted-foreground-faint">persistent memory</span>
-                </Link>
-              </DropdownMenuItem>
-            )}
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/schedules">
                 <Clock className="size-3.5" />
@@ -143,6 +122,15 @@ function SidebarHeader() {
                 <span className="ml-auto text-muted-foreground-faint">loops</span>
               </Link>
             </DropdownMenuItem>
+            {orphanedMemory && (
+              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
+                <Link to="/assistant/memory">
+                  <Brain className="size-3.5" />
+                  Memory
+                  <span className="ml-auto text-muted-foreground-faint">what it knows</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />

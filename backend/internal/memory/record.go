@@ -30,8 +30,8 @@ const (
 )
 
 // Source records how a memory came to exist. It governs trust and lifecycle:
-// human/agent/consolidated records are injectable; capture records are raw
-// episodic material that only consolidation promotes.
+// human/agent/consolidated records are injectable; capture-tier records (see
+// [Source.Staged]) are raw episodic material that only consolidation promotes.
 type Source string
 
 const (
@@ -43,7 +43,28 @@ const (
 	SourceConsolidated Source = "consolidated"
 	// SourceCapture is raw episodic material staged at turn end; not injected.
 	SourceCapture Source = "capture"
+	// SourceReported is raw episodic material whose text was written by an AGENT
+	// about content nobody here authored — a session's report, or another
+	// untrusted entry in the consumer's own episodic log.
+	//
+	// Capture tier like [SourceCapture], and a separate value rather than the
+	// same one because where a capture came from is exactly what decides how far
+	// consolidation may trust it: a staged sentence the operator said and a
+	// staged sentence a repository told an agent to say look identical once the
+	// provenance is gone.
+	SourceReported Source = "reported"
 )
+
+// Staged reports whether this source is CAPTURE TIER: raw episodic material that
+// is never recalled, never injected and never pinned, and whose only path to
+// injectability is consolidation promoting it into a durable fact.
+//
+// Every "is this a durable fact" test asks this rather than comparing against
+// one constant. There is more than one capture tier, and a comparison naming
+// only [SourceCapture] would inject the others — which for [SourceReported]
+// means injecting agent-written text about untrusted repository content as
+// though the operator had stated it.
+func (s Source) Staged() bool { return s == SourceCapture || s == SourceReported }
 
 // Record is a single memory. Text is the source of truth; Embedding is a derived,
 // optional cache that may be recomputed from Text at any time.
@@ -59,17 +80,17 @@ type Record struct {
 	// Locked records are exempt from consolidation rewrite/merge/decay — set this
 	// on hand-edited records so the brain does not overwrite a human's correction.
 	Locked bool
-	// Uses counts how many times this record was injected into a prompt — the
-	// weakest signal ("shown"). Distinct from Helped ("confirmed useful").
+	// Uses counts how many times this record was recalled — the weakest signal
+	// ("shown"). Distinct from Helped ("confirmed useful").
 	Uses int
-	// Helped counts confirmed-useful outcomes: times an agent that saw this fact
-	// explicitly acknowledged it was used/correct via the MemoryUsed tool (RFC-LD
-	// D2 positive half — see brain.md#the-outcome-signal). A stronger signal than a bare
-	// injection; it raises both StorageStrength and (via MarkHelped) ConfidenceScore.
+	// Helped counts confirmed-useful outcomes: times whoever saw this fact explicitly
+	// acknowledged it was used/correct (RFC-LD D2 positive half — see
+	// brain.md#the-outcome-signal). A stronger signal than a bare recall; it raises both
+	// StorageStrength and (via MarkHelped) ConfidenceScore.
 	Helped int
 	// Corroborations counts independent RE-OBSERVATIONS: an ingest/Add saw text duplicating
-	// this durable fact. Distinct from Helped (an agent acknowledged a *recalled* fact via
-	// MemoryUsed) and Uses (bare injection). Raises ConfidenceScore toward CorroborationCeiling
+	// this durable fact. Distinct from Helped (an acknowledgement about a *recalled* fact)
+	// and Uses (a bare recall). Raises ConfidenceScore toward CorroborationCeiling
 	// via Reinforce (the gentle automatic weight — a dup match is a machine inference).
 	Corroborations int
 

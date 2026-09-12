@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/allbin/agentkit/eventbus"
+	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/mdjarv/agentique/backend/internal/usage"
@@ -278,3 +279,122 @@ func (s *fakeSurface) countOf(kind ItemKind) int {
 type fakeAllowances struct{ doc usage.Document }
 
 func (a fakeAllowances) Document(context.Context) usage.Document { return a.doc }
+
+// rememberCall is one Remember, kept whole so a test can assert the provenance
+// mapping rather than only that something was written.
+type rememberCall struct {
+	Text       string
+	Category   memory.Category
+	Provenance Provenance
+	ProjectID  string
+}
+
+// captureCall is one staged capture.
+type captureCall struct {
+	ProjectID string
+	Text      string
+	Source    memory.Source
+}
+
+// fakeMemory is the brain without the brain: canned reads, recorded writes.
+type fakeMemory struct {
+	pinned []Fact
+	index  []IndexLine
+	// found is what Search answers with. It is deliberately NOT what Pinned
+	// answers with, so a test can assert that a body reachable only through
+	// recall never reaches the preamble.
+	found     []Fact
+	searchErr error
+	// pinnedErr and indexErr make the store unreadable, which is a third state
+	// beside "empty": the preamble must not print one for the other.
+	pinnedErr error
+	indexErr  error
+	// blockReads holds both preamble reads until the context is done, which is
+	// what a wedged embedder or a clustering pass over a large corpus looks like
+	// from here.
+	blockReads bool
+
+	mu         sync.Mutex
+	queries    []string
+	remembered []rememberCall
+	confirmed  []string
+	flagged    [][2]string
+	captured   []captureCall
+}
+
+func (m *fakeMemory) Index(ctx context.Context) ([]IndexLine, error) {
+	if err := m.stall(ctx); err != nil {
+		return nil, err
+	}
+	return m.index, m.indexErr
+}
+
+func (m *fakeMemory) Pinned(ctx context.Context) ([]Fact, error) {
+	if err := m.stall(ctx); err != nil {
+		return nil, err
+	}
+	return m.pinned, m.pinnedErr
+}
+
+// stall is the slow read: it answers only when the caller's deadline does.
+func (m *fakeMemory) stall(ctx context.Context) error {
+	if !m.blockReads {
+		return nil
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (m *fakeMemory) Search(_ context.Context, query string, _ int) ([]Fact, error) {
+	m.mu.Lock()
+	m.queries = append(m.queries, query)
+	m.mu.Unlock()
+	if m.searchErr != nil {
+		return nil, m.searchErr
+	}
+	return m.found, nil
+}
+
+func (m *fakeMemory) Remember(_ context.Context, text string, category memory.Category,
+	provenance Provenance, projectID string,
+) (Fact, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.remembered = append(m.remembered, rememberCall{
+		Text: text, Category: category, Provenance: provenance, ProjectID: projectID,
+	})
+	return Fact{ID: "fact-1", Text: text, Category: category, Source: provenance.Source()}, nil
+}
+
+func (m *fakeMemory) Confirm(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.confirmed = append(m.confirmed, id)
+	return nil
+}
+
+func (m *fakeMemory) Flag(_ context.Context, id, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.flagged = append(m.flagged, [2]string{id, reason})
+	return nil
+}
+
+func (m *fakeMemory) Capture(_ context.Context, projectID, text string, source memory.Source) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.captured = append(m.captured, captureCall{ProjectID: projectID, Text: text, Source: source})
+	return nil
+}
+
+func (m *fakeMemory) writes() []rememberCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]rememberCall(nil), m.remembered...)
+}
+
+func (m *fakeMemory) captures() []captureCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]captureCall(nil), m.captured...)
+}

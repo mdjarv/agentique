@@ -13,8 +13,8 @@ import (
 // claudecli passes each --mcp-config value straight into the CLI's argv. An
 // argument is not a secret channel: /proc/<pid>/cmdline is world-readable, so
 // every local user could read the token out of `ps` and then call the tools as
-// that session — MemoryAdd in particular writes facts that later land in every
-// agent's preamble.
+// that session — SendMessage in particular speaks to a channel as it, and
+// AssistantReport puts text in front of the operator under its name.
 //
 // The CLI accepts "JSON files or strings" for --mcp-config, so hand it a path
 // to an owner-only file instead. Only the path appears in argv.

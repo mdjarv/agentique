@@ -15,6 +15,10 @@ func TestComputeBrainStats(t *testing.T) {
 		{ID: "4", Scope: "project:a", Category: memory.CategoryProject, Source: memory.SourceAgent, ConfidenceScore: 0.8, Locked: true, ReviewNote: "contradicted"},
 		{ID: "6", Scope: "project:a", Category: memory.CategoryFact, Source: memory.SourceConsolidated, ConfidenceScore: 0.8},
 		{ID: "5", Scope: "project:a", Category: memory.CategoryFact, Source: memory.SourceCapture}, // capture: excluded from total
+		// The second capture tier. It is staged, so it must land with the captures and
+		// never in Total: counting an agent's report as a durable fact here is the same
+		// mistake on the CLI that memory.Source.Staged() prevents everywhere else.
+		{ID: "7", Scope: "project:a", Category: memory.CategoryFact, Source: memory.SourceReported},
 	}
 
 	s := computeBrainStats(recs)
@@ -22,8 +26,8 @@ func TestComputeBrainStats(t *testing.T) {
 	if s.Total != 5 {
 		t.Errorf("Total = %d, want 5 (captures excluded)", s.Total)
 	}
-	if s.Captures != 1 {
-		t.Errorf("Captures = %d, want 1", s.Captures)
+	if s.Captures != 2 {
+		t.Errorf("Captures = %d, want 2 (capture + reported)", s.Captures)
 	}
 	if s.Pinned != 1 {
 		t.Errorf("Pinned = %d, want 1", s.Pinned)
@@ -56,6 +60,9 @@ func TestComputeBrainStats(t *testing.T) {
 	}
 	if s.BySource[string(memory.SourceCapture)] != 0 {
 		t.Errorf("captures must not count toward BySource, got %d", s.BySource[string(memory.SourceCapture)])
+	}
+	if s.BySource[string(memory.SourceReported)] != 0 {
+		t.Errorf("reported captures must not count toward BySource, got %d", s.BySource[string(memory.SourceReported)])
 	}
 }
 

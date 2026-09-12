@@ -139,25 +139,11 @@ func handleRuntimeStateChange(s *Session, ev runtime.StateChangeEvent) {
 	}
 
 	s.persistState(target)
-	if ev.To == runtime.StateDone {
-		// Deliberately NOT archived here. A clean CLI exit is a process fact, not
-		// user intent, and archivedAt is the sidebar's "the user filed this away"
-		// bit — stamping it here let a subprocess exiting hide a session in the
-		// collapsed Archived section with nobody asking. Same line
-		// SetOnSessionFinished draws; the terminal state alone tells this story.
-
-		// Learn-on-completion (M3): a clean CLI exit is a learning boundary, so fire the
-		// per-session completion hook once, async, so fresh captures flow without the
-		// session being deleted. Snapshot under lock then `go` (hook handlers must not
-		// block the runtime broadcast loop). The two early returns above (StateMerging,
-		// Failed→Done) intentionally skip this — the delete path nets those.
-		s.mu.Lock()
-		cb := s.onComplete
-		s.mu.Unlock()
-		if cb != nil {
-			go cb()
-		}
-	}
+	// StateDone is deliberately NOT archived here. A clean CLI exit is a process
+	// fact, not user intent, and archivedAt is the sidebar's "the user filed this
+	// away" bit — stamping it here let a subprocess exiting hide a session in the
+	// collapsed Archived section with nobody asking. Same line
+	// SetOnSessionFinished draws; the terminal state alone tells this story.
 
 	select {
 	case s.stateChangedCh <- struct{}{}:

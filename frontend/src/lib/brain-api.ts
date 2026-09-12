@@ -15,8 +15,8 @@ export interface Memory {
   pinned: boolean;
   locked: boolean;
   uses: number;
-  // Helped counts confirmed-useful outcomes (MemoryUsed) — a stronger signal than a bare
-  // injection (uses). Distinct from corroborations (independent re-observations).
+  // Helped counts confirmed-useful outcomes — a stronger signal than a bare recall
+  // (uses). Distinct from corroborations (independent re-observations).
   helped?: number;
   createdAt: string;
   updatedAt: string;
@@ -210,8 +210,8 @@ export async function confirmMemory(id: string): Promise<Memory> {
 }
 
 // flagMemory marks a fact as contradicted (RFC-LD D2): weakens it into the review
-// band and records an optional reason. Mirrors the agent MemoryFlag tool — used by the
-// "Outdated" action on a recalled-memory card.
+// band and records an optional reason. Mirrors the assistant's flag_memory verb — used
+// by the "Outdated" action on a recalled-memory card.
 export async function flagMemory(id: string, reason?: string): Promise<Memory> {
   const res = await fetch(`${BASE}/memories/${id}/flag`, {
     method: "POST",

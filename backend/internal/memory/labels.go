@@ -65,11 +65,14 @@ type TypedRelation struct {
 
 // EvidenceForSource is the default evidence implied by how a fact came to exist: a human
 // statement is user_stated, a raw capture is observed_once, everything else is inferred.
+//
+// Both capture tiers answer observed_once — a staged sentence has been seen once and
+// corroborated by nothing, whichever door it came through.
 func EvidenceForSource(s Source) Evidence {
-	switch s {
-	case SourceHuman:
+	switch {
+	case s == SourceHuman:
 		return EvidenceUserStated
-	case SourceCapture:
+	case s.Staged():
 		return EvidenceObservedOnce
 	default:
 		return EvidenceInferred

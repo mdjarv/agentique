@@ -16,8 +16,8 @@ const (
 	// surfaced for confirmation.
 	ConfidenceExtracted ConfidenceTier = "extracted"
 	// ConfidenceInferred is an LLM-distilled fact: a capture extraction, a reorganize
-	// abstraction, an agent's MemoryAdd, or a cross-project generalization. Trusted
-	// enough to inject, but not ground truth — a candidate for confirmation when its
+	// abstraction, a fact a model wrote, or a cross-project generalization. Trusted
+	// enough to recall, but not ground truth — a candidate for confirmation when its
 	// score is low.
 	ConfidenceInferred ConfidenceTier = "inferred"
 	// ConfidenceAmbiguous is a fact the brain is unsure about: an inferred fact whose
@@ -32,7 +32,7 @@ const (
 	// inference", it is asserted.
 	ScoreGroundTruth = 1.0
 	// DefaultInferredScore is the score of an ordinary LLM-distilled fact (capture
-	// promotion, reorganize abstraction, agent MemoryAdd).
+	// promotion, reorganize abstraction, a fact a model wrote).
 	DefaultInferredScore = 0.8
 	// CrossProjectInferredScore is the score of a fact generalized to global from
 	// per-project facts. A generalization is a riskier inference than a directly
@@ -52,8 +52,8 @@ const (
 	// soft "background context" into an acted-on operating contract (brain.md#the-outcome-signal).
 	// It sits ABOVE DefaultInferredScore (0.8) deliberately: a freshly inferred preference
 	// must EARN the authority to drive behavior — by human Confirm (→1.0) or by outcome
-	// corroboration (MemoryUsed raising it past this gate) — before it becomes a standing
-	// instruction. Below it, a preference stays advisory and in the confirm queue.
+	// corroboration (a positive outcome raising it past this gate) — before it becomes a
+	// standing instruction. Below it, a preference stays advisory and in the confirm queue.
 	ActOnConfidence = 0.85
 )
 

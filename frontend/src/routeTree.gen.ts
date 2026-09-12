@@ -19,6 +19,7 @@ import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as TemplatesRouteImport } from "./routes/templates";
+import { Route as AssistantMemoryRouteImport } from "./routes/assistant_.memory";
 import { Route as DevAgentsRouteImport } from "./routes/dev.agents";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
@@ -94,6 +95,11 @@ const TeamsRoute = TeamsRouteImport.update({
 const TemplatesRoute = TemplatesRouteImport.update({
   id: "/templates",
   path: "/templates",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AssistantMemoryRoute = AssistantMemoryRouteImport.update({
+  id: "/assistant_/memory",
+  path: "/assistant/memory",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevAgentsRoute = DevAgentsRouteImport.update({
@@ -242,6 +248,7 @@ export interface FileRoutesByFullPath {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/assistant/memory": typeof AssistantMemoryRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -279,6 +286,7 @@ export interface FileRoutesByTo {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/assistant/memory": typeof AssistantMemoryRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -317,6 +325,7 @@ export interface FileRoutesById {
   "/storage": typeof StorageRoute;
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
+  "/assistant_/memory": typeof AssistantMemoryRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -357,6 +366,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/assistant/memory"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -394,6 +404,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/assistant/memory"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -431,6 +442,7 @@ export interface FileRouteTypes {
     | "/storage"
     | "/teams"
     | "/templates"
+    | "/assistant_/memory"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -470,6 +482,7 @@ export interface RootRouteChildren {
   StorageRoute: typeof StorageRoute;
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
+  AssistantMemoryRoute: typeof AssistantMemoryRoute;
   DevAgentsRoute: typeof DevAgentsRoute;
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
@@ -555,6 +568,13 @@ declare module "@tanstack/react-router" {
       path: "/templates";
       fullPath: "/templates";
       preLoaderRoute: typeof TemplatesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/assistant_/memory": {
+      id: "/assistant_/memory";
+      path: "/assistant/memory";
+      fullPath: "/assistant/memory";
+      preLoaderRoute: typeof AssistantMemoryRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/agents": {
@@ -800,6 +820,7 @@ const rootRouteChildren: RootRouteChildren = {
   StorageRoute: StorageRoute,
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
+  AssistantMemoryRoute: AssistantMemoryRoute,
   DevAgentsRoute: DevAgentsRoute,
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,

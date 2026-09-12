@@ -36,7 +36,6 @@ type Querier interface {
 	CreateAgentProfile(ctx context.Context, arg CreateAgentProfileParams) (AgentProfile, error)
 	CreateAssistantChannel(ctx context.Context, arg CreateAssistantChannelParams) (Channel, error)
 	CreateAuthSession(ctx context.Context, arg CreateAuthSessionParams) error
-	CreateBrainJob(ctx context.Context, arg CreateBrainJobParams) (BrainJob, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	CreateInviteToken(ctx context.Context, arg CreateInviteTokenParams) error
 	CreatePairingToken(ctx context.Context, arg CreatePairingTokenParams) error
@@ -57,7 +56,6 @@ type Querier interface {
 	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
 	DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error)
-	DeleteBrainJob(ctx context.Context, id string) error
 	DeleteChannel(ctx context.Context, id string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
 	DeleteExpiredPairingTokens(ctx context.Context) error
@@ -138,7 +136,6 @@ type Querier interface {
 	// first: this is read to be pasted into a preamble or a strip, in order.
 	ListAssistantMessagesSince(ctx context.Context, arg ListAssistantMessagesSinceParams) ([]Message, error)
 	ListAuthSessions(ctx context.Context) ([]ListAuthSessionsRow, error)
-	ListBrainJobs(ctx context.Context) ([]BrainJob, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
 	// Ordinary channels only. The assistant's conversation is a channel with
 	// kind = 'assistant' and is not one of a project's channels: it has no project,
@@ -265,7 +262,6 @@ type Querier interface {
 	UnsetSessionArchived(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateAgentProfile(ctx context.Context, arg UpdateAgentProfileParams) (AgentProfile, error)
-	UpdateBrainJobAttempts(ctx context.Context, arg UpdateBrainJobAttemptsParams) error
 	UpdateChannelName(ctx context.Context, arg UpdateChannelNameParams) error
 	UpdateClaudeSessionID(ctx context.Context, arg UpdateClaudeSessionIDParams) error
 	UpdateCredentialAfterLogin(ctx context.Context, arg UpdateCredentialAfterLoginParams) error

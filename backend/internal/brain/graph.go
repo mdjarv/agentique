@@ -110,7 +110,7 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 	// facts only.
 	durable := make([]memory.Record, 0, len(recs))
 	for _, rec := range recs {
-		if rec.Source != memory.SourceCapture {
+		if !rec.Source.Staged() {
 			durable = append(durable, rec)
 		}
 	}
@@ -266,7 +266,7 @@ func buildReport(recs []memory.Record, cent map[string]memory.Centrality, now ti
 	// (semantic mode) also surface semantic near-duplicates, not just lexical ones.
 	// Keep the empty case an empty slice, not nil: every other field of this
 	// report marshals as [], and the frontend types them all as arrays — a null
-	// here crashes the Brain tab on an empty corpus.
+	// here crashes the memory page on an empty corpus.
 	if pairs := memory.DetectInterference(recs, memory.DefaultRelatedThreshold, memory.DefaultDuplicateThreshold, maxInterference, simOpts...); pairs != nil {
 		rep.Interference = pairs
 	}

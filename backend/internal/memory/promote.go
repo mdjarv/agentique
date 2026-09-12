@@ -215,12 +215,12 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 	for _, r := range all {
 		byID[r.ID] = r
 		if r.Scope == ScopeGlobal {
-			if r.Source != SourceCapture && !isArchived(r) { // archived globals are cold (M5)
+			if !r.Source.Staged() && !isArchived(r) { // archived globals are cold (M5)
 				globalFacts = append(globalFacts, r)
 			}
 			continue
 		}
-		if r.Source == SourceCapture || isProtected(r) || isArchived(r) { // never promote an archived fact (M5)
+		if r.Source.Staged() || isProtected(r) || isArchived(r) { // never promote an archived fact (M5)
 			continue
 		}
 		byScope[r.Scope] = append(byScope[r.Scope], r)
@@ -239,7 +239,7 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 	for _, p := range plan.Promotions {
 		for _, id := range p.Subsumes {
 			r, ok := byID[id]
-			if !ok || r.Scope == ScopeGlobal || r.Source == SourceCapture || isProtected(r) {
+			if !ok || r.Scope == ScopeGlobal || r.Source.Staged() || isProtected(r) {
 				continue
 			}
 			deletions[id] = r

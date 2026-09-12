@@ -25,8 +25,7 @@ concepts, no product policy):
 config, REST/MCP surfaces, Claude-CLI extraction):
 
 - `brain.go` (Service: project→scope mapping, fingerprint persistence)
-- `mcp.go` (agent-facing MemoryAdd/MemorySearch)
-- `http.go` (Brain tab REST API)
+- `http.go` (the memory page's REST API)
 - `extractor.go` (HaikuExtractor — agentique's `memory.Extractor` impl via claudecli)
 - `transcript.go` (session_events → transcript)
 - `cmd/agentique/brain.go` (the `backfill` command)

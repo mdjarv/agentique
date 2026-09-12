@@ -379,11 +379,17 @@ func (s *Service) headNews(ctx context.Context) string {
 // existed, and the next successful start would read none — the same failure
 // the call's greeting reads its news at greeting time to avoid.
 func (s *Service) headPreamble(ctx context.Context) (preamble string, looked Update) {
-	brief := HeadBriefing{Verbs: s.Verbs()}
+	brief := HeadBriefing{Verbs: s.Verbs(), HasMemory: s.HasMemory()}
 
 	if s.dir != nil {
 		brief.Orientation = s.dir.Orientation(ctx)
 	}
+
+	// The pinned set and the index, and nothing else from the store: every other
+	// fact is behind the recall verb. Both halves degrade to nothing rather than
+	// failing the start, and the third return is what says which of "empty" and
+	// "unreadable" happened — the preamble must not print the first for the second.
+	brief.Pinned, brief.Index, brief.MemoryUnread = s.memoryBriefing(ctx)
 
 	update, err := s.unseen(ctx, SurfaceHead)
 	if err != nil {

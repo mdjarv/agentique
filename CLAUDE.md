@@ -786,8 +786,9 @@ late reports never rewrite terminals; auto-pause counts only real error
 terminals.
 
 All schedule timestamps are UTC RFC3339 seconds, because SQLite compares TEXT
-lexicographically. Schedule-origin turns skip brain recall, activity bumps and
+lexicographically. Schedule-origin turns skip activity bumps and
 unseen-completion: schedule attention is its own channel, not the orange pulse.
+(They skipped brain recall too, until M2 removed session-side recall outright.)
 The MCP schedule-create tool stays non-blocking, since CLI MCP clients time out.
 The boot sweep runs from serve strictly before the scheduler starts.
 
@@ -1712,23 +1713,48 @@ agentique policy lives in `internal/brain`. Markdown is the source of truth, and
 everything else (graph, areas, vectors) is a rebuildable index.
 
 **The subsystem is off unless asked for, and off means unbuilt.** `[brain]
-enabled` gates the whole block in `server.go` — no routes, no memory MCP tools,
-no recall, no loops — so anything new hanging off `brainSvc` goes *inside* that
-block and needs no switch of its own. A surface that reads the brain checks
-`features.brain` from `/api/health` first, because an unmounted `/api/` path
-does not 404: it falls through to the SPA and answers `text/html` with a 200, so
-a nav row added without that check leads somewhere that looks alive and is not.
-It is a plain bool only because it defaults false; `recall` defaults **on**, so
-it is a quoted string and `recall = false` is a decode error that refuses to
-boot.
+enabled` gates the whole block in `server.go` — no routes, no loops — so anything
+new hanging off `brainSvc` goes *inside* that block and needs no switch of its
+own. A surface that reads the brain checks `features.brain` from `/api/health`
+first, because an unmounted `/api/` path does not 404: it falls through to the
+SPA and answers `text/html` with a 200, so a nav row added without that check
+leads somewhere that looks alive and is not. On with the assistant off, memory is
+stored and browsable and nothing recalls it, and serve says so at boot; nothing
+refuses to boot over it. The four keys `recall`, `learn-model`, `outcome-model`
+and `retry-max` are retired no-ops, each named in its own boot warning, and each
+typed `config.RetiredKey` (an alias for `any`) so it decodes **whatever scalar it
+was written as**: `recall` used to be a string whose off switch was `"false"`, so
+a typed field turned the bool spelling into a refusal to boot over a key that
+does nothing.
 
-Recall is fluid and per-turn with a session seen-set for delta injection. Do not
-reintroduce first-turn-only recall. Semantic similarity is pluggable and
-everything degrades cleanly to keyword/Jaccard without an embedder; the recall
-thresholds (veto and vouch) are embedding-model specific. Stopwords drop
-conversational filler but never domain terms — `just` is the build tool.
+**Knowledge is pulled; only news is pushed.** The brain is the assistant's
+memory and nothing else's: the head's preamble carries the pinned set and an
+**index** (a line per area or scope with a count), and bodies arrive only through
+its `recall` verb, which it calls because it knows what it is trying to do. The
+one push is journal news, once, because news is news. That pull is
+`brain.Service.RecallForPull`, which is `Recall` **plus** the read-time disuse
+fade an operator opts into with `archive-after`: a fade belongs where the answer
+feeds a model, and never on `Recall` itself, which is the memory page's search
+box and `brain search` — hiding a row there that the list beside it still shows
+is the surface saying two things. **Do not reintroduce injection into sessions** — not per-turn, not first-turn, not pinned facts in a
+preamble, and no session tool that writes a fact. Memory reaches a coding session
+only through the prompt the assistant drafts, which the operator can read and
+edit before it goes. Semantic similarity is pluggable and everything degrades
+cleanly to keyword/Jaccard without an embedder; the recall thresholds (veto and
+vouch) are embedding-model specific. Stopwords drop conversational filler but
+never domain terms — `just` is the build tool.
 
-Strength changes on outcome, not injection. Human confirmation outranks
+**"Is this a durable fact" is `memory.Source.Staged()`, never a comparison
+against one source.** There are two capture tiers — `capture` is the assistant's
+own sentence, `reported` is agent-written text about a repository nobody here
+authored — and both are staged: never recalled, promotion is consolidation's
+call. The predicate exists because the tree once spelled `== SourceCapture`
+twenty-odd times to mean durable, and a second tier added beside that comparison
+is injected everywhere it was missed. The frontend's half is `isCapture` /
+`STAGED_SOURCES` in `lib/brain-labels.ts`; `bySource` counts every source
+separately, so a capture-tier total is a sum (`pendingCaptures`).
+
+Strength changes on outcome, not retrieval, and the outcome is conversational:
+`confirm_memory` and `flag_memory`, in-band. Human confirmation outranks
 corroboration, which is capped below it. Model choice is a required caller
 parameter in the memory core, never a library default.
-</content>

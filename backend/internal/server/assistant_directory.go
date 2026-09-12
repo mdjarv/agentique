@@ -341,6 +341,10 @@ func (d *assistantDirectory) toRow(ctx context.Context, info session.SessionInfo
 	if project, ok := projects[info.ProjectID]; ok {
 		row.ProjectName = project.Name
 		row.ProjectSlug = project.Slug
+		// The id comes from the project row rather than the session's own field, so
+		// it is set only where this machine actually holds that project — which is
+		// what makes it safe to file a memory scope under.
+		row.ProjectID = project.ID
 	}
 	return row
 }

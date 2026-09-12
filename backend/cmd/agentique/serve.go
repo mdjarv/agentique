@@ -163,17 +163,33 @@ func envBoolOr(name string, fileVal bool) bool {
 	}
 }
 
-// resolveRecall resolves the default-ON auto-recall toggle: the AGENTIQUE_BRAIN_RECALL env
-// wins when set, else the [brain] recall config value, else on. A value of off/false/0/no
-// disables it; anything else (incl. empty/unset at both layers) leaves it on.
-func resolveRecall(fileVal string) bool {
-	if v := strings.TrimSpace(os.Getenv("AGENTIQUE_BRAIN_RECALL")); v != "" {
-		return !brainToggleOff(v)
+// warnBrainNoopKeys says so when a config still carries one of the four [brain] keys M2
+// retired. Session-side recall and session-end learning are gone, not switched off — the
+// brain is the assistant's memory now and is pulled through its recall verb — so each of
+// these keys describes machinery that no longer exists. Named one at a time, and never a
+// refusal to boot: an operator upgrading into this should keep their server.
+func warnBrainNoopKeys(bc config.BrainConfig) {
+	retired := []struct {
+		key    string
+		set    bool
+		reason string
+	}{
+		{"recall", bc.Recall != nil || os.Getenv("AGENTIQUE_BRAIN_RECALL") != "",
+			"session-side recall is gone; the assistant pulls memory through its recall verb"},
+		{"learn-model", bc.LearnModel != nil || os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL") != "",
+			"sessions no longer write facts; captures come from the assistant's conversation"},
+		{"outcome-model", bc.OutcomeModel != nil || os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL") != "",
+			"the outcome signal is conversational now, not a session-end judge"},
+		{"retry-max", bc.RetryMax != nil || os.Getenv("AGENTIQUE_BRAIN_RETRY_MAX") != "",
+			"the session-end learn job queue is gone"},
 	}
-	if v := strings.TrimSpace(fileVal); v != "" {
-		return !brainToggleOff(v)
+	for _, k := range retired {
+		if !k.set {
+			continue
+		}
+		slog.Warn("brain: [brain] " + k.key + " is a no-op and is ignored: " + k.reason +
+			". Remove it from config.toml (and its AGENTIQUE_BRAIN_* override) — see docs/assistant.md.")
 	}
-	return true
 }
 
 // warnBrainConfigured says so when a config carries brain settings that the master
@@ -185,9 +201,11 @@ func warnBrainConfigured(enabled bool, bc config.BrainConfig) {
 	if enabled {
 		return
 	}
+	// The four retired keys (recall, learn-model, outcome-model, retry-max) are
+	// deliberately not evidence of a configured brain — warnBrainNoopKeys names those,
+	// and a file carrying only those should hear "no-op", not "turn it back on".
 	configured := bc.ConsolidateInterval != "" || bc.ConsolidateModel != "" ||
-		bc.LearnModel != "" || bc.OutcomeModel != "" || bc.ChromaURL != "" ||
-		bc.EmbedURL != "" || bc.EmbedModel != "" || bc.Recall != "" ||
+		bc.ChromaURL != "" || bc.EmbedURL != "" || bc.EmbedModel != "" ||
 		bc.ArchiveAfter != "" || bc.Autocal
 	if !configured {
 		return
@@ -195,15 +213,6 @@ func warnBrainConfigured(enabled bool, bc config.BrainConfig) {
 	slog.Warn("brain: [brain] settings are present but the subsystem is off; " +
 		"set [brain] enabled = true (or AGENTIQUE_BRAIN_ENABLED=1) to turn it back on. " +
 		"The markdown store on disk is untouched.")
-}
-
-func brainToggleOff(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "off", "false", "0", "no":
-		return true
-	default:
-		return false
-	}
 }
 
 // firstNonEmpty returns the first non-empty string, used to layer an env var (preferred)
@@ -581,20 +590,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BrainSemanticThreshold: envFloatOr("AGENTIQUE_BRAIN_SEMANTIC_THRESHOLD", fileCfg.Brain.SemanticThreshold),
 		BrainVectorVeto:        envFloatOr("AGENTIQUE_BRAIN_VECTOR_VETO", fileCfg.Brain.VectorVeto),
 		BrainCalibrate:         envBoolOr("AGENTIQUE_BRAIN_AUTOCAL", fileCfg.Brain.Autocal),
-		BrainRecall:            resolveRecall(fileCfg.Brain.Recall),
 		// Scheduled consolidation: env var wins, else the [brain] config-file value, else off.
 		BrainConsolidateInterval: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_INTERVAL"), fileCfg.Brain.ConsolidateInterval),
 		BrainConsolidateModel:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CONSOLIDATE_MODEL"), fileCfg.Brain.ConsolidateModel),
-		// Session-end learning: env wins over the [brain] config-file value, else off.
-		BrainLearnModel:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_LEARN_MODEL"), fileCfg.Brain.LearnModel),
-		BrainOutcomeModel: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_OUTCOME_MODEL"), fileCfg.Brain.OutcomeModel),
 		// Pre-churn snapshot retention: env wins over the [brain] value; 0 → brain's default (7).
 		BrainSnapshotRetain: envIntOr("AGENTIQUE_BRAIN_SNAPSHOT_RETAIN", fileCfg.Brain.SnapshotRetain),
 		// Disuse-aging archival: env wins; "" = off, 0 floor → brain's default (0.35).
 		BrainArchiveAfter: firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_ARCHIVE_AFTER"), fileCfg.Brain.ArchiveAfter),
 		BrainArchiveFloor: envFloatOr("AGENTIQUE_BRAIN_ARCHIVE_FLOOR", fileCfg.Brain.ArchiveConfidenceFloor),
-		// Durable learn/outcome job retry budget: env wins; 0 → brain's default (5).
-		BrainRetryMax: envIntOr("AGENTIQUE_BRAIN_RETRY_MAX", fileCfg.Brain.RetryMax),
 		// Graph-view tuning: env wins over the [brain.graph] file value; 0 → brain's default.
 		BrainGraph: config.BrainGraphConfig{
 			EdgeCap:          envIntOr("AGENTIQUE_BRAIN_GRAPH_EDGE_CAP", fileCfg.Brain.Graph.EdgeCap),
@@ -626,6 +629,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	fileCfg.Server.RPOrigin = rpOrigin
 	cfg.RPOrigins = fileCfg.AllRPOrigins()
 	warnBrainConfigured(cfg.BrainEnabled, fileCfg.Brain)
+	warnBrainNoopKeys(fileCfg.Brain)
 	srv, err := server.New(queries, cfg)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)

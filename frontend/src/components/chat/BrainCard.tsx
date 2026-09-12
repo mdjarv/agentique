@@ -9,8 +9,12 @@ import { cn } from "~/lib/utils";
 // dedicated "Recalled from memory" card — visually distinct from the user's own
 // message and from agent output (the agent-purple accent). Each fact carries the
 // human side of the outcome loop: "Helpful" confirms it as ground truth, "Outdated"
-// flags it for review. The agent still receives the raw <brain> text + ids in the
-// prompt, so the model-driven MemoryUsed/MemoryFlag loop is untouched.
+// flags it for review.
+//
+// Nothing writes a new one: as of M2 memory reaches no coding session, so no turn
+// carries a <brain> envelope any more (docs/assistant.md, the M2 contract). This
+// renderer stays because transcripts recorded before that still carry one, and the
+// two actions still work — they are HTTP calls on a fact that is still in the store.
 
 type FactStatus = "idle" | "confirming" | "flagging" | "helpful" | "flagged";
 

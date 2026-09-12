@@ -6,16 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/usage"
 )
 
-// The table is closed, and these are the members. A verb added without a
-// decision about its tier is the failure this guards: the tier is the whole
-// containment story, so it cannot be defaulted.
-func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
-	svc, _, _ := newTestService(t)
-
-	want := map[string]Tier{
+// baseVerbTiers is the table on a server with no long-term memory.
+func baseVerbTiers() map[string]Tier {
+	return map[string]Tier{
 		VerbOrientation:      TierRead,
 		VerbListSessions:     TierRead,
 		VerbFindSession:      TierRead,
@@ -39,6 +36,25 @@ func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
 		VerbSetSessionModel: TierUncontained,
 		VerbSetSessionMode:  TierUncontained,
 	}
+}
+
+// memoryVerbTiers is what a wired [Memory] adds: one pull and three writes.
+//
+// The pull is read tier because it writes no fact. The three writes are
+// contained — they reach the store and nothing else, and each is journaled.
+func memoryVerbTiers() map[string]Tier {
+	return map[string]Tier{
+		VerbRecall:        TierRead,
+		VerbRemember:      TierContained,
+		VerbConfirmMemory: TierContained,
+		VerbFlagMemory:    TierContained,
+	}
+}
+
+// assertVerbTable checks the table is exactly want, and that every member's tier
+// and handler agree.
+func assertVerbTable(t *testing.T, svc *Service, want map[string]Tier) {
+	t.Helper()
 
 	got := svc.Verbs()
 	if len(got) != len(want) {
@@ -68,6 +84,248 @@ func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
 				t.Errorf("%q is uncontained and has a handler — these are never performed", verb.Name)
 			}
 		}
+	}
+}
+
+// The table is closed, and these are the members. A verb added without a
+// decision about its tier is the failure this guards: the tier is the whole
+// containment story, so it cannot be defaulted.
+func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	assertVerbTable(t, svc, baseVerbTiers())
+}
+
+// A verb that cannot work must not be offered. The table is what a head is told
+// exists, in a section of its instruction saying nothing outside the list is
+// real, so four verbs that answer "I have no memory" to every call would teach it
+// to stop asking — and would be four tool schemas every turn pays for.
+func TestMemoryVerbsExistOnlyWithAMemory(t *testing.T) {
+	ctx := context.Background()
+
+	off, _, _ := newTestService(t)
+	for name := range memoryVerbTiers() {
+		if _, listed := off.Verb(name); listed {
+			t.Errorf("%q is in the table with no memory wired", name)
+		}
+		if _, err := off.Invoke(ctx, name, nil); !errors.Is(err, ErrUnknownVerb) {
+			t.Errorf("Invoke(%q) with no memory = %v, want ErrUnknownVerb", name, err)
+		}
+	}
+
+	on, _, _ := newTestService(t, WithMemory(&fakeMemory{}))
+	want := baseVerbTiers()
+	for name, tier := range memoryVerbTiers() {
+		want[name] = tier
+	}
+	assertVerbTable(t, on, want)
+}
+
+// The pull is the only way a fact reaches a turn, so the verb has to reach the
+// store and hand back the ids a confirm or a flag will need.
+func TestRecallPullsFactsWithTheirIds(t *testing.T) {
+	mem := &fakeMemory{found: []Fact{
+		{ID: "f1", Text: "they deploy on Fridays anyway", Category: memory.CategoryPreference,
+			Source: memory.SourceHuman},
+	}}
+	svc, _, _ := newTestService(t, WithMemory(mem))
+
+	payload, err := svc.Invoke(context.Background(), VerbRecall, map[string]any{"query": "deploy policy"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	facts, _ := payload["facts"].([]map[string]any)
+	if len(facts) != 1 || facts[0]["id"] != "f1" {
+		t.Fatalf("facts = %v, want the one fact with its id", payload["facts"])
+	}
+	if mem.queries[0] != "deploy policy" {
+		t.Errorf("query = %q, want the head's own words", mem.queries[0])
+	}
+	// A recalled fact whose source is "reported" is agent-written text about a
+	// repository, so the answer has to say what quoting means here.
+	if note, _ := payload["note"].(string); !strings.Contains(note, "reported") {
+		t.Errorf("note = %q, want it to name the untrusted provenance", note)
+	}
+}
+
+func TestRecallOnAnEmptyMemorySaysSo(t *testing.T) {
+	svc, _, _ := newTestService(t, WithMemory(&fakeMemory{}))
+
+	payload, err := svc.Invoke(context.Background(), VerbRecall, map[string]any{"query": "anything"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	if _, refused := payload["error"]; refused {
+		t.Fatalf("payload = %v, want an answer rather than a refusal", payload)
+	}
+	if note, _ := payload["note"].(string); !strings.Contains(note, "Nothing on record") {
+		t.Errorf("note = %q, want it to say there is nothing rather than invent something", note)
+	}
+}
+
+// The provenance enum is the whole trust story of a written fact, and it maps
+// onto the store's own sources in one place.
+func TestRememberMapsProvenance(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		provenance Provenance
+		want       memory.Source
+	}{
+		{ProvenanceOperator, memory.SourceHuman},
+		{ProvenanceAssistant, memory.SourceAgent},
+	} {
+		mem := &fakeMemory{}
+		svc, _, _ := newTestService(t, WithMemory(mem))
+
+		payload, err := svc.Invoke(ctx, VerbRemember, map[string]any{
+			"text":       "they want the rail quieter",
+			"category":   string(memory.CategoryPreference),
+			"provenance": string(tc.provenance),
+		})
+		if err != nil {
+			t.Fatalf("Invoke() = %v", err)
+		}
+		if payload["remembered"] != true {
+			t.Fatalf("payload = %v, want the fact kept", payload)
+		}
+
+		writes := mem.writes()
+		if len(writes) != 1 {
+			t.Fatalf("wrote %d facts, want 1", len(writes))
+		}
+		if writes[0].Provenance != tc.provenance {
+			t.Errorf("provenance = %q, want %q", writes[0].Provenance, tc.provenance)
+		}
+		if got := writes[0].Provenance.Source(); got != tc.want {
+			t.Errorf("%q maps to %q, want %q", tc.provenance, got, tc.want)
+		}
+		if writes[0].Category != memory.CategoryPreference {
+			t.Errorf("category = %q, want the one it was given", writes[0].Category)
+		}
+		if writes[0].ProjectID != "" {
+			t.Errorf("project = %q, want the global scope when no project was named", writes[0].ProjectID)
+		}
+	}
+}
+
+// Neither category nor provenance is defaulted. Both are silent failures if
+// guessed: an identity fact is pinned on the way in, and "the operator said it"
+// is the one claim in this store that outranks everything else.
+func TestRememberRefusesAnInventedCategoryOrProvenance(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"category", map[string]any{"text": "x y z", "category": "vibes", "provenance": "operator"}, "bad-category"},
+		{"provenance", map[string]any{"text": "x y z", "category": "fact", "provenance": "probably"}, "bad-provenance"},
+		{"no provenance", map[string]any{"text": "x y z", "category": "fact"}, "bad-provenance"},
+	} {
+		mem := &fakeMemory{}
+		svc, _, _ := newTestService(t, WithMemory(mem))
+
+		payload, err := svc.Invoke(ctx, VerbRemember, tc.args)
+		if err != nil {
+			t.Fatalf("%s: Invoke() = %v", tc.name, err)
+		}
+		if reason, _ := payload[reasonKey].(string); reason != tc.want {
+			t.Errorf("%s: reason = %q, want %q", tc.name, reason, tc.want)
+		}
+		if len(mem.writes()) != 0 {
+			t.Errorf("%s: a refused remember wrote a fact anyway", tc.name)
+		}
+	}
+}
+
+// A named project is resolved through the directory's own list, and never
+// guessed: global means "true everywhere", so filing a project's fact there is
+// the one mistake that cannot be seen from the answer.
+func TestRememberResolvesAProjectByName(t *testing.T) {
+	ctx := context.Background()
+	dir := &fakeDirectory{projects: []ProjectRow{
+		{ID: "p1", Name: "riff", Slug: "riff"},
+		{ID: "p2", Name: "agentique", Slug: "agentique"},
+	}}
+	mem := &fakeMemory{}
+	svc, _, _ := newTestService(t, WithDirectory(dir), WithMemory(mem))
+
+	if _, err := svc.Invoke(ctx, VerbRemember, map[string]any{
+		"text": "the worklets live in public/", "category": "project",
+		"provenance": "operator", "project": "riff",
+	}); err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	writes := mem.writes()
+	if len(writes) != 1 || writes[0].ProjectID != "p1" {
+		t.Fatalf("writes = %+v, want the fact filed under p1", writes)
+	}
+
+	payload, err := svc.Invoke(ctx, VerbRemember, map[string]any{
+		"text": "something", "category": "fact", "provenance": "operator", "project": "nothing here",
+	})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	if reason, _ := payload[reasonKey].(string); reason != "scope-project-unrecognised" {
+		t.Errorf("reason = %q, want scope-project-unrecognised", reason)
+	}
+	if len(mem.writes()) != 1 {
+		t.Error("an unrecognised project fell back to the global scope instead of refusing")
+	}
+}
+
+// Confirm and flag are the conversational outcome signal, and both are journaled
+// so the conversation carries a record of what moved.
+func TestConfirmAndFlagReachTheStoreAndTheJournal(t *testing.T) {
+	ctx := context.Background()
+	mem := &fakeMemory{}
+	svc, _, _ := newTestService(t, WithMemory(mem))
+
+	if _, err := svc.Invoke(ctx, VerbConfirmMemory, map[string]any{"id": "f1"}); err != nil {
+		t.Fatalf("Invoke(confirm) = %v", err)
+	}
+	if len(mem.confirmed) != 1 || mem.confirmed[0] != "f1" {
+		t.Errorf("confirmed = %v, want the one id", mem.confirmed)
+	}
+
+	if _, err := svc.Invoke(ctx, VerbFlagMemory,
+		map[string]any{"id": "f2", "reason": "they moved off sqlite"}); err != nil {
+		t.Fatalf("Invoke(flag) = %v", err)
+	}
+	if len(mem.flagged) != 1 || mem.flagged[0][1] != "they moved off sqlite" {
+		t.Errorf("flagged = %v, want the id and the reason", mem.flagged)
+	}
+
+	entries, err := svc.Journal(ctx, "", 10)
+	if err != nil {
+		t.Fatalf("Journal() = %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("journal has %d entries, want one per write", len(entries))
+	}
+	for _, entry := range entries {
+		if entry.Kind != JournalNote || !entry.Notable {
+			t.Errorf("entry = %+v, want a notable note", entry)
+		}
+	}
+}
+
+// A flag with no reason is a review-queue row nobody can act on.
+func TestFlagMemoryNeedsAReason(t *testing.T) {
+	mem := &fakeMemory{}
+	svc, _, _ := newTestService(t, WithMemory(mem))
+
+	payload, err := svc.Invoke(context.Background(), VerbFlagMemory, map[string]any{"id": "f1"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	if reason, _ := payload[reasonKey].(string); reason != "no-flag-reason" {
+		t.Errorf("reason = %q, want no-flag-reason", reason)
+	}
+	if len(mem.flagged) != 0 {
+		t.Error("a reasonless flag reached the store")
 	}
 }
 

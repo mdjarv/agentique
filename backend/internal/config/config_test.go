@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -75,7 +76,7 @@ func TestLoadBrainConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got2.Brain.ConsolidateInterval != "" || got2.Brain.ConsolidateModel != "" ||
-		got2.Brain.LearnModel != "" || got2.Brain.OutcomeModel != "" {
+		got2.Brain.LearnModel != nil || got2.Brain.OutcomeModel != nil {
 		t.Fatalf("missing [brain] section should yield empty fields, got %+v", got2.Brain)
 	}
 }
@@ -306,5 +307,61 @@ func TestClaudeConfigValidate(t *testing.T) {
 				t.Fatalf("Validate(%q) error = %v, wantErr %v", tt.val, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// A config carrying one of the four keys M2 retired still boots, WHATEVER TYPE it
+// was written as. That is the contract's own words ("never refuse to boot"), and the
+// spelling that mattered is `recall = false`: recall used to default on, so the key
+// was a quoted string whose off switch was "false" — and the bool spelling anyone
+// would reach for was a decode error that refused to start the server.
+func TestRetiredBrainKeysNeverRefuseToBoot(t *testing.T) {
+	spellings := map[string]string{
+		"recall-bool":         "recall = false",
+		"recall-string":       `recall = "false"`,
+		"learn-model-string":  `learn-model = "sonnet"`,
+		"learn-model-bool":    "learn-model = true",
+		"outcome-model-empty": `outcome-model = ""`,
+		"retry-max-int":       "retry-max = 3",
+		"retry-max-string":    `retry-max = "3"`,
+		"all-of-them":         "recall = false\nlearn-model = 1\noutcome-model = 2.5\nretry-max = true",
+	}
+	for name, line := range spellings {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte("[brain]\nenabled = true\n"+line+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("a retired key must never refuse to boot, got: %v", err)
+			}
+			if !cfg.Brain.Enabled {
+				t.Error("the rest of the section decoded wrong")
+			}
+		})
+	}
+}
+
+// The warning that names a retired key tests presence, so a key that was written
+// reads as carried and an absent one does not — whatever value it holds, the zero
+// value of its type included.
+func TestRetiredBrainKeyPresence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("[brain]\nrecall = false\nretry-max = 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Brain.Recall == nil {
+		t.Error("recall = false is a key the config carries")
+	}
+	if cfg.Brain.RetryMax == nil {
+		t.Error("retry-max = 0 is a key the config carries")
+	}
+	if cfg.Brain.LearnModel != nil || cfg.Brain.OutcomeModel != nil {
+		t.Error("a key nobody wrote must read as absent")
 	}
 }

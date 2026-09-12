@@ -29,7 +29,7 @@ type InterferencePair struct {
 func DetectInterference(records []Record, lower, upper float64, limit int, opts ...SimOption) []InterferencePair {
 	facts := make([]Record, 0, len(records))
 	for _, r := range records {
-		if r.Source != SourceCapture {
+		if !r.Source.Staged() {
 			facts = append(facts, r)
 		}
 	}

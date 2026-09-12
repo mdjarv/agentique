@@ -18,28 +18,28 @@ const ContradictedScore = 0.4
 
 const (
 	// CorroborationCeiling is the highest ConfidenceScore a fact can reach by outcome
-	// corroboration alone (positive MemoryUsed acknowledgements). It sits BELOW
+	// corroboration alone (explicit positive acknowledgements). It sits BELOW
 	// ScoreGroundTruth (1.0) on purpose: ground truth is asserted by a human (Confirm),
-	// not earned by agent corroboration (see brain.md#the-outcome-signal, RFC-LD #5).
+	// not earned by machine corroboration (see brain.md#the-outcome-signal, RFC-LD #5).
 	CorroborationCeiling = 0.95
 	// corroborationGapClose is the fraction of the remaining gap to CorroborationCeiling
 	// that a single positive outcome closes (0.8 → 0.875 → 0.9125 → …). Asymptotic, so
-	// no single MemoryUsed call can jump a fact more than halfway to the ceiling — a
-	// guardrail against an agent self-certifying a wrong fact (RFC Non-goals: false memories).
+	// no single acknowledgement can jump a fact more than halfway to the ceiling — a
+	// guardrail against a model self-certifying a wrong fact (RFC Non-goals: false memories).
 	corroborationGapClose = 0.5
 	// AutoCorroborationGapClose is the gentler gap-close for an AUTOMATICALLY-inferred
-	// positive outcome (the session-end transcript judge, brain.md#the-outcome-signal "Automatic
-	// outcome emitter"). It is deliberately HALF the explicit weight: an agent that calls
-	// MemoryUsed, or a human Confirm, is firsthand testimony ("I was there, it helped"); a
-	// judge reading a finished transcript is a weaker, secondhand inference. A machine
-	// inference therefore moves trust less per outcome (0.8 → 0.8375 → 0.866 → …), so it
-	// takes more corroborations to graduate a preference into the operating contract.
+	// positive outcome (brain.md#the-outcome-signal). It is deliberately HALF the explicit
+	// weight: an explicit acknowledgement, or a human Confirm, is firsthand testimony ("I
+	// was there, it helped"); something judging after the fact that a recalled fact helped
+	// is a weaker, secondhand inference. A machine inference therefore moves trust less per
+	// outcome (0.8 → 0.8375 → 0.866 → …), so it takes more corroborations to graduate a
+	// preference into the operating contract.
 	AutoCorroborationGapClose = 0.25
 )
 
-// MarkHelped applies the POSITIVE half of reconsolidation (RFC-LD D2): an agent that
-// recalled this fact explicitly confirmed it was used/correct (the MemoryUsed tool).
-// Unlike a bare injection (BumpUses, "shown"), a confirmed-useful outcome is corroboration:
+// MarkHelped applies the POSITIVE half of reconsolidation (RFC-LD D2): whoever recalled
+// this fact explicitly confirmed it was used/correct.
+// Unlike a bare recall (BumpUses, "shown"), a confirmed-useful outcome is corroboration:
 // it increments Helped, stamps LastUsedAt (it was just used — retrieval recency), and for a
 // non-protected fact raises ConfidenceScore toward CorroborationCeiling, closing half the gap
 // each time. Protected facts (pinned / locked / human ground truth) keep their score — we never

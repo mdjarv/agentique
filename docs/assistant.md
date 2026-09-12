@@ -181,9 +181,10 @@ policy layer, and the policy is what changes:
   read on demand. Facts arrive in a turn only through the `recall` verb,
   which the head calls because it knows what it is trying to do, and the
   instruction says when: before answering about a project, a decision, or a
-  preference. `RecallBlock` becomes the implementation behind that verb, and
-  the per-turn delta machinery and its seen-set are not used by this
-  consumer. The one push is `SinceLast`, and it is journal, not brain: what
+  preference. (This line said `RecallBlock` would become the implementation
+  behind that verb; the build used `brain.RecallForPull` instead and left
+  `RecallBlock` callerless — see Build notes, "Four names left standing" and
+  "the knobs that were inert".) The one push is `SinceLast`, and it is journal, not brain: what
   happened since this surface last looked, once, because news is news.
   Corroboration improves for free: a fact the head pulled and then used is a
   real signal, where an injected fact that was maybe read was not.
@@ -1208,3 +1209,444 @@ surface's own history), inside the same six-line cap.
   contract's own line ("a recent-updates strip from `SinceLast`") is the one it
   amends, and a thread-side look is a mutation op and therefore its own
   decision.
+
+### M2 removals: what the brain stopped reaching, and what was left standing
+
+The M2 contract's "What goes" list, carried out. Deleted rather than switched
+off, and each name grepped across `backend/` and `frontend/` afterwards: the
+`if cfg.BrainRecall` block, the four `Manager.Memory*` hooks and their composers,
+`Session.recallFn`/`recalledIDs`/`SetRecallFn`/`injectRecall`, `SkipRecall` on
+both param structs, `brain.RecallPreamble`, the whole session-end learn path
+(`SetOnSessionEnd`, `HandleSessionComplete`, `Manager.OnSessionComplete`,
+`LearnFromTranscript`, `ApplyOutcomesFromTranscript`, `ClaudeOutcomeJudge`,
+`JobQueue`), and the session memory MCP tools (`registerMemoryTools`,
+`MemoryStore`, `brain.MCPAdapter`, `NewHandler`'s `mem` parameter). Five files
+went whole: `brain/mcp.go`, `brain/outcome.go`, `brain/jobqueue.go`,
+`session/recall_inject_test.go`, `session/recall_wiring_test.go`, plus
+`session/completion_learn_test.go`, `brain/jobqueue_test.go` and
+`brain/outcome_integration_test.go`.
+
+**Removing a hook means removing what only that hook fed.** Four identifiers the
+contract does not name went with the ones it does, because nothing else called
+them and a callerless hook invites the next person to wire it: `Session.onComplete`
+and `SetOnComplete` (only `Manager.OnSessionComplete` set them, and the
+`StateDone` branch in `runtime_bridge.go` that fired them is gone),
+`Service.claimLearn`/`learnHighWater`/`minEventsToEncode` (the learn path's
+idempotency and nothing else), the session interceptor's four `AgentiqueMemory*Tool`
+auto-allow entries with their constants in `messaging.go`, and `resolveRecall` /
+`brainToggleOff` in `serve.go`. `Manager.wireCompletion` is now `wireIdle`: it
+only ever did two things and one of them was the completion hook, so keeping the
+name would have been a lie. That rename also makes `Create` wire the idle
+callback unconditionally, which is what `Resume` and `Reconnect` already did —
+the old `if !params.SkipRecall` guard had swept the scheduler's idle delivery up
+with brain recall, so a discussion persona created in this process got no idle
+hook while the same persona after a resume did.
+
+**The `brain_jobs` table stays and its queries do not.** The contract keeps the
+table ("a migration is not worth an empty one"), but `db/queries/brain_jobs.sql`
+was the queue's use of it, so that file is gone and `just sqlc` regenerated
+without the four methods. `internal/store/brain_jobs.sql.go` had to be deleted by
+hand — sqlc writes generated files and never reaps them — while
+`store.BrainJob` stays in `models.go`, which is generated from the schema and
+therefore from the table that stays. Migration 037 is untouched.
+
+**The four retired keys keep their struct fields.** `recall`, `learn-model`,
+`outcome-model` and `retry-max` stay in `config.BrainConfig`, documented as
+no-ops, because that is what lets `warnBrainNoopKeys` in `serve.go` name the key
+an operator actually wrote. Decoding was already tolerant (BurntSushi's
+`Unmarshal` ignores unknown keys), so deleting the fields would also have booted —
+and would have made the warning impossible. Each key gets its own line naming
+itself and why it does nothing; the env overrides count as carrying it. The
+server's `Config` fields (`BrainRecall`, `BrainLearnModel`, `BrainOutcomeModel`,
+`BrainRetryMax`) are gone, since nothing reads them. `warnBrainConfigured` no
+longer counts the retired keys as evidence of a configured brain: a file carrying
+only those should hear "no-op", not "turn it back on".
+
+**Three brain identifiers are left standing with no caller, deliberately.**
+`PinnedPreamble` and `OperatingContract` composed session preamble blocks and are
+now called only from tests; `MarkHelped` and `MarkAutoHelped` were fed by
+`MemoryUsed` and the outcome judge respectively. None is named in the contract's
+removal list and the assistant's `Memory` collaborator may yet want the pinned
+set, so they are left for whoever wires "What the assistant gets" to keep or
+delete. Two carry prose that is now stale in a way worth knowing before reusing
+them: `PinnedPreamble`'s output tells the model to "use the MemorySearch tool"
+and `OperatingContract`'s tells it to "flag it with MemoryFlag", and neither tool
+exists. Nothing renders either string today.
+
+**A test file trimmed, not deleted, three times.** `brain_test.go` lost its three
+MCP-adapter tests and kept the rest. `capture_ingest_test.go`'s two
+`LearnFromTranscript` tests became one `TestCapturesAreNotRecalled` driven
+through `Capture` directly — the coverage worth keeping was the gate (a capture is
+never recalled), not the path that staged it. `pipeline_e2e_test.go`'s
+`TestE2E_InjectionGate` stages through `Capture` for the same reason, and its
+`TestE2E_DurableJobSurvivesRestart` went with the queue. `outcome_test.go` is down
+to `TestMarkAutoHelpedIsGentlerThanExplicit`, which covers a kept function: the
+automatic signal still weighs half an explicit one, whoever comes to produce it.
+
+**The assistant's band is one component, and the controls are the page's.**
+`components/assistant/AssistantHeader.tsx` holds two exports: `AssistantHeader
+({title, children})` places the orb and a name and nothing else, and
+`AssistantThreadHeader` is the thread's use of it, carrying Memory and the call.
+Memory is the second page to wear the band and it must not offer a link to
+itself, so the shell could not carry the controls: the thread passes the two
+marks and the memory page passes the ones it already had (the badge, the view
+toggle, Consolidate, Review, Snapshots, Add). Both controls now share a
+`CONTROL_CLASS` so the row reads as one set of marks rather than two buttons that
+happen to be adjacent.
+
+**The route is `assistant_.memory.tsx`, an escaped sibling.** `/assistant`
+renders a whole page rather than an `<Outlet />`, so a nested `assistant.memory`
+would have drawn the memory page *inside* the thread; the trailing underscore is
+how this tree already spells that (`discussions_.$channelId`,
+`project.$projectSlug_.settings`). `routeTree.gen.ts` is regenerated by the
+router plugin, so the file id is `/assistant_/memory` while the path stays
+`/assistant/memory`. `/brain` is now a `beforeLoad` redirect, in the shape
+`routes/projects.tsx` and `routes/templates.tsx` use.
+
+**"Memory" replaces "Brain" only where the word named the page or the feature.**
+The component is still `BrainPage`, the store is still `useBrainStore`, the
+routes are still `/api/brain/*` through `lib/brain-api.ts`, and `brain.updated`
+is unchanged — those are identities, and renaming them is a wire and import
+churn that buys the reader nothing. What changed is what is read: the band's
+name, the snapshot copy ("all of memory"), `BrainHealth`'s "Memory health", the
+review and insight tooltips, and the 3D view's tooltip, which no longer says
+"orbiting the brain". `BrainGraph3D`'s `brain: "Brain"` toggle label stays: it
+names the mesh at the centre of that view, which is an object rather than the
+feature.
+
+**The flare moved from a badge to the mark itself.** `useBrainFlare` is gone
+from `AppSidebar` (with the ⋯ menu's Brain row, the `features.brain` read and
+the `brain-flare` class) and lives as `useMemoryFlare` beside the row that owns
+it, in `AssistantRow.tsx`. It pulses the orb's **track** — the faint full circle
+that is what the orb looks like at rest — through a new `trackClassName` prop on
+`HaloOrb`, on the same argument `arcClassName` already made: the resting stroke
+and opacity are SVG attributes, so any CSS rule outranks them. The old
+`box-shadow` keyframe is replaced by `orb-track-flare`, which animates stroke and
+opacity **once** (the contract's "pulses once"; the old one ran twice) and is
+`animation: none` under `prefers-reduced-motion`. Nothing gates it on
+`features.brain`: `flareSeq` only moves on a `brain.updated` push, which a server
+with no brain mounted never sends. The row keeps its notch as the only mark that
+*claims* attention — a flare says the thing is alive, not that something is owed
+a look.
+
+### M2: what the assistant got, and where the seam landed
+
+The M2 contract's "What the assistant gets", "Verbs" and "Provenance", built.
+`assistant.Memory` is the collaborator, `internal/server/assistant_memory.go` is
+the implementation over `brain.Service`, and `WithMemory` is passed only when a
+brain was actually built. Calls the contract left open follow.
+
+**`SourceReported` is capture tier, and that had to be a predicate rather than a
+constant.** The contract adds one source and the whole tree tested for the old
+one: twenty-two sites spelled `r.Source == memory.SourceCapture` (or `!=`) to
+mean "is this a durable fact", across `recall`, `promote`, `consolidate`,
+`areas`, `link`, `community`, `interference`, `strength`, `global_graph`, the
+chroma store and `brain` itself. A second capture tier added beside that
+comparison would have been **injected everywhere** — a session's report reaching
+a head's recall as though the operator had stated it, which is the one failure
+the M2 design exists to prevent. So `memory.Source.Staged()` is the predicate
+now and every one of those sites asks it. `EvidenceForSource` answers
+`observed_once` for both: a staged sentence has been seen once and corroborated
+by nothing, whichever door it came through.
+
+Why a second value at all, when neither is recallable: provenance is exactly
+what consolidation needs to weigh them differently, and losing it at the door is
+irreversible. `brain.CaptureFrom` is `Capture` with the source named and
+**refuses a non-staged one** — its whole contract is "staged, never injected",
+so a durable source arriving there would write an injectable fact through a door
+that promises it cannot.
+
+**`Memory` deviates from the contract's signatures in exactly two places, both
+the same deviation.** `Remember` takes a trailing `projectID` and `Capture`
+takes `projectID` where the contract writes `scope`. The assistant holds project
+ids; `project:<id>` is `brain.ScopeForProject`, which is agentique policy, and
+`internal/assistant` does not import `internal/brain`. The scope spelling stays
+on the server's side of the seam, and what comes BACK is a label ("everywhere",
+"the project riff") rather than a scope string — a head shown `project:8f2c…`
+can do nothing with it and never passes a scope back.
+
+`internal/assistant` does now import `internal/memory`, for value types only:
+`Category`, `Source`, `ConfidenceTier`. The closed category set is spelled once,
+in the store's own package, because a category spelled twice is how one surface
+files a fact under a name the other cannot rank by. `doc.go` says so.
+
+**`Fact.Confidence` is the tier, not the score.** `memory.Record` carries both.
+The tier (`extracted`, `inferred`, `ambiguous`) is a reading a sentence can
+carry; a 0..1 score printed to two decimals is false precision about somebody's
+memory. It is normalized on the way out, because the tier is always derived from
+(source, score) and an old record on disk may not carry one.
+
+**The memory verbs are in the table only when a memory is wired.** Not
+politeness: the table is what the head is told exists, in a section of its
+instruction saying nothing outside the list is real, so four verbs that answer
+"I have no memory" to every call teach it to stop asking — and cost four tool
+schemas on every turn to do it. With no memory the names are not verbs at all
+and `Invoke` answers `ErrUnknownVerb`. The server-side test asserts both
+directions through `server.New`, because the two switches are independent and
+"the brain is on" has to be observable in the table and nowhere else.
+
+**Neither `category` nor `provenance` is defaulted; both refuse.** A default is
+a silent wrong answer in both cases. `identity` is pinned on the way in, so a
+head that meant identity and silently got `fact` believes it made a standing
+note nothing will ever show it again; and "the operator said it" is the one
+claim in this store that outranks corroboration, so defaulting either way
+launders a guess. A refusal costs one round trip and names the closed set.
+`recall` takes only a query — no `limit` — and the clamp is server-side, on the
+side of the seam a later caller does not get to choose.
+
+**`Search` drops pinned facts and stamps uses.** `brain.Recall` answers pinned
+plus relevant; the pinned set is already in the head's instruction with its ids,
+so returning it again spends a pull on what was handed over for free. The ids it
+does return go through `brain.MarkUsed`, best effort — a pull IS a successful
+recall, which is the retrieval-practice signal the design counts on ("a fact the
+head pulled and then used is a real signal, where an injected fact that was
+maybe read was not"). It searches `ListScopes` as the contract says, which is
+the same set `memory.Recall` reads for an empty list, so an empty store needs no
+special case.
+
+**The index counts only what `recall` can return.** Captures and archived facts
+are excluded from the per-scope counts, because an index whose numbers do not
+survive being asked about is worse than no index. Areas come from the new
+`brain.PreviewAreas` — `AssignAreas` minus the two things a write pass does (it
+persists nothing and does not prune the embed cache, which is a checkpoint
+belonging to a pass that rewrote something). An area listing that fails is not
+fatal: the scope lines are the half that always exists, since every fact has a
+scope and only some belong to an area. The whole index is capped at 40 lines,
+areas first and largest-first, because this is the one memory read that rides
+every fresh head.
+
+**Captures hang off `appendJournal`, and one entry is exempt.** Notable is the
+mark that says "consolidation should look at this", so the capture is a property
+of writing a notable entry rather than a discipline at each call site — same
+argument as the push already on that function. `journalWrite.SkipCapture` holds
+back the one notable entry that records a memory WRITE: the fact is already in
+the store, and staging a sentence saying a fact was stored hands consolidation a
+meta-phrased second copy to judge against the first. It runs inline rather than
+on a goroutine, because it is rare (nothing but a deliberate note is notable
+today — a turn end, a report and a merge are not) and a failure on its own
+goroutine has nobody holding a context to log against. Failure is logged and
+never propagated: the journal is the record of what happened, memory is an index
+over it, and losing the index must not lose the fact.
+
+`SourceReported` therefore has no live producer yet, and that is honest rather
+than an oversight: it needs a notable **untrusted** entry, and the only writer of
+notable entries today is the `note` verb, whose text is the assistant's own
+sentence. The contract's other half — "a `notable` flag, set by the operator on a
+message or by the assistant on an entry" — is a gesture no surface offers yet.
+The mechanism is complete and tested; the door it opens is M3/M4 surface.
+
+**The brain block moved above the assistant block in `server.go`.** It has to:
+the assistant takes its memory through an option, options run inside `New`, and a
+brain constructed afterwards could only be handed over by a setter — which
+nothing else on that service arrives through. The move is a pure relocation
+(nothing between the two positions read either one) plus hoisting `brainSvc` to a
+variable the assistant block can see. The interface is built from the pointer
+*inside* the `brainSvc != nil` branch, not narrowed outside it: a typed-nil
+`*brain.Service` in an interface reads as present, and the table would then carry
+four verbs that panic on first use.
+
+**`PinnedPreamble` and `OperatingContract` stay, with their stale sentences
+removed.** The removals pass left both callerless and flagged that their
+model-facing strings named `MemorySearch` and `MemoryFlag`, tools that no longer
+exist. The assistant's own `Pinned` is built on `brain.List`, so neither is on
+its path — but three test files read them as a lens onto real confidence and
+archival semantics, and deleting them would have cost that coverage to remove a
+hazard that two sentence edits remove instead. Both now say what is true, and
+both say in their doc comments that nothing renders them and why.
+`MarkHelped`/`MarkAutoHelped` are still producerless and still kept: the
+conversational outcome signal is `confirm_memory`/`flag_memory`, and a pull is
+not a confirmation.
+
+### M2 coherence pass: three agents' work made one tree
+
+The removals, the memory seam and the frontend landed separately; this pass ran the
+four verification commands over the merged tree, swept the contract's removal list,
+and fixed what the seams between the three left inconsistent. The tree was already
+green — nothing here is a build fix. What follows is what was wrong anyway.
+
+**The `Staged()` swap had missed two surfaces, and both of them read as durable.**
+`memory.Source.Staged()` replaced twenty-two `== SourceCapture` comparisons, and the
+sweep that found them was over `internal/`. It missed `cmd/agentique/brain_inspect.go`,
+where `brain stats` counted a `reported` record in `Total` and fed it to the centrality
+pass as a durable fact, and it missed the frontend entirely, where five sites spelled
+`source === "capture"` — so a reported sentence would have appeared in the memory
+page's DEFAULT list, unbadged, indistinguishable from something the operator stated,
+and `BrainHealth`'s "Captures pending" would have undercounted the backlog by every one
+of them. That is precisely the failure the two-tier split exists to prevent, arriving
+through the surface the operator reads. The frontend now has one predicate to match the
+Go one: `isCapture` over `STAGED_SOURCES` in `lib/brain-labels.ts`, plus
+`pendingCaptures` for the `bySource` histogram, which counts every source separately
+and therefore needs a sum rather than a lookup. Three tests pin it. The rule is now in
+CLAUDE.md, because a predicate that has already been missed twice will be missed again.
+
+One deliberate non-use of the predicate: a row still prints its source text when the
+source is `reported` and still hides it when it is plain `capture`. The badge says
+"capture" either way, so hiding both would hide the only thing that distinguishes
+them — and which door a staged sentence came through is the whole reason it is a
+separate source.
+
+**Four names left standing, and one of them was described as live.** The removals pass
+recorded three callerless identifiers (`PinnedPreamble`, `OperatingContract`,
+`MarkHelped`/`MarkAutoHelped`). There is a fourth nobody listed: `brain.RecallBlock`,
+which is the session-injection composer itself — `memory.Recall`, the seen-set as
+`exclude`, the `<brain>` envelope, `BumpUses`. Worse, its doc comment and
+`docs/brain.md` both asserted it had BECOME the implementation behind the assistant's
+`recall` verb. It has not: that path is `brain.Recall` through
+`internal/server/assistant_memory.go`, over every scope, with no envelope and no
+seen-set. So the tree carried a working, tested, delta-deduping injection composer
+labelled as the live pull path, under an invariant that says never reintroduce
+injection. Both descriptions now say what is true, at length, in the place someone
+would read before reusing it.
+
+It is not deleted here, on the same trade the memory pass made for `PinnedPreamble`:
+six cases in `internal/brain` drive real recall semantics through it — the veto and
+vouch thresholds, the lone-token guard, the capture gate, cross-scope leakage,
+associative expansion — and deleting it would cost that coverage to remove a hazard
+that a doc comment removes. The structurally correct follow-up is to repoint those six
+at `Service.Recall` and then delete it, `minRecallQueryTokens` and the envelope
+builder with it. That is a test refactor, and it is named here so it gets chosen rather
+than rediscovered.
+
+**Stale prose was a bigger surface than stale code.** Every identifier on the
+contract's removal list greps to zero live references; the one survivor is a comment in
+`capture_ingest_test.go` explaining why that test changed shape. But eleven comments
+still named removed tools as LIVE entry points — "the agent-facing entry point is the
+MemoryFlag MCP tool", "the model-driven MemoryUsed/MemoryFlag loop is untouched" —
+which is worse than a dangling reference, because it sends the reader looking for a
+tool and then tells them it works. Those are corrected in `brain/brain.go`,
+`brain/http.go`, `lib/brain-api.ts` and `chat/BrainCard.tsx`. The liftable core's
+comments (`memory/record.go`, `reconsolidate.go`, `confidence.go`) named agentique's
+tools as well, which was a layering violation before it was a falsehood; they now
+describe the signal rather than the caller.
+
+`docs/tech-debt.md` opens by saying a debt list is only useful if everything in it is
+still true, so M2's removals were carried through it: the durable-job-queue entry and
+the per-turn-injection-budget entry are gone with the machinery they described, the
+inert-signals entry now says the positive outcome signal has no producer at all (and
+that the 0.8-0.95 corroboration band is therefore unreachable), and the
+orchestration-untested entry records that M2 narrowed it by deletion rather than by
+coverage. `docs/scheduled-loops.md` had a whole section on per-schedule persisted
+recall seen-sets; there is no such thing now, and the section says so rather than
+describing it. CLAUDE.md's scheduled-loops line no longer claims a fire skips brain
+recall, since there is no recall for it to skip.
+
+**One rename was reverted for an anchor.** `docs/brain.md`'s "### Brain UI" is the
+stale word this contract renames everywhere else, but twelve code comments cite
+`brain.md#brain-ui` as the spec anchor for F0-F6. The heading keeps its name and says
+why; its body now names the page, the route and the gate. Renaming it is one line plus
+twelve citations, and it buys a word.
+
+The stray literal `</content>` line the removals pass reported in CLAUDE.md was removed
+by the memory pass. Ten other files still carry one (`README.md`, `ROADMAP.md` and
+eight docs), all pre-existing in `HEAD` and unrelated to M2; they are left alone rather
+than swept into this diff.
+
+### M2 review pass: the knobs that were inert and the reads that were unbounded
+
+Six blocker/major findings and eight minor ones from the review of the M2 build,
+fixed at the root rather than papered over. What follows is the decisions they
+forced.
+
+**The read-time recall fade got a consumer, and the consumer is the pull rather
+than every recall.** M5's `archive-confidence-floor` reached nothing live:
+`Service.Recall` did not thread it and the only method that did (`RecallBlock`)
+is the callerless injection composer, so `server.go` computed a floor under a
+comment about a deploy-safety contract and handed it to a field nobody read.
+Threading it into `Recall` would have applied it to the memory page's search box
+as well (not to `brain search`, whose CLI service sets no floor at all), and that
+is the wrong surface: a faded fact has not been archived, so it is still a live
+row in the list beside that search, and a row you can see and cannot find by
+searching is one surface saying two things —
+where curating what is about to be forgotten is exactly what the page is for. So
+the split is by consumer: `Service.RecallForPull` is the model-facing pull and
+applies the floor, `Service.Recall` is the browsing one and does not, and both
+build their query in one private `recall` so the veto and vouch thresholds cannot
+drift apart. The assistant's `Search` moved to the pull; `RecallBlock` is
+untouched and still dead. Two tests pin it, including the other half of the
+safeguard: with archiving off nothing fades anywhere.
+
+**Memory keeps one home, and "one" is never "none".** The contract drops the ⋯
+menu's Brain row because the thread's header carries the link, which is right
+while the assistant is on. With `[brain] enabled` and `[experimental] assistant`
+off — a configuration `server.go` logs a line about — `VoiceDock` draws no
+assistant row at all, so that header was reachable by nothing and the page
+existed only as a URL. On a phone, where this app is an installed PWA with no
+address bar, that is a page that does not exist. The row is back in the ⋯ menu
+for exactly that case (`features.brain && !features.assistant`), which keeps the
+rule the contract was applying: one home, chosen by which owner exists. The
+trigger's flare did not come back with it — the flare is the orb's now, and one
+animated trigger for a store you are browsing by hand is noise the rail argued
+off at 271px.
+
+**The head's memory briefing is bounded, because it runs before the turn's own
+deadline exists.** `memoryBriefing` is called from `ensureHead`, which is inside
+the conversation's one turn lock and *before* `headTurnBudget` is applied, on a
+`context.Background()` from `SayAsync` — and behind the interface it is a
+whole-corpus clustering pass plus, with an embedder configured, one Chroma fetch
+and an embed round trip per 64 uncached facts, each bounded only by its own
+client's per-request timeout. A slow or dead embedder therefore held the thread's
+composer shut for minutes. It now carries `memoryBriefingBudget` (10s, a var so a
+test can shorten it), the same rule voice draws for its own gather, and both
+halves already degraded to nothing on error.
+
+**An unreadable memory is a third state, and the preamble says which.** Both
+briefing halves come from the same store read, so one failure is the whole memory
+going dark — and the preamble then printed "There is nothing in it yet", after
+which the head can tell the operator it remembers nothing about them and
+`remember` the same facts again. `memoryBriefing` returns `unread`,
+`HeadBriefing.MemoryUnread` carries it, and `renderMemory` has one sentence for
+it, ahead of the empty case and true whether or not a pinned fact printed.
+
+**Two capped reads, budgeted rather than truncated.** The index reserved nothing
+for its scope lines, so at forty areas the head saw topic labels and no line
+naming any namespace — the half that always exists, and the half the area listing
+falls back to when it fails. `budgetIndexLines` reserves the scopes (bounded by
+the number of projects) and spends the rest on areas (unbounded by construction),
+each losing its smallest. `Pinned` was uncapped while the cheaper half of the
+same read was capped, and the head can grow it itself, since
+`remember(category: "identity")` pins on the way in: it now keeps
+`maxAssistantPinnedFacts` by what was touched most recently (edit or recall,
+whichever is later). A truncation is not a lie to the head — the preamble already
+says everything not printed is behind `recall`, which is where the overflow is —
+and an overflow is logged for the operator, who sees the whole set on the page.
+
+**A note about a session is filed in that session's project.** `verbNote` was the
+only live producer of a notable entry and set no project, so every capture the
+assistant could make landed in `global`, which means "true everywhere" — the one
+filing mistake `resolveMemoryProject` refuses to make for `remember`, and the one
+that cannot be seen afterwards from the fact itself. The project is resolved FROM
+the session the head already names (`SessionBrief`), not asked for as a second
+argument that could disagree with the first: `SessionRow` gains `ProjectID`, set
+only for this machine's own rows, because a remote machine's project id means
+nothing to a local scope. A session this machine does not hold leaves the note
+global, which is what an unplaceable note is.
+
+**A retired key takes any scalar.** The contract says the four retired `[brain]`
+keys must "never refuse to boot", and `recall = false` still did: the field was
+`string` because the key used to default on, so its documented off switch was
+`recall = "false"` and the bool spelling was a decode error. All four are now
+`config.RetiredKey`, an alias for `any` — an alias so the TOML codec still sees a
+plain empty interface (a defined interface type cannot carry a method, and a
+struct wrapper encodes back into `config.toml` as an empty table), and presence
+is `!= nil`, which is what the boot warning tests. Two tests pin the spellings,
+including the round trip through `Save`.
+
+**Staging is paired with its drain by a boot warning.** Captures became
+unconditional in M2 (every notable entry) while the only thing that can promote
+them stayed opt-in and LLM-only, and the rule in `docs/brain.md` had no trigger
+left. Brain and assistant both on with either consolidate key empty now warns at
+startup, beside the "nothing recalls it" line it is the twin of.
+
+**One finding was answered in prose rather than code: consolidation still cannot
+see the `reported` tier.** `PlanConsolidation` folds both capture tiers into one
+untyped slice of sentences and `writePromoted` mints every survivor as
+`SourceConsolidated`, so the provenance the second tier exists to preserve buys
+nothing *after* promotion — and the recall verb's advice about quoting a reported
+fact stops applying the moment it is promoted. The earlier note said the
+distinction "costs nothing today", which read as though consolidation was already
+weighing it. Carrying the tier forward means passing `[]Record` into
+`Extractor.Extract` and giving a promoted survivor a marker that survives, which
+is a change to the liftable core's extractor contract and not a review fix; it is
+named here so it gets chosen rather than rediscovered. `brain.CaptureFrom`'s doc
+comment now says the tier is preserved at the door and read nowhere yet, which is
+the honest version. `SourceReported` still has no live producer either way.

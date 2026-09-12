@@ -265,7 +265,6 @@ func (s *Service) startRepoBackedPersona(ctx context.Context, channelID string, 
 		Model:           spec.Model,
 		Effort:          spec.Effort,
 		AutoApproveMode: "fullAuto", // headless: no human to approve tool calls
-		SkipRecall:      true,       // keep persona context clean of brain recall
 		SharedWorkDir:   sharedDir,
 	}
 	if spec.WriteAccess && p.AutoCommit {

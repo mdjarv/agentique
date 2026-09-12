@@ -176,14 +176,12 @@ type CreateSessionParams struct {
 	ParentSessionID string // optional: lead session that spawned this one (for hierarchy tree)
 	IdempotencyKey  string // optional: if set, duplicate creates return the cached result
 
-	// Discussion-group fields, set only by the discussion orchestrator.
+	// Discussion-group field, set only by the discussion orchestrator.
 	// SharedWorkDir binds this persona session's CWD to an already-provisioned
 	// shared worktree instead of provisioning its own; the session records no
 	// worktree path, so the orchestrator owns that tree's lifecycle (removed once
-	// on dissolve, not per session). SkipRecall suppresses brain-recall injection
-	// so persona turns aren't polluted with memory blocks.
+	// on dissolve, not per session).
 	SharedWorkDir string
-	SkipRecall    bool
 }
 
 // CreateSessionResult is the wire type returned after session creation.
@@ -271,25 +269,7 @@ type Service struct {
 	// browser subtree. 0 = disabled. See idle_evict.go.
 	idleEvictTimeout time.Duration
 
-	// onSessionEnd, when set, is invoked (async, best-effort) on a session's end —
-	// both on clean completion (StateDone, M3) and just after deletion — with the
-	// project ID and the session's transcript, to distill durable memories from a
-	// finished session.
-	onSessionEnd func(projectID string, events []store.SessionEvent)
-
-	// learnHighWater records, per session id, the number of events already ingested by
-	// onSessionEnd this process, so the completion and delete paths fire it at most once
-	// per growth step (idempotency). In-process only — a restart re-runs extraction once
-	// (brain text-dedup keeps facts unique); durable idempotency is the M7 job queue.
-	learnMu        sync.Mutex
-	learnHighWater map[string]int
-
 	done chan struct{}
-}
-
-// SetOnSessionEnd wires the auto-encode hook fired after a session is deleted.
-func (s *Service) SetOnSessionEnd(fn func(projectID string, events []store.SessionEvent)) {
-	s.onSessionEnd = fn
 }
 
 // NewService creates a new session Service.
@@ -301,51 +281,12 @@ func NewService(mgr *Manager, queries serviceQueries, hub eventbus.Broadcaster, 
 		runner:           runner,
 		worktree:         RealWorktreeOps(),
 		idempotencyCache: make(map[string]idempotencyEntry),
-		learnHighWater:   make(map[string]int),
 		done:             make(chan struct{}),
 	}
 	// Reads s.gitSvc at call time, so the order of SetGitService does not matter.
 	mgr.branchStatus.setRefresher(svc.refreshBranchStatus)
 	go svc.sweepIdempotencyCache()
 	return svc
-}
-
-// claimLearn reports whether this caller should run the brain ingest sink for sessionID
-// at the given event count, advancing the per-session high-water mark so the completion
-// and delete paths fire at most once per growth step. Returns false below
-// minEventsToEncode (trivial sessions) or when count has not grown since the last claim.
-// Fully mutex-guarded so a concurrent completion + delete fire onSessionEnd at most once.
-func (s *Service) claimLearn(sessionID string, count int) bool {
-	if count < minEventsToEncode {
-		return false
-	}
-	s.learnMu.Lock()
-	defer s.learnMu.Unlock()
-	if count <= s.learnHighWater[sessionID] {
-		return false
-	}
-	s.learnHighWater[sessionID] = count
-	return true
-}
-
-// HandleSessionComplete is the learn-on-completion entry point (M3): on a clean session
-// completion it lists the session's events and, if it claims the learn (>= minEventsToEncode
-// and grown since the last ingest), runs the onSessionEnd sink. The session is NOT deleted;
-// its events stay intact. Best-effort and idempotent across completion/delete via claimLearn.
-func (s *Service) HandleSessionComplete(projectID, sessionID string) {
-	if s.onSessionEnd == nil {
-		return
-	}
-	ctx := context.Background()
-	evs, err := s.queries.ListEventsBySession(ctx, sessionID)
-	if err != nil {
-		slog.Warn("learn-on-completion: list events failed", "session_id", sessionID, "error", err)
-		return
-	}
-	if !s.claimLearn(sessionID, len(evs)) {
-		return
-	}
-	s.onSessionEnd(projectID, evs)
 }
 
 // sweepIdempotencyCache removes expired entries every minute.
@@ -492,7 +433,6 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		BrowserEnabled:        s.browserSvc != nil,
 		PanelEnabled:          s.browserPanelEnabled,
 		SystemPromptAdditions: pc.SystemPromptAdditions,
-		SkipRecall:            p.SkipRecall,
 	})
 	if err != nil {
 		// Don't reap a shared (orchestrator-owned) worktree if one persona session
@@ -1419,15 +1359,6 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		}
 	}
 
-	// Capture the transcript before deletion so the auto-encode hook can distill
-	// durable memories from it (the FK cascade wipes session_events).
-	var endEvents []store.SessionEvent
-	if s.onSessionEnd != nil {
-		if evs, evErr := s.queries.ListEventsBySession(ctx, sessionID); evErr == nil {
-			endEvents = evs
-		}
-	}
-
 	if err := s.queries.DeleteSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("db delete failed: %w", err)
 	}
@@ -1439,22 +1370,8 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 	s.hub.Publish(dbSess.ProjectID, "session.deleted", PushSessionDeleted{SessionID: sessionID})
 
-	// Delete remains the safety net for sessions that never cleanly completed. Route
-	// through the same high-water marker so a complete-then-delete (no new events) does
-	// not double-ingest; prune the marker since the session is gone.
-	if s.onSessionEnd != nil && s.claimLearn(sessionID, len(endEvents)) {
-		projectID := dbSess.ProjectID
-		go s.onSessionEnd(projectID, endEvents)
-	}
-	s.learnMu.Lock()
-	delete(s.learnHighWater, sessionID)
-	s.learnMu.Unlock()
-
 	return nil
 }
-
-// minEventsToEncode skips distilling memories from trivial/empty sessions.
-const minEventsToEncode = 8
 
 // SetSessionModel changes the model for a live session.
 func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) error {

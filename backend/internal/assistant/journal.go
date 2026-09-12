@@ -125,14 +125,31 @@ type journalWrite struct {
 	// At overrides the write time. Empty means now, which is what everything
 	// but a compaction wants.
 	At string
+	// SkipCapture holds a notable entry back from becoming a memory capture.
+	//
+	// Notable is what says "consolidation should look at this", so notable is
+	// what triggers the capture — see [Service.captureNotable]. The one
+	// exception is an entry that RECORDS a memory write: the fact is already in
+	// the store, and staging a sentence saying so would give consolidation a
+	// meta-phrased second copy to judge against the first.
+	SkipCapture bool
 }
 
-// appendJournal writes one entry, broadcasts it, and returns it.
+// appendJournal writes one entry, broadcasts it, captures it if it is notable,
+// and returns it.
 //
 // Every journal write goes through here, which is what makes "every entry is
 // announced" a property of the store rather than a discipline at eleven call
 // sites. The push is a Broadcast on the global topic, not a Publish: the
 // journal has no project.
+//
+// The capture is on the same argument. Captures come from the conversation and
+// from notable journal entries, never from transcripts, and NOTABLE is the mark
+// that says consolidation should look at something — so the entry becoming a
+// capture is a property of writing a notable entry rather than something each
+// writer remembers to do. It runs inline, because it is rare (nothing but a
+// deliberate note is notable today) and because a capture that fails on its own
+// goroutine is a failure nobody is holding the context to log against.
 func (s *Service) appendJournal(ctx context.Context, w journalWrite) (JournalEntry, error) {
 	if !w.Kind.Valid() {
 		return JournalEntry{}, fmt.Errorf("journal kind %q is not one of the closed set", w.Kind)
@@ -170,6 +187,9 @@ func (s *Service) appendJournal(ctx context.Context, w journalWrite) (JournalEnt
 
 	entry := journalEntryFrom(row)
 	s.broadcast(EventJournal, entry)
+	if entry.Notable && !w.SkipCapture {
+		s.captureNotable(ctx, entry)
+	}
 	return entry, nil
 }
 

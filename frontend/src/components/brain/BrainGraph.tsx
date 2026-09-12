@@ -1180,7 +1180,7 @@ export function BrainGraph({
               type="button"
               onClick={() => setInsightsOpen((o) => !o)}
               className="flex w-full items-center gap-1.5 px-2.5 py-1.5 hover:bg-muted/40"
-              title="What the brain knows: load-bearing facts, topic bridges, gaps, and the confirm queue"
+              title="What is remembered: load-bearing facts, topic bridges, gaps, and the confirm queue"
             >
               {insightsOpen ? (
                 <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -1234,7 +1234,7 @@ export function BrainGraph({
                   <div>
                     <div
                       className="mb-1 font-medium text-amber-600"
-                      title="The brain's least-trusted facts — confirm to keep as ground truth, or delete"
+                      title="Memory's least-trusted facts — confirm to keep as ground truth, or delete"
                     >
                       Confirm?{" "}
                       <span className="text-muted-foreground">

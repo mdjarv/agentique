@@ -96,7 +96,7 @@ func Recall(ctx context.Context, store Store, q Query) (Result, error) {
 			res.Pinned = append(res.Pinned, r)
 			continue
 		}
-		if r.Source == SourceCapture {
+		if r.Source.Staged() {
 			continue // raw episodic material is not injected
 		}
 		candidates = append(candidates, r)
@@ -167,7 +167,7 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 			continue // archived facts are never folded in as associative neighbours (M5)
 		}
 		byID[r.ID] = r
-		if r.Area != "" && r.Source != SourceCapture {
+		if r.Area != "" && !r.Source.Staged() {
 			byArea[r.Area] = append(byArea[r.Area], r)
 		}
 	}
@@ -196,7 +196,7 @@ func expandAssociative(recalled, pinned, all []Record, k int) []Record {
 				break
 			}
 			nr, ok := byID[nid]
-			if !ok || nr.Source == SourceCapture {
+			if !ok || nr.Source.Staged() {
 				continue
 			}
 			if add(nr) {

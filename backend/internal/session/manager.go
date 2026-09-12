@@ -42,7 +42,6 @@ type CreateParams struct {
 	BrowserEnabled        bool     // agent browser MCP available (browserSvc wired)
 	PanelEnabled          bool     // human-facing browser panel (experimental flag)
 	SystemPromptAdditions string   // from persona config; appended to the session preamble
-	SkipRecall            bool     // discussion personas: suppress per-turn brain-recall injection
 }
 
 // Manager manages the lifecycle of agentique sessions, wrapping a runtime.Manager
@@ -76,27 +75,11 @@ type Manager struct {
 	branchStatus   *branchStatusCache
 	GlobalPreamble string
 
-	// MemoryPreambleFn, when set, returns a system-preamble block of the project's
-	// pinned memories to inject at session create/resume (auto-recall). Read-only;
-	// nil disables it. Wired to the brain Service by the server.
-	MemoryPreambleFn func(ctx context.Context, projectID string) string
-
-	// MemoryContractFn, when set, returns the project's "operating contract" — the
-	// high-confidence preferences the agent should act on by default, framed as standing
-	// instructions rather than the soft background context of MemoryPreambleFn. Injected
-	// into the system preamble at create/resume (brain.md#the-outcome-signal). Read-only; nil
-	// disables it. Wired to the brain Service by the server.
-	MemoryContractFn func(ctx context.Context, projectID string) string
-
-	// MemoryRecallFn, when set, returns a task-relevant memory recall block to prepend
-	// to a session turn, plus the fact ids it surfaced. It fires on EVERY turn (not just
-	// the first): `exclude` carries the ids already surfaced earlier this session so each
-	// turn injects only what's newly relevant (delta recall), letting recall follow the
-	// conversation as it drifts. Unlike the always-on pinned MemoryPreambleFn (baked into
-	// the system preamble at connect), this runs against the actual prompt. Read-only;
-	// nil disables it. Wired to the brain Service by the server; installed per session
-	// via wireRecall.
-	MemoryRecallFn func(ctx context.Context, projectID, prompt string, exclude map[string]struct{}) (string, []string)
+	// The brain reaches no coding session. Memory is the assistant's, pulled through
+	// its own recall verb and never injected into a session's preamble or turn — see
+	// docs/assistant.md ("Knowledge is pulled; only news is pushed"). Nothing here
+	// composes a memory block, and nothing should: a fact that belongs in a session's
+	// prompt goes there through the text the operator can read before it is sent.
 
 	// OnSessionIdle, when set by the server, fires on every runtime →Idle
 	// transition with the session id. The scheduler uses it for idle-boundary
@@ -112,19 +95,6 @@ type Manager struct {
 	// future consumer must not have to displace each other.
 	turnEndMu        sync.RWMutex
 	turnEndListeners []func(sessionID string)
-
-	// OnSessionComplete, when set by the server, fires once per clean session completion
-	// (runtime StateDone), passing the project and session id, so the brain learns from a
-	// finished transcript without the session being deleted (M3). Async, best-effort; nil
-	// disables it. Installed per session via wireCompletion.
-	OnSessionComplete func(projectID, sessionID string)
-
-	// MemoryRecallPreamble, when set alongside MemoryRecallFn, is a static system-
-	// preamble section explaining the <brain> recall envelope to the agent (its shape
-	// and the MemoryUsed/MemoryFlag outcome hooks) so the per-turn recall block stays
-	// compact. Injected at create/resume/reconnect only when per-turn recall is active.
-	// Wired to brain.RecallPreamble by the server.
-	MemoryRecallPreamble string
 
 	// HTTP MCP integration: set via SetMCPHTTP. When mcpTokens is nil the
 	// manager falls back to the legacy stdio mcp-channel transport.
@@ -277,68 +247,15 @@ func (m *Manager) SetMCPHTTP(tokens *mcphttp.TokenStore, internalURL string) {
 // session destroy.
 func (m *Manager) SetDevURLStore(store *devurls.Store) { m.devURLs = store }
 
-// memoryPreamble returns the project's pinned-memory block (auto-recall),
-// prefixed with blank lines for section separation, or "" when disabled or empty.
-func (m *Manager) memoryPreamble(ctx context.Context, projectID string) string {
-	if m.MemoryPreambleFn == nil || projectID == "" {
-		return ""
-	}
-	block := m.MemoryPreambleFn(ctx, projectID)
-	if block == "" {
-		return ""
-	}
-	return "\n\n" + block
-}
-
-// memoryContract returns the project's operating-contract block (high-confidence
-// preferences the agent acts on by default), prefixed with blank lines for section
-// separation, or "" when disabled or empty.
-func (m *Manager) memoryContract(ctx context.Context, projectID string) string {
-	if m.MemoryContractFn == nil || projectID == "" {
-		return ""
-	}
-	block := m.MemoryContractFn(ctx, projectID)
-	if block == "" {
-		return ""
-	}
-	return "\n\n" + block
-}
-
-// memoryRecallPreamble returns the static <brain>-envelope explainer for the system
-// preamble, prefixed with blank lines for section separation. Only emitted when per-
-// turn recall is actually wired (MemoryRecallFn set) and the text is configured, so a
-// session never gets told about a recall format it won't receive.
-func (m *Manager) memoryRecallPreamble() string {
-	if m.MemoryRecallFn == nil || m.MemoryRecallPreamble == "" {
-		return ""
-	}
-	return "\n\n" + m.MemoryRecallPreamble
-}
-
-// wireRecall installs the per-turn task-relevant recall callback on a freshly
-// constructed session, binding its project, so each turn prepends newly-relevant
-// memories. No-op when recall is disabled or the project is empty.
-func (m *Manager) wireRecall(sess *Session, projectID string) {
-	if m.MemoryRecallFn == nil || projectID == "" {
+// wireIdle installs the per-session idle callback, binding the session's id, so the
+// scheduler can deliver a queued run at the next idle boundary. No-op when nothing
+// is listening.
+func (m *Manager) wireIdle(sess *Session) {
+	if m.OnSessionIdle == nil {
 		return
 	}
-	sess.SetRecallFn(func(ctx context.Context, prompt string, exclude map[string]struct{}) (string, []string) {
-		return m.MemoryRecallFn(ctx, projectID, prompt, exclude)
-	})
-}
-
-// wireCompletion installs the per-session completion callback, binding the session's
-// project and id, so a clean completion (StateDone) routes through OnSessionComplete.
-// No-op when learn-on-completion is disabled or the project is empty.
-func (m *Manager) wireCompletion(sess *Session, projectID string) {
-	if m.OnSessionComplete != nil && projectID != "" {
-		id := sess.ID
-		sess.SetOnComplete(func() { m.OnSessionComplete(projectID, id) })
-	}
-	if m.OnSessionIdle != nil {
-		id := sess.ID
-		sess.SetOnIdle(func() { m.OnSessionIdle(id) })
-	}
+	id := sess.ID
+	sess.SetOnIdle(func() { m.OnSessionIdle(id) })
 }
 
 // AddTurnEndListener registers a callback fired once per turn, on any session,
@@ -412,12 +329,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		gitStatus:    m.gitStatus,
 		branchStatus: m.branchStatus,
 	})
-	// Discussion personas opt out of brain-recall so their turns aren't polluted
-	// with memory blocks — the orchestrator wants clean per-persona context.
-	if !params.SkipRecall {
-		m.wireRecall(sess, params.ProjectID)
-		m.wireCompletion(sess, params.ProjectID)
-	}
+	m.wireIdle(sess)
 
 	permMode := "default"
 	if params.PlanMode {
@@ -429,7 +341,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.PanelEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), params.ProjectID) + m.memoryContract(context.Background(), params.ProjectID) + m.memoryRecallPreamble()
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.PanelEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
@@ -587,8 +499,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		gitStatus:         m.gitStatus,
 		branchStatus:      m.branchStatus,
 	})
-	m.wireRecall(sess, p.ProjectID)
-	m.wireCompletion(sess, p.ProjectID)
+	m.wireIdle(sess)
 
 	permMode := p.PermissionMode
 	if permMode == "" {
@@ -603,7 +514,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
@@ -685,8 +596,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		gitStatus:         m.gitStatus,
 		branchStatus:      m.branchStatus,
 	})
-	m.wireRecall(sess, p.ProjectID)
-	m.wireCompletion(sess, p.ProjectID)
+	m.wireIdle(sess)
 
 	permMode := p.PermissionMode
 	if permMode == "" {
@@ -699,7 +609,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + m.memoryPreamble(context.Background(), p.ProjectID) + m.memoryContract(context.Background(), p.ProjectID) + m.memoryRecallPreamble() + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 

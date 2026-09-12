@@ -237,10 +237,10 @@ func TestSessionModelToolRegistrationIsOptional(t *testing.T) {
 	tokens := NewTokenStore()
 	dev := devurls.NewStore(nil)
 
-	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, nil)); slices.Contains(got, ToolSessionModel) {
+	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil)); slices.Contains(got, ToolSessionModel) {
 		t.Errorf("SessionModel registered without an inspector: %v", got)
 	}
-	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, &fakeModelInspector{})); !slices.Contains(got, ToolSessionModel) {
+	if got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, &fakeModelInspector{})); !slices.Contains(got, ToolSessionModel) {
 		t.Errorf("SessionModel missing with an inspector: %v", got)
 	}
 }
@@ -296,7 +296,7 @@ func TestAssistantToolsAreOmittedWhenTheAssistantIsOff(t *testing.T) {
 	tokens := NewTokenStore()
 	dev := devurls.NewStore(nil)
 
-	got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil, nil))
+	got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, nil))
 	if slices.Contains(got, ToolAssistantReport) {
 		t.Errorf("AssistantReport is registered with no assistant wired: %v", got)
 	}
@@ -317,7 +317,7 @@ func TestAssistantReportIsRegisteredWithoutTheHead(t *testing.T) {
 		Name: assistant.VerbListSessions, Tier: assistant.TierRead, Description: "List their sessions.",
 	}}}
 
-	got := toolNames(t, NewHandler(tokens, dev, nil, nil, nil, fake, nil))
+	got := toolNames(t, NewHandler(tokens, dev, nil, nil, fake, nil))
 	if !slices.Contains(got, ToolAssistantReport) {
 		t.Errorf("AssistantReport missing with a reporter wired: %v", got)
 	}
@@ -335,7 +335,7 @@ func TestTheVerbTableIsOnlyOnTheHeadsEndpoint(t *testing.T) {
 		Name: assistant.VerbListSessions, Tier: assistant.TierRead, Description: "List their sessions.",
 	}}}
 
-	sessions := toolNames(t, NewHandler(NewTokenStore(), dev, nil, nil, nil, fake, nil))
+	sessions := toolNames(t, NewHandler(NewTokenStore(), dev, nil, nil, fake, nil))
 	if slices.Contains(sessions, assistant.VerbListSessions) {
 		t.Errorf("a coding session is shown the assistant's verbs: %v", sessions)
 	}
@@ -366,7 +366,7 @@ func TestAssistantToolsSeparateASessionFromTheHead(t *testing.T) {
 			Name: "filter", Type: assistant.ParamString, Description: "Which ones.",
 		}},
 	}}}
-	h := NewHandler(tokens, dev, nil, nil, nil, fake, nil)
+	h := NewHandler(tokens, dev, nil, nil, fake, nil)
 	headEndpoint := NewAssistantHandler(NewTokenStore(), fake)
 
 	const sessionSID = "11111111-2222-3333-4444-555555555555"
@@ -414,7 +414,7 @@ func TestAssistantToolsSeparateASessionFromTheHead(t *testing.T) {
 func TestSessionToolsRefuseTheHead(t *testing.T) {
 	tokens := NewTokenStore()
 	dev := devurls.NewStore(nil)
-	h := NewHandler(tokens, dev, nil, nil, nil, &fakeAssistant{}, nil)
+	h := NewHandler(tokens, dev, nil, nil, &fakeAssistant{}, nil)
 
 	headSID := assistant.HeadIDPrefix + "66666666-7777-8888-9999-000000000000"
 	got := callTool(t, h, headSID, ToolSetSessionName, map[string]string{"name": "whatever"})

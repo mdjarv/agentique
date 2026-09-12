@@ -51,7 +51,7 @@ describe("BrainSnapshots", () => {
 
     // First Restore click reveals the confirm — it does NOT call the api yet.
     fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
-    expect(screen.getByText(/rolls the/i)).toBeTruthy();
+    expect(screen.getByText(/rolls/i)).toBeTruthy();
     expect(brainApi.restoreSnapshot).not.toHaveBeenCalled();
 
     // Confirming calls the api with the snapshot id.

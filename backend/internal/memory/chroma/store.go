@@ -110,7 +110,7 @@ func metadataFor(r memory.Record) map[string]any {
 func (s *Store) index(ctx context.Context, r memory.Record) {
 	// Captures are never recalled, so keep them out of the vector index. If a
 	// record became (or already was) a capture, ensure no stale vector lingers.
-	if r.Source == memory.SourceCapture {
+	if r.Source.Staged() {
 		if err := s.client.Delete(ctx, s.coll, []string{r.ID}); err != nil {
 			s.onErr(fmt.Errorf("chroma: drop capture vector %s: %w", r.ID, err))
 		}
@@ -168,7 +168,7 @@ func (s *Store) Reindex(ctx context.Context) error {
 	var ids, texts []string
 	var metas []map[string]any
 	for _, r := range recs {
-		if r.Source == memory.SourceCapture {
+		if r.Source.Staged() {
 			continue
 		}
 		ids = append(ids, r.ID)

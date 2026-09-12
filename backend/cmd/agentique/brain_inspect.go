@@ -207,11 +207,15 @@ func runBrainShow(cmd *cobra.Command, args []string) error {
 var brainSearchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search memories via the production recall path (hybrid or keyword)",
-	Long: `Run the query through the same recall path the live agent uses: a vector+keyword
-hybrid when semantic recall is configured (Chroma + embeddings), or keyword-only
-otherwise. Returns the query-relevant facts the brain would surface, ranked, plus
-any associative neighbours recall folds in. Pinned (always-injected) facts are not
-query-ranked — see 'brain list'.`,
+	Long: `Run the query through the same ranking the assistant's recall verb uses: a
+vector+keyword hybrid when semantic recall is configured (Chroma + embeddings), or
+keyword-only otherwise. Returns the query-relevant facts the brain would surface,
+ranked, plus any associative neighbours recall folds in. Pinned facts are not
+query-ranked — they ride the assistant's preamble; see 'brain list'.
+
+This is the browsing half of recall, so it shows a fact that has faded on disuse and
+has not been archived yet. The assistant's own pull drops one when archiving is on
+(see [brain] archive-after).`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runBrainSearch,
 }
@@ -318,7 +322,9 @@ func runBrainStats(cmd *cobra.Command, args []string) error {
 	// Graph connectivity over durable facts: structural edges (Related + DerivedFrom)
 	// unioned with the semantic kNN. SemanticEdges is nil in keyword mode, so the count
 	// degrades to structural connectivity only.
-	durable := filterRecords(all, func(r memory.Record) bool { return r.Source != memory.SourceCapture })
+	// Staged() rather than == SourceCapture: there are two capture tiers now
+	// (memory.SourceReported is the other), and neither is a durable fact.
+	durable := filterRecords(all, func(r memory.Record) bool { return !r.Source.Staged() })
 	edges, eerr := svc.SemanticEdges(ctx, durable)
 	if eerr != nil {
 		fmt.Fprintf(os.Stderr, "warning: semantic edges unavailable: %v\n", eerr)
@@ -354,7 +360,9 @@ func computeBrainStats(all []memory.Record) brainStats {
 	}
 	scopeCounts := map[string]int{}
 	for _, r := range all {
-		if r.Source == memory.SourceCapture {
+		// Both capture tiers count here: Captures is how much staged material is
+		// waiting on consolidation, whichever door it arrived through.
+		if r.Source.Staged() {
 			s.Captures++
 			continue
 		}

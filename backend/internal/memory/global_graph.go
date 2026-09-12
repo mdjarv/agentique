@@ -23,7 +23,7 @@ const DefaultMinPromotionScopes = 2
 // they can never drift out of agreement.
 func isPromotable(r Record) bool {
 	// Archived = cold tier (M5): never resurrect a faded fact as a new global promotion.
-	return r.Scope != ScopeGlobal && r.Source != SourceCapture && !isProtected(r) && !isArchived(r)
+	return r.Scope != ScopeGlobal && !r.Source.Staged() && !isProtected(r) && !isArchived(r)
 }
 
 // CrossScopeGroup is a topic community whose member facts recur across two or more

@@ -71,8 +71,23 @@ export function lifecycleBadge(memory: Memory): LifecycleBadge | null {
   return null;
 }
 
-// isCapture reports whether a memory is a raw capture (never injected, awaiting churn
-// promotion) — the ingest tier, badged distinctly from durable facts.
+// STAGED_SOURCES are the sources that put a fact in the CAPTURE tier: raw episodic
+// material, never recalled, waiting for the churn to judge it. There are two because
+// provenance survives the door it came through — `capture` is the assistant's own
+// sentence, `reported` is agent-written text about a repository nobody here authored
+// (memory.Source.Staged() is the same predicate on the Go side). Module-level so the
+// array is one stable reference.
+export const STAGED_SOURCES: readonly string[] = ["capture", "reported"];
+
+// isCapture reports whether a memory is in the capture tier (never recalled, awaiting
+// churn promotion) — badged distinctly from durable facts. One predicate, because a
+// surface that treats `reported` as durable shows an agent's claim as a settled fact.
 export function isCapture(memory: Memory): boolean {
-  return memory.source === "capture";
+  return STAGED_SOURCES.includes(memory.source);
+}
+
+// pendingCaptures totals the capture tier from a `bySource` histogram (the shape
+// /api/brain/status answers with, which counts every source separately).
+export function pendingCaptures(bySource: Record<string, number>): number {
+  return STAGED_SOURCES.reduce((sum, source) => sum + (bySource[source] ?? 0), 0);
 }

@@ -1,14 +1,23 @@
-# The brain — persistent agent memory
+# The brain — the assistant's long-term memory
 
-A knowledge store agents read from and write to across sessions. Facts learned in
-one session (conventions, preferences, gotchas, decisions) come back in later
-ones, surviving the per-worktree isolation that otherwise resets an agent's
-context every run.
+**As of M2 this store has one reader: the assistant** (`docs/assistant.md`). It
+was built for a coding agent and disabled for adding noise — a coding agent has
+the repo, CLAUDE.md and git history in front of it, and facts injected beside
+those competed with them, arrived without provenance, and were judged by an
+outcome signal a session never gives cleanly. The facts it holds are about the
+operator's world, which is what the assistant needs on every turn.
 
-Three phases, borrowed from how human memory is described:
+So memory reaches no coding session. Nothing is injected into a session's
+preamble or its turns, no session tool writes a fact, and nothing learns from a
+finished transcript. What remains is the store, its churn, its page and its CLI —
+and one reader that pulls from it because it knows what it is trying to do.
 
-- **recall** — the agent gets what is already known, pushed in rather than pulled.
-- **encode** — durable facts are saved; raw turn material is staged as episodic
+A knowledge store of durable facts about the operator's world: conventions,
+preferences, gotchas, decisions. Three phases, borrowed from how human memory is
+described:
+
+- **recall** — the assistant pulls what is already known, by asking.
+- **encode** — durable facts are saved; raw material is staged as episodic
   *captures*.
 - **consolidate** — a periodic pass promotes captures into facts, merges
   duplicates, abstracts repeated episodes into rules, and ages out what has gone
@@ -19,7 +28,7 @@ Three phases, borrowed from how human memory is described:
 `backend/internal/memory` is the liftable core: policy-free machinery depending
 only on the standard library, `google/uuid` and `yaml.v3`, all already in
 agentkit's `go.mod`. `backend/internal/brain` is agentique's policy on top of it:
-scope-is-project, config, the REST and MCP surfaces.
+scope-is-project, config, and the REST surface the memory page reads.
 
 The dependency direction is the invariant. `internal/memory` imports nothing from
 agentique, which is what makes the lift a directory move and an import rename.
@@ -84,7 +93,9 @@ and never archive. **Nothing in the aging path deletes a record.**
 
 Two safeguards on the way in: the read-time fade is gated on archiving being
 enabled, and `archive-after` defaults to off, so nothing drops until an operator
-opts in after curating. The label backfill stamps `last_used=now` where it is
+opts in after curating. A third follows from where the fade is applied — only on
+the model-facing pull (`Service.RecallForPull`), never on the browsing recall the
+memory page and `brain search` read, so what is fading stays curatable. The label backfill stamps `last_used=now` where it is
 zero, so the disuse clock starts at the migration boundary rather than at an
 ancient `updated`.
 
@@ -103,35 +114,51 @@ neighbours after the flat top-K (at most 3 per seed, at most K total) at lower
 priority. It reads the persisted link graph, so nothing is recomputed on the hot
 path, and it is only active on scopes that have been consolidated.
 
-### Recall is fluid and per-turn
+### Knowledge is pulled; only news is pushed
 
-The system preamble is fixed at connect, before the task prompt exists, so
-query-dependent recall cannot live there. Two pushes instead:
+The noise was push: a retriever guessing relevance from keyword or cosine overlap
+and injecting its guess into every turn, judged by a model that had not asked.
+So nothing pushes facts anywhere. The assistant's head carries the **pinned set**
+and an **index** (one line per area or scope with a count) in its preamble, on the
+precedent of a memory directory whose index is loaded and whose bodies are read on
+demand; the bodies arrive only through the `recall` verb, which the head calls
+because it knows what it is trying to do.
 
-- **Pinned facts to the system preamble** at create and resume. Always-on facts,
-  injected before any prompt exists.
-- **Task-relevant recall on every turn.** `Session.injectRecall` runs
-  `memory.Recall` against the actual prompt each turn, so recall follows the
-  conversation as it drifts. A session-level seen-set is passed as `exclude`, so
-  each turn injects only what is newly relevant rather than re-dumping. A
-  low-content gate (`memory.TokenCount < 2`) skips trivial turns like "ok".
+`Service.RecallForPull` is the implementation behind that verb, reached through
+`assistant.Memory` (`internal/server/assistant_memory.go`). It runs
+`memory.Recall` over every scope `ListScopes` answers, with `k` clamped
+server-side, and hands back records rather than prose — the head sees facts with
+their ids, categories, sources and confidence tiers. Pinned facts are dropped from
+the answer, because they are already in the preamble with their ids.
 
-Do not reintroduce first-turn-only recall.
+**Two recalls, one query, and the difference is the read-time fade.**
+`Service.Recall` is the same query for a *person* — the memory page's search box
+and `agentique brain search` — and applies no `ArchiveFloor`. `RecallForPull` is
+the same query for a *model* and applies the configured one, so a fact that has
+gone cold stops being asserted to a head a while before the churn archives it.
+The split is not decoration: a faded fact has not been archived yet, so it is
+still a live row in the list beside that search box, and a row you can see and
+cannot find by searching for it is one surface telling the operator two things.
+Both build their query in one place (`Service.recall`), so the veto and vouch
+thresholds cannot drift between them.
 
-Hits are prepended as a `<brain><fact id="…">…</fact></brain>` envelope, which
-gives the model an unambiguous memory-versus-user boundary and gives the frontend
-something to parse into a "Recalled from memory" card. The framing (background
-context, verify first) and the `MemoryUsed`/`MemoryFlag` hooks are explained once
-in the system preamble, so the per-turn block stays compact.
+`Service.RecallBlock` is the OLD path and nothing calls it: it composed the
+`<brain><fact id="…">…</fact></brain>` envelope a session's turn was injected
+with, and `exclude` was the per-session seen-set that made that delta. Its doc
+comment says so, at length, because wiring it back is the one change this section
+forbids. The frontend still parses the envelope, for the transcripts recorded
+before M2 that carry one.
 
-A 3s timeout bounds each lookup. It degrades to no injection when the brain is
-off, recall is slow or fails, or nothing new matches. A read-through corpus cache
-keeps the per-turn `List` cheap.
+**Do not reintroduce injection into sessions** — not first-turn, not per-turn, not
+pinned facts in a preamble. Memory reaches a coding session only through the
+prompt the assistant drafts, in text the operator can read and edit before it
+goes: visible, never injected.
 
-Each newly-surfaced fact gets `BumpUses` and `LastUsedAt` stamped, so per-turn
-recall doubles as the read signal feeding two-factor strength, strength-weighted
-decay and spaced review. Those were starved when recall was pull-only and fired
-once.
+A read-through corpus cache keeps `List` cheap. Each fact a pull returns gets
+`BumpUses` and `LastUsedAt` stamped, so recall doubles as the read signal feeding
+two-factor strength, strength-weighted decay and spaced review. Corroboration
+improved for free in the move: a fact the head pulled and then used is a real
+signal, where an injected fact that was maybe read was not.
 
 ## Consolidation
 
@@ -201,16 +228,22 @@ memory list is correct immediately while recall ranking may be briefly stale.
 
 ## Agent surface
 
-Auto-approved MCP tools, scoped to the calling session's project plus global:
+**There is none.** A coding session sees no memory tool, and its tool list does
+not carry one: `mcphttp` registers no memory group, and the `MemoryAdd` /
+`MemorySearch` / `MemoryUsed` / `MemoryFlag` tools are gone rather than gated.
+Sessions never write facts. A session that learns something worth keeping says so
+through `AssistantReport`, which lands in the assistant's journal as untrusted
+text; a notable entry becomes a capture for consolidation to judge.
 
-| Tool | Effect |
-|---|---|
-| `MemoryAdd(text, category)` | Save a durable fact. |
-| `MemorySearch(query)` | Recall pinned plus relevant facts. Output carries each fact's id. |
-| `MemoryUsed(id)` | Confirm a recalled fact helped. Strengthens it toward a 0.95 corroboration ceiling. |
-| `MemoryFlag(id, reason)` | Flag a recalled fact as wrong or outdated. Weakens it into the review queue, never deletes. |
+The one reader reaches the store through the assistant's verb table
+(`docs/assistant.md`): `recall`, `remember`, `confirm_memory`, `flag_memory`,
+each with the provenance the write carries. Every write is journaled, so the
+conversation holds a record of it.
 
-Ids come from `MemorySearch` output or from a recalled-memory block.
+`brain.Service` is what those verbs are built on — `RecallForPull`, `Add`,
+`Capture`/`CaptureFrom`, `Confirm`, `Flag`, `SetPinned`, `List`, `ListScopes` —
+plus `Recall` and the rest of the REST surface the memory page reads, and the
+`agentique brain …` CLI.
 
 ## Wire types are hand-synced
 
@@ -265,28 +298,42 @@ The loop runs on its own, not just from the CLI and UI.
 
 **The subsystem is opt-in.** `[brain] enabled` is the master switch and defaults
 to false, so everything in this document is inert until it is set. Off means the
-brain is never constructed: no `/api/brain` routes, no memory MCP tools, no
-recall, no session-end learning, no scheduled consolidation, and `features.brain`
-in `/api/health` is false so the SPA drops the Brain destination rather than
-offering a link that lands on the catch-all. Nothing on disk is touched, so
-turning it back on resumes with the store intact. A config carrying other
-`[brain]` keys while the switch is off logs a line at boot naming the switch —
-settings that silently do nothing are worse than settings that are absent.
+brain is never constructed: no `/api/brain` routes, no scheduled consolidation,
+and `features.brain` in `/api/health` is false so the SPA drops the memory
+destination rather than offering a link that lands on the catch-all. Nothing on
+disk is touched, so turning it back on resumes with the store intact. A config
+carrying other `[brain]` keys while the switch is off logs a line at boot naming
+the switch — settings that silently do nothing are worse than settings that are
+absent.
 
-**Auto-recall** is on by default *once the subsystem is on*; `recall = "off"`
-disables it. Covered above. Note it is a quoted string rather than a bool
-because it defaults on, and a Go bool cannot separate "unset" from "false";
-`enabled` has no such problem precisely because it defaults off.
+**On with the assistant off, memory is stored and browsable and nothing recalls
+it**, and serve says exactly that at boot. Nothing refuses to boot over it: the
+store, the routes and the page all work, and `[experimental] assistant` is the
+fix.
 
-**Auto-encode is opt-in and stages captures only.** With `learn-model` set, a
-finished session's transcript is distilled into raw captures (`source: capture`,
-never injected) in the project scope, asynchronously, skipping trivial sessions.
+**Four keys are retired and ignored**: `recall`, `learn-model`, `outcome-model`
+and `retry-max`, plus their `AGENTIQUE_BRAIN_*` overrides. They described
+session-side recall and session-end learning, which are gone rather than switched
+off. A config carrying one still decodes and still boots **whatever type it was
+written as** — each is `config.RetiredKey`, an alias for `any`, because `recall`
+used to be a string whose off switch was `"false"` and a typed field made the
+bool spelling a decode error that refused to start the server. Each key is named
+in its own warning at startup.
 
-The only path from capture to injectable fact is the churn. So a deployment with
-a learn model set **must also enable scheduled consolidation with a consolidate
-model**. Promotion is LLM-only, so an interval set with `consolidate-model` empty
-runs deterministic dedup and decay that never drains captures, and they pile up
-forever. Set both.
+**Captures come from the assistant, never from a transcript.** Its `remember`
+verb writes a fact outright; a notable journal entry becomes a capture when it is
+written. There is no background pass over a finished session, so nothing stages
+memory from work the operator never asked to be remembered.
+
+The only path from a capture to a recallable fact is the churn, and promotion is
+LLM-only — so a deployment that stages captures **must also enable scheduled
+consolidation with a consolidate model**. An interval set with
+`consolidate-model` empty runs deterministic dedup and decay that never drains
+captures, and they pile up forever. Staging is not opt-in any more — every
+notable journal entry is captured — so the pairing is enforced by a boot warning
+rather than by the operator having set a `learn-model` first: brain and assistant
+both on with either consolidate key empty says at startup that captures are being
+staged and nothing can promote them.
 
 Re-observing a known fact reinforces the durable fact instead of stacking a
 redundant capture. The dedup set stays durable-only, so capture-versus-capture
@@ -296,8 +343,8 @@ still never dedups.
 `consolidate-model` for LLM reorganization (otherwise deterministic dedup and
 decay). Auto-apply is safe because of the consolidation guards.
 
-Every memory change broadcasts a `brain.updated` WebSocket event that flares the
-nav button and refreshes open tabs.
+Every memory change broadcasts a `brain.updated` WebSocket event that pulses the
+assistant row's orb track once and refreshes open tabs.
 
 ## CLI
 
@@ -391,9 +438,11 @@ cumulative uses and derivation depth) from retrieval strength (decays with
 disuse). The one new persisted field is `LastUsedAt`, needed for disuse aging.
 
 **Recall is a write.** That is the keystone. All three signals ship: shown
-(`BumpUses` stamps `LastUsedAt`), contradicted (`MemoryFlag`), and
-confirmed-useful (`MemoryUsed`). Interference detection and spaced review follow
-from it.
+(`BumpUses` stamps `LastUsedAt`), contradicted (`Flag`), and confirmed-useful
+(`Confirm`/`MarkHelped`). Interference detection and spaced review follow from
+it. The tool names those two wore in the session era (`MemoryFlag`,
+`MemoryUsed`) are gone; the verbs the assistant calls are `flag_memory` and
+`confirm_memory`.
 
 Episodic staging and replay is the piece still missing; it is the natural consumer
 of salience.
@@ -410,10 +459,14 @@ Trust is calibrated by outcome and gates behaviour at `ActOnConfidence`, which i
 what promotes high-confidence preferences into the operating contract the agent
 follows without re-asking.
 
-A session-end LLM judge recovers the facts recall injected and emits the same
-signal itself, so the loop does not depend on an agent remembering to call the
-tools. An automatic `helped` weighs **half** an explicit one; the negative half
-keeps a high evidence bar.
+The signal is **conversational** as of M2. "Yes" and "no, we changed that" are
+in-band on the assistant's thread, which is the human confirmation this design
+ranks above corroboration and could never get from a session: `confirm_memory`
+and `flag_memory` are the two verbs. The session-end LLM judge that used to
+recover the facts recall had injected and rule on them is gone with the injection
+it audited. `MarkAutoHelped` — an automatic `helped` weighing **half** an explicit
+one — survives in the service with no producer; it is what a future non-human
+corroborator would use.
 
 ### Salience gating
 
@@ -465,24 +518,31 @@ consolidation passed an empty `DecayPolicy{}` so decay never fired, re-observing
 a known fact was a no-op, interference detection never reconciled, and learning
 only triggered on session *deletion*.
 
-Band 1 turned that into an ingest, churn and inject pipeline with an injection
-gate. The reversibility rules that came out of it are load-bearing: markdown is
-the source of truth, everything else is a rebuildable index; archive, never
-delete; snapshot before every churn.
+Band 1 turned that into an ingest, churn and recall pipeline with a gate on what
+is recallable. Its injection half is what M2 removed; the reversibility rules that
+came out of it are load-bearing and unchanged: markdown is the source of truth,
+everything else is a rebuildable index; archive, never delete; snapshot before
+every churn.
 
 Band 2, the Curator, is still design-only.
 
 ### Brain UI
 
 Band 1 was backend-only by design, so none of it was visible or manageable. The
-Brain tab makes it so.
+page makes it so. It lives at `/assistant/memory` and is titled "Memory", under
+the assistant that reads it; `/brain` stays as a redirect, and `features.brain`
+still decides whether it is offered. Its home is the thread's header — except
+with the assistant off, where that header is unreachable and the rail's ⋯ menu
+carries the row instead (`AppSidebar`), so the destination always has exactly
+one home and it is never none. The heading keeps the old name because a
+dozen code comments cite `brain.md#brain-ui` as the spec anchor for F0-F6.
 
 Every memory row is self-describing: a capture, archived or superseded badge,
 compact evidence and volatility chips, and a corroboration count. The defaults
 (evidence `inferred`, volatility `slow`, lifecycle `active`) render nothing, so
 ordinary rows stay quiet.
 
-The list shows only live injectable facts by default. Two toolbar toggles reveal
+The list shows only live recallable facts by default. Two toolbar toggles reveal
 captures and archived rows, each with a count. Filtering is component-local rather
 than in the store, because the stable-selector rule keeps derived lists out of
 selectors.
@@ -509,7 +569,8 @@ and put full text on hover.
   review, and how an auto-update is marked in provenance.
 - **Scheduler placement.** Spaced review as part of scheduled consolidation, or
   its own lighter tick.
-- **Outcome-judge tuning.** The session-end judge's precision and recall over
-  organic sessions, and the 0.25 automatic weight, want a live soak.
+- **Corroboration without a human.** `MarkAutoHelped` and its 0.25 automatic
+  weight have no producer now that the session-end judge is gone. Whether
+  anything other than the operator should ever move trust is open.
 - **Persisted cross-scope edges.** Deferred; tracked in `docs/tech-debt.md`.
 </content>

@@ -243,17 +243,19 @@ considers done.
 Session deletion needs no scheduler code: the foreign key cascade handles it, and
 `PRAGMA foreign_keys=ON` is verified set at open.
 
-## Brain recall interaction
+## Brain recall interaction: none, as of M2
 
-Evicting between fires resets the per-session recall seen-set, so every fire would
-re-inject the same `<brain>` block and bump uses on the same facts 24 times a day
-with no corresponding `MemoryUsed`, polluting the outcome-signal calibration and
-paying tokens per fire.
+A fire used to carry a schedule origin into recall, because evicting between fires
+reset the per-session seen-set and a loop would otherwise re-inject the same
+`<brain>` block and bump the same facts 24 times a day, paying tokens per fire and
+polluting the outcome-signal calibration. That needed a per-schedule persisted
+seen-set, delta across evictions, with `BumpUses` skipped for schedule-origin
+injections.
 
-Fires carry a schedule origin into recall, which then runs with a **per-schedule
-persisted seen-set**, delta across evictions, and skips `BumpUses` for
-schedule-origin injections. The tool footer is excluded from the recall query
-text.
+All of it is gone with session-side recall (docs/assistant.md, the M2 contract):
+memory reaches no session, so a fire has no recall to gate. What survives of the
+schedule-origin distinction is unrelated to memory — a fire still skips activity
+bumps and unseen-completion, because schedule attention is its own channel.
 
 ## Turn identity and the completion registry
 

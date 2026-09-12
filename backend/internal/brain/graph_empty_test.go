@@ -12,7 +12,7 @@ import (
 
 // Every array field of the graph report must marshal as [] and never null: the
 // frontend types them all as arrays and reads .length unguarded, so one nil
-// slice takes the whole Brain tab down. An empty brain is the case that finds
+// slice takes the whole memory page down. An empty brain is the case that finds
 // it — a fresh install, and every test fixture.
 func TestGraphReportArraysAreNeverNullOnAnEmptyBrain(t *testing.T) {
 	svc, err := New(context.Background(), Config{Dir: t.TempDir()})
