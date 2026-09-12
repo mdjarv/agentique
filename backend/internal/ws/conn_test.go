@@ -73,6 +73,25 @@ func TestSubscribeProjectFansOutToMultipleProjects(t *testing.T) {
 	}
 }
 
+// TestSubscribeProjectAfterUnsubscribeIsHarmless replays the production
+// segfault: the read loop returned and run()'s defer unsubscribed while the
+// dispatch goroutine was still executing a queued project.subscribe. The
+// subscription used to be nilled there, and AddTopic on nil took the server
+// down. A late subscribe must neither panic nor deliver.
+func TestSubscribeProjectAfterUnsubscribeIsHarmless(t *testing.T) {
+	bus := eventbus.New()
+	c := newTestConn(bus)
+
+	c.unsubscribe()
+	c.subscribeProject("project-A")
+	c.unsubscribe() // idempotent, as run()'s defer and a test's defer both call it
+
+	bus.Publish("project-A", "session.event", "from-A")
+	if got := drainPushes(c, 1, 100*time.Millisecond); len(got) != 0 {
+		t.Fatalf("closed subscription delivered %d pushes: %+v", len(got), got)
+	}
+}
+
 // TestSubscribeProjectFiltersOutUnjoinedProjects confirms that events for
 // projects the conn has not joined are not forwarded.
 func TestSubscribeProjectFiltersOutUnjoinedProjects(t *testing.T) {
