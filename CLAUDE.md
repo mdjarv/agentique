@@ -803,6 +803,18 @@ minted. Mobile renders the same `SessionDock` in a sheet — one navigation mode
 two presentations — and simply omits `onMaximizedChange`, since a control that
 does nothing when pressed is worse than no control.
 
+**The stored dock width is a request; the pane decides.** It is one number in
+pixels for every session and it outlives the window it was dragged in, so a dock
+widened on a big screen comes back in a small one and the chat pays — at 160px
+the composer wrapped one character per line and its controls spilled into the
+dock. `clampDockWidth` gives the chat `MIN_CHAT_WIDTH` wherever the pane has it
+and splits the pane evenly where it does not, measured (`useElementWidth`) rather
+than assumed, because the pane also loses width to whatever else is on screen.
+`DockResizeHandle` takes the same cap: clamping only at render leaves the edge
+behind the cursor and a dead zone the width of the overshoot on the way back.
+The path that made this common is `useAutoOpenDock` — a session with a live
+workflow pops the dock open by itself, at a width nobody chose for that window.
+
 **Workflow is not a peer of Agents.** A workflow's agents ride its own progress
 events as `WorkflowProgressEntry` (a phase, a label, a state — no report, no
 narration), and `collectAgentRuns` skips `local_workflow` deliberately. They
