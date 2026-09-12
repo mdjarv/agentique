@@ -92,6 +92,18 @@ are in CLAUDE.md.
 
 ## What's next
 
+### The assistant
+
+A durable principal that owns the bigger picture: it remembers what you told
+it and what happened while you were away, keeps you in the loop, and within a
+tiered verb set starts and drives work on its own. The voice switchboard's
+non-voice parts (directory, follow set, reports, notices) move one layer down
+into `internal/assistant`, where the thread, the call and a later messaging
+gateway all attach to the same memory. The brain becomes the assistant's
+long-term memory and stops injecting into sessions, which is why it was
+disabled. Design settled, no code; four milestones. See
+[docs/assistant.md](docs/assistant.md).
+
 ### V5c — the CLI update button
 
 The last phase of in-app upgrades, and the only one with a settled contract and no
