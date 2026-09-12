@@ -545,6 +545,111 @@ trigger used to. `features.brain` is unchanged and still gates the page.
 true now; CLAUDE.md's brain paragraph replaces per-turn delta recall with the
 pull rule; `README.md`'s `[brain]` block drops the removed keys.
 
+## The M3 contract
+
+Proposals. The uncontained tier is never performed by the assistant and never
+refused either: asking for one of its verbs creates a proposal, a person
+decides it on a surface, and accepting re-checks the live facts before the
+same service the UI uses performs it. The names below are binding.
+
+**The table.** Migration 057, ASCII: `assistant_proposals` (`id` TEXT PK, a
+uuid; `created_at`; `verb`; `session_id`; `project_id`; `channel_id`; `args`
+JSON `'{}'`; `rationale`; `evidence` JSON `'{}'`; `status`; `decided_at`;
+`decided_via`; `outcome`; `expires_at`), indexed on `(status, created_at)`.
+`status` is the closed set `open`, `accepted`, `declined`, `stale`, `failed`,
+`expired`. Timestamps are UTC RFC3339 seconds. Queries: `InsertAssistantProposal`,
+`GetAssistantProposal`, `ListAssistantProposals` (open first, then decided,
+newest first, limited), `DecideAssistantProposal` (status, decided_at,
+decided_via, outcome), `ExpireAssistantProposals` (open past `expires_at`).
+`proposalTTL` is seven days; expiry is applied lazily on list and on decide.
+
+**The wire type** is `assistant.Proposal` `{ID, CreatedAt, Verb, SessionID,
+SessionName, ProjectID, ProjectName, ChannelID, Args, Rationale, Evidence,
+Status, DecidedAt, DecidedVia, Outcome, ExpiresAt}`, every field optional.
+`Evidence` is the server facts the proposal was judged on, named so a card can
+quote them: for merge and rebase `{ahead, behind, dirty, mergeStatus, busy}`;
+for delete and reclaim the storage verdict and its reason; for dissolve the
+member count and how many are busy; for set_session_model and
+set_session_mode the current value.
+
+**Verbs.** The eight uncontained verbs (`merge_session`, `rebase_session`,
+`archive_session`, `delete_session`, `reclaim_session`, `dissolve_channel`,
+`set_session_model`, `set_session_mode`) gain handlers that CREATE a
+proposal. `Invoke` keeps its tier gate but the gate now dispatches to that
+handler instead of answering `ErrProposalRequired`; `ProposalRequiredError`
+goes. A handler validates the target (local, exists, `set_session_mode`
+against the closed set the `session.set-permission` op accepts, a model
+through the catalog), takes a `rationale` argument the head must supply,
+gathers the evidence, refuses when the evidence already says no (a merge of a
+branch that is behind is "rebase first", not a proposal), returns the existing
+open proposal when one exists for the same verb and target, writes the row,
+journals `proposal_made`, delivers `ItemProposal` to every surface, and answers
+the head with the proposal id and the sentence that the operator decides it on
+the thread or on a call. The head has no verb to decide.
+
+**Deciding.** `Service.Decide(ctx, surface, id string, accept bool)
+(Proposal, error)`. A row that is not `open` answers itself unchanged. Decline
+sets `declined`. Accept re-checks the same facts through the executor and,
+when they no longer allow the action, sets `stale` with the reason as
+`outcome` and performs nothing; otherwise it performs the action through
+`Actions`, sets `accepted` with the executor's one-line outcome, or `failed`
+with the error. Every decision journals `proposal_decided`, records
+`decided_via` (the surface), and delivers the row to every surface.
+
+**Actions** is the collaborator (`WithActions`), an interface in the assistant
+package implemented in the server package over the services the WS ops call:
+`Merge(ctx, sessionID) (string, error)` over `GitService.Merge` with mode
+`merge`, `Rebase` over `GitService.Rebase`, `Archive` over
+`Service.ArchiveSession`, `Delete` over `Service.DeleteSession`, `Reclaim`
+over `Service.ReclaimSessions`, `Dissolve(ctx, channelID, keepHistory)` over
+`DissolveChannelKeepHistory`, `SetModel` over `Service.SetSessionModel`,
+`SetMode` over `Service.SetPermissionMode`; and the facts: `BranchFacts(ctx,
+sessionID)` `{Ahead, Behind, Dirty, MergeStatus, Busy}` read fresh through
+`GitService.RefreshGitStatus` rather than the cache, `DeleteVerdict(ctx,
+sessionID)` over `storage.Evaluate`, `Busy(ctx, sessionID)` over
+`TurnInFlight`, `ChannelBusy(ctx, channelID)` (any member in flight). The
+checks live in the assistant package, in one table keyed by verb, and are the
+same code at proposal time and at accept time. A merge or rebase that returns
+`conflict`, `needs_rebase` or `dirty_worktree` is `failed` with that status as
+the outcome, never a crash.
+
+**WS.** `assistant.proposals` (read lane) answers `{proposals}`;
+`assistant.decide` (mutation, through `handleRequestAsync` because a merge
+takes seconds) takes `{id, accept}` and answers the row; `assistant.digest`
+(mutation) posts a digest and answers the message. Push `assistant.proposal`
+on the global topic carries the row on create and on decide.
+
+**Journal kinds** gain `proposal_made` and `proposal_decided`; the closed set
+is thirteen.
+
+**Surfaces.** `ItemProposal` joins the Item union with `Proposal *Proposal`.
+The thread renders open proposals as cards between the strip and the
+conversation: the verb in words, the target in its project, the evidence,
+the rationale, Accept and Decline; a decided one leaves the cards and shows
+in the strip through `proposal_decided`. Accept and Decline call
+`assistant.decide`. The deck's Needs-you band lists open proposals as rows of
+kind `proposal`, ranked after `approval` and `question` and before `unread`,
+with the same two actions; `needs-you.ts` keeps its session kinds and the
+deck's row source gains the proposals from the assistant store. A call gets
+two tools, `list_proposals` and `decide_proposal(id, accept, target)`, where
+`target` is the name the assistant just said and is judged by `judgeTarget`
+against the proposal's own session row (a decline needs no target); a new
+proposal delivered to a live call is spoken with the verb, the target in its
+project and "say yes to accept", and the call's log gets a line for it.
+
+**The digest.** `Service.Digest(ctx) (Message, error)` composes, without a
+model, the journal since `assistant_state.last_digest_at` grouped in this
+order: blocked, failed, open proposals, finished, merged and archived,
+reports (quoted), then everything else, each group one line per entry with
+the session named in its project; posts it as a persona message with
+`metadata.kind = "digest"`; stamps `last_digest_at`. Empty is one sentence
+saying so. The thread's header gains a Digest control beside Memory, and the
+head gets a contained `digest` verb. The timed digest is M4.
+
+**Docs.** CLAUDE.md gains the tier rule in one paragraph under the assistant
+heading it already has for the row: uncontained means proposed, the yes is
+given where the card is shown or the target is read back, accept re-checks.
+
 ## Build notes
 
 **The session.state observer journals transitions against a primed baseline,
