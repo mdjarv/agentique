@@ -25,12 +25,12 @@ const daysAgo = (d: number) => new Date(now - d * 86400000).toISOString();
 // IDs must be UUID-shaped — sessionShortId uses the first segment (before first "-")
 const P = {
   agentique: "aaa00001-0000-4000-8000-000000000001",
-  thePint: "aaa00002-0000-4000-8000-000000000002",
-  alltixApi: "aaa00003-0000-4000-8000-000000000003",
-  senseview: "aaa00004-0000-4000-8000-000000000004",
+  cornerstore: "aaa00002-0000-4000-8000-000000000002",
+  orchardApi: "aaa00003-0000-4000-8000-000000000003",
+  gridwatch: "aaa00004-0000-4000-8000-000000000004",
   weekendJam: "aaa00005-0000-4000-8000-000000000005",
-  youtrackCli: "aaa00006-0000-4000-8000-000000000006",
-  hkUi: "aaa00007-0000-4000-8000-000000000007",
+  trackerCli: "aaa00006-0000-4000-8000-000000000006",
+  transitUi: "aaa00007-0000-4000-8000-000000000007",
 } as const;
 
 const S = {
@@ -43,15 +43,15 @@ const S = {
   imageGallery: "ccc00002-0000-4000-8000-000000000002",
   schedulerTests: "ddd00001-0000-4000-8000-000000000001",
   queryOptimizer: "bbb00006-0000-4000-8000-000000000006",
-  // senseview
+  // gridwatch
   sensorDashboard: "eee00001-0000-4000-8000-000000000001",
   alertRules: "eee00002-0000-4000-8000-000000000002",
   // weekend-jam
   samplerEngine: "fff00001-0000-4000-8000-000000000001",
-  // youtrack-cli
+  // tracker-cli
   issueSearch: "ggg00001-0000-4000-8000-000000000001",
   sprintBoard: "ggg00002-0000-4000-8000-000000000002",
-  // hkui
+  // transitui
   realtimeMap: "hhh00001-0000-4000-8000-000000000001",
   departureTimes: "hhh00002-0000-4000-8000-000000000002",
 } as const;
@@ -68,7 +68,7 @@ export const MOCK_PROJECTS: Project[] = [
   {
     id: P.agentique,
     name: "agentique",
-    path: "/home/user/git/agentique",
+    path: "/home/dev/code/agentique",
     slug: "agentique",
     default_model: "sonnet",
     default_permission_mode: "default",
@@ -86,10 +86,10 @@ export const MOCK_PROJECTS: Project[] = [
     updated_at: hoursAgo(2),
   },
   {
-    id: P.thePint,
-    name: "The Pint",
-    path: "/home/user/git/the-pint",
-    slug: "the-pint",
+    id: P.cornerstore,
+    name: "Cornerstore",
+    path: "/home/dev/code/cornerstore",
+    slug: "cornerstore",
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
@@ -106,10 +106,10 @@ export const MOCK_PROJECTS: Project[] = [
     updated_at: daysAgo(1),
   },
   {
-    id: P.alltixApi,
-    name: "alltix-api",
-    path: "/home/user/git/alltix/api",
-    slug: "alltix-api",
+    id: P.orchardApi,
+    name: "orchard-api",
+    path: "/home/dev/code/orchard-api",
+    slug: "orchard-api",
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
@@ -126,10 +126,10 @@ export const MOCK_PROJECTS: Project[] = [
     updated_at: daysAgo(3),
   },
   {
-    id: P.senseview,
-    name: "SenseView UI",
-    path: "/home/user/git/senseview-ui",
-    slug: "senseview-ui",
+    id: P.gridwatch,
+    name: "Gridwatch",
+    path: "/home/dev/code/gridwatch",
+    slug: "gridwatch",
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
@@ -148,7 +148,7 @@ export const MOCK_PROJECTS: Project[] = [
   {
     id: P.weekendJam,
     name: "weekend-jam",
-    path: "/home/user/git/weekend-jam",
+    path: "/home/dev/code/weekend-jam",
     slug: "weekend-jam",
     default_model: "sonnet",
     default_permission_mode: "default",
@@ -166,10 +166,10 @@ export const MOCK_PROJECTS: Project[] = [
     updated_at: daysAgo(2),
   },
   {
-    id: P.youtrackCli,
-    name: "YouTrack CLI",
-    path: "/home/user/git/youtrack-cli",
-    slug: "youtrack-cli",
+    id: P.trackerCli,
+    name: "Tracker CLI",
+    path: "/home/dev/code/tracker-cli",
+    slug: "tracker-cli",
     default_model: "sonnet",
     default_permission_mode: "default",
     default_system_prompt: "",
@@ -186,9 +186,9 @@ export const MOCK_PROJECTS: Project[] = [
     updated_at: daysAgo(5),
   },
   {
-    id: P.hkUi,
+    id: P.transitUi,
     name: "HållKoll UI",
-    path: "/home/user/git/hkui",
+    path: "/home/dev/code/transitui",
     slug: "h-llkoll-ui",
     default_model: "sonnet",
     default_permission_mode: "default",
@@ -223,7 +223,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "auto",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-auth-refactor",
+    worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-auth-refactor",
     worktreeBranch: "session-auth-refactor",
     gitVersion: 1,
     commitsAhead: 3,
@@ -252,7 +252,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-ws-reconnect",
+    worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-ws-reconnect",
     worktreeBranch: "session-ws-reconnect",
     gitVersion: 1,
     commitsAhead: 1,
@@ -280,7 +280,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "auto",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-dark-mode",
+    worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-dark-mode",
     worktreeBranch: "session-dark-mode",
     worktreeMerged: true,
     gitVersion: 1,
@@ -305,7 +305,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-migration-bug",
+    worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-migration-bug",
     worktreeBranch: "session-migration-bug",
     gitVersion: 1,
     commitsAhead: 1,
@@ -349,7 +349,7 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "auto",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
+    worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-query-optimizer",
     worktreeBranch: "session-query-optimizer",
     gitVersion: 1,
     commitsAhead: 5,
@@ -366,10 +366,10 @@ const AGENTIQUE_SESSIONS: SessionInfo[] = [
   },
 ];
 
-const THE_PINT_SESSIONS: SessionInfo[] = [
+const CORNERSTORE_SESSIONS: SessionInfo[] = [
   {
     id: S.paymentFlow,
-    projectId: P.thePint,
+    projectId: P.cornerstore,
     pinned: false,
     pinOrder: 0,
     name: "Payment flow redesign",
@@ -379,7 +379,7 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
     permissionMode: "plan",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-payment-flow",
+    worktreePath: "/home/dev/code/cornerstore/.agentique/worktrees/session-payment-flow",
     worktreeBranch: "session-payment-flow",
     gitVersion: 1,
     commitsAhead: 0,
@@ -393,7 +393,7 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
   },
   {
     id: S.imageGallery,
-    projectId: P.thePint,
+    projectId: P.cornerstore,
     pinned: false,
     pinOrder: 0,
     name: "Image gallery component",
@@ -403,7 +403,7 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "auto",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/the-pint/.agentique/worktrees/session-image-gallery",
+    worktreePath: "/home/dev/code/cornerstore/.agentique/worktrees/session-image-gallery",
     worktreeBranch: "session-image-gallery",
     gitVersion: 1,
     commitsAhead: 2,
@@ -417,10 +417,10 @@ const THE_PINT_SESSIONS: SessionInfo[] = [
   },
 ];
 
-const ALLTIX_SESSIONS: SessionInfo[] = [
+const ORCHARD_SESSIONS: SessionInfo[] = [
   {
     id: S.schedulerTests,
-    projectId: P.alltixApi,
+    projectId: P.orchardApi,
     pinned: false,
     pinOrder: 0,
     name: "Scheduler test coverage",
@@ -441,11 +441,11 @@ const ALLTIX_SESSIONS: SessionInfo[] = [
   },
 ];
 
-// SenseView: one running + one with pending approval → bell badge
-const SENSEVIEW_SESSIONS: SessionInfo[] = [
+// Gridwatch: one running + one with pending approval → bell badge
+const GRIDWATCH_SESSIONS: SessionInfo[] = [
   {
     id: S.sensorDashboard,
-    projectId: P.senseview,
+    projectId: P.gridwatch,
     pinned: false,
     pinOrder: 0,
     name: "Sensor dashboard widgets",
@@ -455,7 +455,7 @@ const SENSEVIEW_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/senseview-ui/.agentique/worktrees/session-sensor-dashboard",
+    worktreePath: "/home/dev/code/gridwatch/.agentique/worktrees/session-sensor-dashboard",
     worktreeBranch: "session-sensor-dashboard",
     gitVersion: 1,
     commitsAhead: 2,
@@ -469,7 +469,7 @@ const SENSEVIEW_SESSIONS: SessionInfo[] = [
   },
   {
     id: S.alertRules,
-    projectId: P.senseview,
+    projectId: P.gridwatch,
     pinned: false,
     pinOrder: 0,
     name: "Alert rule configuration",
@@ -479,7 +479,7 @@ const SENSEVIEW_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/senseview-ui/.agentique/worktrees/session-alert-rules",
+    worktreePath: "/home/dev/code/gridwatch/.agentique/worktrees/session-alert-rules",
     worktreeBranch: "session-alert-rules",
     gitVersion: 1,
     commitsAhead: 1,
@@ -508,7 +508,7 @@ const WEEKEND_JAM_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "auto",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/weekend-jam/.agentique/worktrees/session-sampler-engine",
+    worktreePath: "/home/dev/code/weekend-jam/.agentique/worktrees/session-sampler-engine",
     worktreeBranch: "session-sampler-engine",
     gitVersion: 1,
     commitsAhead: 1,
@@ -521,11 +521,11 @@ const WEEKEND_JAM_SESSIONS: SessionInfo[] = [
   },
 ];
 
-// YouTrack CLI: one completed (unseen) + one running → cog badge (running > unseen)
-const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
+// Tracker CLI: one completed (unseen) + one running → cog badge (running > unseen)
+const TRACKER_CLI_SESSIONS: SessionInfo[] = [
   {
     id: S.issueSearch,
-    projectId: P.youtrackCli,
+    projectId: P.trackerCli,
     pinned: false,
     pinOrder: 0,
     name: "Issue search filters",
@@ -546,7 +546,7 @@ const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
   },
   {
     id: S.sprintBoard,
-    projectId: P.youtrackCli,
+    projectId: P.trackerCli,
     pinned: false,
     pinOrder: 0,
     name: "Sprint board layout",
@@ -556,7 +556,7 @@ const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
     permissionMode: "default",
     autoApproveMode: "manual",
     behaviorPresets: DEFAULT_PRESETS,
-    worktreePath: "/home/user/git/youtrack-cli/.agentique/worktrees/session-sprint-board",
+    worktreePath: "/home/dev/code/tracker-cli/.agentique/worktrees/session-sprint-board",
     worktreeBranch: "session-sprint-board",
     gitVersion: 1,
     commitsAhead: 0,
@@ -571,10 +571,10 @@ const YOUTRACK_CLI_SESSIONS: SessionInfo[] = [
 ];
 
 // HållKoll UI: two completed (unseen) → check badge
-const HK_UI_SESSIONS: SessionInfo[] = [
+const TRANSIT_UI_SESSIONS: SessionInfo[] = [
   {
     id: S.realtimeMap,
-    projectId: P.hkUi,
+    projectId: P.transitUi,
     pinned: false,
     pinOrder: 0,
     name: "Realtime vehicle map",
@@ -595,7 +595,7 @@ const HK_UI_SESSIONS: SessionInfo[] = [
   },
   {
     id: S.departureTimes,
-    projectId: P.hkUi,
+    projectId: P.transitUi,
     pinned: false,
     pinOrder: 0,
     name: "Departure time display",
@@ -618,12 +618,12 @@ const HK_UI_SESSIONS: SessionInfo[] = [
 
 export const MOCK_SESSIONS: Record<string, SessionInfo[]> = {
   [P.agentique]: AGENTIQUE_SESSIONS,
-  [P.thePint]: THE_PINT_SESSIONS,
-  [P.alltixApi]: ALLTIX_SESSIONS,
-  [P.senseview]: SENSEVIEW_SESSIONS,
+  [P.cornerstore]: CORNERSTORE_SESSIONS,
+  [P.orchardApi]: ORCHARD_SESSIONS,
+  [P.gridwatch]: GRIDWATCH_SESSIONS,
   [P.weekendJam]: WEEKEND_JAM_SESSIONS,
-  [P.youtrackCli]: YOUTRACK_CLI_SESSIONS,
-  [P.hkUi]: HK_UI_SESSIONS,
+  [P.trackerCli]: TRACKER_CLI_SESSIONS,
+  [P.transitUi]: TRANSIT_UI_SESSIONS,
 };
 
 // --- Project git status ---
@@ -637,24 +637,24 @@ export const MOCK_PROJECT_GIT_STATUS: Record<string, ProjectGitStatus> = {
     behindRemote: 1,
     uncommittedCount: 0,
   },
-  [P.thePint]: {
-    projectId: P.thePint,
+  [P.cornerstore]: {
+    projectId: P.cornerstore,
     branch: "main",
     hasRemote: true,
     aheadRemote: 2,
     behindRemote: 0,
     uncommittedCount: 3,
   },
-  [P.alltixApi]: {
-    projectId: P.alltixApi,
+  [P.orchardApi]: {
+    projectId: P.orchardApi,
     branch: "develop",
     hasRemote: true,
     aheadRemote: 0,
     behindRemote: 0,
     uncommittedCount: 0,
   },
-  [P.senseview]: {
-    projectId: P.senseview,
+  [P.gridwatch]: {
+    projectId: P.gridwatch,
     branch: "main",
     hasRemote: true,
     aheadRemote: 0,
@@ -669,16 +669,16 @@ export const MOCK_PROJECT_GIT_STATUS: Record<string, ProjectGitStatus> = {
     behindRemote: 0,
     uncommittedCount: 0,
   },
-  [P.youtrackCli]: {
-    projectId: P.youtrackCli,
+  [P.trackerCli]: {
+    projectId: P.trackerCli,
     branch: "master",
     hasRemote: true,
     aheadRemote: 3,
     behindRemote: 0,
     uncommittedCount: 0,
   },
-  [P.hkUi]: {
-    projectId: P.hkUi,
+  [P.transitUi]: {
+    projectId: P.transitUi,
     branch: "develop",
     hasRemote: true,
     aheadRemote: 0,
@@ -694,7 +694,7 @@ export const MOCK_PENDING_APPROVALS: Record<string, PendingApproval> = {
     approvalId: "mock-approval-002",
     toolName: "Edit",
     input: {
-      file_path: "/home/user/git/senseview-ui/src/components/AlertRuleEditor.tsx",
+      file_path: "/home/dev/code/gridwatch/src/components/AlertRuleEditor.tsx",
       old_string: "threshold: 100",
       new_string: "threshold: config.alertThreshold ?? 100",
     },
@@ -851,7 +851,7 @@ const authRefactorTurns: MockTurn[] = [
         const id = "mock-tool-ar-01";
         return toolUse(
           "Read",
-          { file_path: "/home/user/git/agentique/backend/internal/auth/middleware.go" },
+          { file_path: "/home/dev/code/agentique/backend/internal/auth/middleware.go" },
           "file_read",
           id,
         );
@@ -892,7 +892,7 @@ func Middleware(next http.Handler) http.Handler {
         return toolUse(
           "Edit",
           {
-            file_path: "/home/user/git/agentique/backend/internal/auth/middleware.go",
+            file_path: "/home/dev/code/agentique/backend/internal/auth/middleware.go",
             old_string:
               '\t\tclaims, err := ValidateToken(token)\n\t\tif err != nil {\n\t\t\thttp.Error(w, "invalid token", http.StatusUnauthorized)\n\t\t\treturn\n\t\t}',
             new_string:
@@ -954,7 +954,7 @@ func Middleware(next http.Handler) http.Handler {
       ),
       toolUse(
         "Read",
-        { file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go" },
+        { file_path: "/home/dev/code/agentique/backend/internal/auth/middleware_test.go" },
         "file_read",
         "mock-tool-ar-05b",
       ),
@@ -964,7 +964,7 @@ func Middleware(next http.Handler) http.Handler {
       ),
       toolUse(
         "Read",
-        { file_path: "/home/user/git/agentique/backend/internal/auth/testhelpers_test.go" },
+        { file_path: "/home/dev/code/agentique/backend/internal/auth/testhelpers_test.go" },
         "file_read",
         "mock-tool-ar-05c",
       ),
@@ -974,7 +974,7 @@ func Middleware(next http.Handler) http.Handler {
       ),
       toolUse(
         "Read",
-        { file_path: "/home/user/git/agentique/backend/internal/auth/jwt.go" },
+        { file_path: "/home/dev/code/agentique/backend/internal/auth/jwt.go" },
         "file_read",
         "mock-tool-ar-05d",
       ),
@@ -994,7 +994,7 @@ func Middleware(next http.Handler) http.Handler {
       ),
       toolUse(
         "Read",
-        { file_path: "/home/user/git/agentique/backend/internal/auth/jwt_test.go" },
+        { file_path: "/home/dev/code/agentique/backend/internal/auth/jwt_test.go" },
         "file_read",
         "mock-tool-ar-05f",
       ),
@@ -1005,7 +1005,7 @@ func Middleware(next http.Handler) http.Handler {
       toolUse(
         "Edit",
         {
-          file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go",
+          file_path: "/home/dev/code/agentique/backend/internal/auth/middleware_test.go",
           old_string: "// end",
           new_string: "func TestMiddleware_ExpiredToken...",
         },
@@ -1016,7 +1016,7 @@ func Middleware(next http.Handler) http.Handler {
       toolUse(
         "Edit",
         {
-          file_path: "/home/user/git/agentique/backend/internal/auth/middleware_test.go",
+          file_path: "/home/dev/code/agentique/backend/internal/auth/middleware_test.go",
           old_string: "func TestMiddleware_ExpiredToken...",
           new_string:
             "func TestMiddleware_ExpiredToken(t *testing.T) { ... }\nfunc TestMiddleware_MalformedToken(t *testing.T) { ... }",
@@ -1028,7 +1028,7 @@ func Middleware(next http.Handler) http.Handler {
       toolUse(
         "Edit",
         {
-          file_path: "/home/user/git/agentique/backend/internal/auth/testhelpers_test.go",
+          file_path: "/home/dev/code/agentique/backend/internal/auth/testhelpers_test.go",
           old_string: "func issueToken",
           new_string: "func issueExpiredToken...",
         },
@@ -1052,7 +1052,7 @@ func Middleware(next http.Handler) http.Handler {
       toolUse(
         "Edit",
         {
-          file_path: "/home/user/git/agentique/backend/internal/auth/middleware.go",
+          file_path: "/home/dev/code/agentique/backend/internal/auth/middleware.go",
           old_string: "case errors.Is(err, jwt.ErrRevoked):",
           new_string:
             'case errors.Is(err, jwt.ErrRevoked):\n\t\t\t\thttp.Error(w, "revoked token", http.StatusUnauthorized)',
@@ -1128,7 +1128,7 @@ const wsReconnectTurns: MockTurn[] = [
         const id = "mock-tool-wr-02";
         return toolUse(
           "Read",
-          { file_path: "/home/user/git/agentique/frontend/src/lib/ws-client.ts" },
+          { file_path: "/home/dev/code/agentique/frontend/src/lib/ws-client.ts" },
           "file_read",
           id,
         );
@@ -1154,7 +1154,7 @@ ws.onclose = (ev) => {
         return toolUse(
           "Edit",
           {
-            file_path: "/home/user/git/agentique/frontend/src/lib/ws-client.ts",
+            file_path: "/home/dev/code/agentique/frontend/src/lib/ws-client.ts",
             old_string:
               "this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);",
             new_string:
@@ -1251,7 +1251,7 @@ const migrationBugTurns: MockTurn[] = [
         const id = "mock-tool-mb-01";
         return toolUse(
           "Read",
-          { file_path: "/home/user/git/agentique/backend/db/migrations/007_add_session_tags.sql" },
+          { file_path: "/home/dev/code/agentique/backend/db/migrations/007_add_session_tags.sql" },
           "file_read",
           id,
         );
@@ -1405,7 +1405,7 @@ const imageGalleryTurns: MockTurn[] = [
         const id = "mock-tool-ig-01";
         return toolUse(
           "Read",
-          { file_path: "/home/user/git/the-pint/src/components/ImageGallery.tsx" },
+          { file_path: "/home/dev/code/cornerstore/src/components/ImageGallery.tsx" },
           "file_read",
           id,
         );
@@ -1430,7 +1430,7 @@ const imageGalleryTurns: MockTurn[] = [
           "Bash",
           {
             command:
-              "cd /home/user/git/the-pint && npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities",
+              "cd /home/dev/code/cornerstore && npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities",
             description: "Install dnd-kit",
           },
           "command",
@@ -1443,7 +1443,7 @@ const imageGalleryTurns: MockTurn[] = [
         return toolUse(
           "Write",
           {
-            file_path: "/home/user/git/the-pint/src/components/ImageGallery.tsx",
+            file_path: "/home/dev/code/cornerstore/src/components/ImageGallery.tsx",
             content: "// Rewritten with DndContext, SortableContext, and IntersectionObserver...",
           },
           "file_write",
@@ -1456,7 +1456,7 @@ const imageGalleryTurns: MockTurn[] = [
         return toolUse(
           "Write",
           {
-            file_path: "/home/user/git/the-pint/src/hooks/useLazyImage.ts",
+            file_path: "/home/dev/code/cornerstore/src/hooks/useLazyImage.ts",
             content: "// IntersectionObserver hook for lazy loading...",
           },
           "file_write",
@@ -1484,7 +1484,7 @@ const schedulerTestsTurns: MockTurn[] = [
         return toolUse(
           "Bash",
           {
-            command: "cd /home/user/git/alltix/api && go test -cover ./internal/scheduler/...",
+            command: "cd /home/dev/code/orchard-api && go test -cover ./internal/scheduler/...",
             description: "Check scheduler test coverage",
           },
           "command",
@@ -1493,7 +1493,7 @@ const schedulerTestsTurns: MockTurn[] = [
       })(),
       toolResult(
         "mock-tool-st-01",
-        "ok  \talltix-api/internal/scheduler\t0.234s\tcoverage: 47.2% of statements",
+        "ok  \torchard-api/internal/scheduler\t0.234s\tcoverage: 47.2% of statements",
       ),
       (() => {
         const id = "mock-tool-st-02";
@@ -1501,7 +1501,7 @@ const schedulerTestsTurns: MockTurn[] = [
           "Bash",
           {
             command:
-              "cd /home/user/git/alltix/api && go test -coverprofile=coverage.out ./internal/scheduler/... && go tool cover -func=coverage.out | grep -v '100.0%'",
+              "cd /home/dev/code/orchard-api && go test -coverprofile=coverage.out ./internal/scheduler/... && go tool cover -func=coverage.out | grep -v '100.0%'",
             description: "Find uncovered functions",
           },
           "command",
@@ -1510,12 +1510,12 @@ const schedulerTestsTurns: MockTurn[] = [
       })(),
       toolResult(
         "mock-tool-st-02",
-        `alltix-api/internal/scheduler/scheduler.go:45:\tRun\t\t\t38.5%
-alltix-api/internal/scheduler/scheduler.go:89:\thandleError\t\t0.0%
-alltix-api/internal/scheduler/scheduler.go:112:\tretryWithBackoff\t0.0%
-alltix-api/internal/scheduler/scheduler.go:145:\tcleanupStale\t\t22.2%
-alltix-api/internal/scheduler/cron.go:23:\t\tParseCron\t\t85.7%
-alltix-api/internal/scheduler/cron.go:67:\t\tNextRun\t\t\t66.7%`,
+        `orchard-api/internal/scheduler/scheduler.go:45:\tRun\t\t\t38.5%
+orchard-api/internal/scheduler/scheduler.go:89:\thandleError\t\t0.0%
+orchard-api/internal/scheduler/scheduler.go:112:\tretryWithBackoff\t0.0%
+orchard-api/internal/scheduler/scheduler.go:145:\tcleanupStale\t\t22.2%
+orchard-api/internal/scheduler/cron.go:23:\t\tParseCron\t\t85.7%
+orchard-api/internal/scheduler/cron.go:67:\t\tNextRun\t\t\t66.7%`,
       ),
       text(
         "Coverage is at 47.2%. Key gaps:\n\n| Function | Coverage | Priority |\n|----------|----------|----------|\n| `handleError` | 0% | High — error paths are critical |\n| `retryWithBackoff` | 0% | High — retry logic is subtle |\n| `Run` | 38.5% | Medium — main loop, some paths covered |\n| `cleanupStale` | 22.2% | Medium — cleanup edge cases |\n| `NextRun` | 66.7% | Low — mostly covered |\n\nRecommend starting with `handleError` and `retryWithBackoff` — both are 0% and handle failure scenarios that matter most in production.",
@@ -1639,7 +1639,7 @@ const queryOptimizerTurns: MockTurn[] = [
         return toolUse(
           "Bash",
           {
-            command: "cd /home/user/git/agentique && go test ./internal/planner/... -v -count=1",
+            command: "cd /home/dev/code/agentique && go test ./internal/planner/... -v -count=1",
             description: "Run planner tests",
           },
           "command",
@@ -1681,7 +1681,7 @@ const queryOptimizerTurns: MockTurn[] = [
           "Bash",
           {
             command:
-              "cd /home/user/git/agentique && go test ./internal/planner/... -bench=. -benchmem -count=3",
+              "cd /home/dev/code/agentique && go test ./internal/planner/... -bench=. -benchmem -count=3",
             description: "Run planner benchmarks",
           },
           "command",
@@ -1728,7 +1728,7 @@ export const MOCK_CHANNELS: Record<string, ChannelInfo[]> = {
           role: "lead",
           state: "running",
           connected: true,
-          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-ws-reconnect",
+          worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-ws-reconnect",
         },
         {
           sessionId: S.authRefactor,
@@ -1736,7 +1736,7 @@ export const MOCK_CHANNELS: Record<string, ChannelInfo[]> = {
           role: "worker",
           state: "idle",
           connected: true,
-          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-auth-refactor",
+          worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-auth-refactor",
         },
         {
           sessionId: S.queryOptimizer,
@@ -1744,7 +1744,7 @@ export const MOCK_CHANNELS: Record<string, ChannelInfo[]> = {
           role: "worker",
           state: "idle",
           connected: true,
-          worktreePath: "/home/user/git/agentique/.agentique/worktrees/session-query-optimizer",
+          worktreePath: "/home/dev/code/agentique/.agentique/worktrees/session-query-optimizer",
         },
       ],
     },

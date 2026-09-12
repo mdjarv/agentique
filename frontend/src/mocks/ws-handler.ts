@@ -31,6 +31,7 @@ import {
   PROJECT_IDS,
   SESSION_IDS,
 } from "./data";
+import { MOCK_AGENT_PROFILES, MOCK_SCHEDULE_RUNS, MOCK_SCHEDULES, MOCK_TEAMS } from "./demo-data";
 import { validatePayload } from "./validate";
 
 const wsLink = ws.link(/wss?:\/\/.*\/ws$/);
@@ -1297,6 +1298,74 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
     case "channel.send-message":
     case "channel.broadcast":
     case "channel.create-swarm":
+      respond(client, msg.id);
+      break;
+
+    // --- Scheduled loops, teams, personas ---
+    //
+    // Read-only: the list ops answer from fixtures and every mutation
+    // acknowledges without changing them, which is what the pages need to
+    // render. A mock that pretended to persist would drift from the fixture
+    // the next reload reads.
+
+    case "schedule.list":
+      respond(client, msg.id, MOCK_SCHEDULES);
+      break;
+
+    case "schedule.runs": {
+      const runs = MOCK_SCHEDULE_RUNS[p.scheduleId as string] ?? [];
+      respond(client, msg.id, runs);
+      break;
+    }
+
+    case "schedule.create":
+    case "schedule.update":
+    case "schedule.pause":
+    case "schedule.resume":
+    case "schedule.approve": {
+      const target = MOCK_SCHEDULES.find((s) => s.id === p.id) ?? MOCK_SCHEDULES[0];
+      respond(client, msg.id, target);
+      break;
+    }
+
+    case "schedule.delete":
+    case "schedule.mark-viewed":
+      respond(client, msg.id);
+      break;
+
+    case "schedule.run-now": {
+      const runsForSchedule = MOCK_SCHEDULE_RUNS[p.id as string] ?? [];
+      respond(client, msg.id, runsForSchedule[0] ?? null);
+      break;
+    }
+
+    case "team.list":
+      respond(client, msg.id, MOCK_TEAMS);
+      break;
+
+    case "agent-profile.list":
+    case "persona.list":
+      respond(client, msg.id, MOCK_AGENT_PROFILES);
+      break;
+
+    case "team.create":
+    case "team.update":
+    case "team.add-member":
+    case "team.remove-member": {
+      const team = MOCK_TEAMS.find((t) => t.id === p.id) ?? MOCK_TEAMS[0];
+      respond(client, msg.id, team);
+      break;
+    }
+
+    case "agent-profile.create":
+    case "agent-profile.update": {
+      const persona = MOCK_AGENT_PROFILES.find((a) => a.id === p.id) ?? MOCK_AGENT_PROFILES[0];
+      respond(client, msg.id, persona);
+      break;
+    }
+
+    case "team.delete":
+    case "agent-profile.delete":
       respond(client, msg.id);
       break;
 

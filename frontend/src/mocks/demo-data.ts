@@ -1,0 +1,1076 @@
+/**
+ * Fixtures for the surfaces `data.ts` never covered: storage, subscription
+ * usage, scheduled loops, templates, teams and personas, and the brain.
+ *
+ * `data.ts` is the session world — projects, sessions, turns, channels. This
+ * file is everything else the app fetches over REST, so a mock-mode browser
+ * reaches every page instead of a 502. Content is invented; the shapes mirror
+ * `generated-types.ts` and `brain-api.ts`, which are the contracts the real
+ * server answers.
+ */
+
+import type { Memory } from "~/lib/brain-api";
+import type {
+  AgentProfileInfo,
+  DiskStats,
+  PromptTemplate,
+  ScheduleInfo,
+  ScheduleRunInfo,
+  StorageUsage,
+  TeamInfo,
+  UsageDocument,
+} from "~/lib/generated-types";
+import { PROJECT_IDS, SESSION_IDS } from "./data";
+
+const now = Date.now();
+const minutesAgo = (m: number) => new Date(now - m * 60_000).toISOString();
+const hoursAgo = (h: number) => new Date(now - h * 3_600_000).toISOString();
+const daysAgo = (d: number) => new Date(now - d * 86_400_000).toISOString();
+const inMinutes = (m: number) => new Date(now + m * 60_000).toISOString();
+const inHours = (h: number) => new Date(now + h * 3_600_000).toISOString();
+
+const GB = 1024 ** 3;
+const MB = 1024 ** 2;
+
+// --- Storage -----------------------------------------------------------
+
+export const MOCK_DISK: DiskStats = {
+  path: "/",
+  totalBytes: 1000 * GB,
+  freeBytes: 337 * GB,
+  usedBytes: 663 * GB,
+  usagePercent: 0.663,
+};
+
+export const MOCK_STORAGE_USAGE: StorageUsage = {
+  computedAt: minutesAgo(3),
+  disk: MOCK_DISK,
+  dataDirBytes: 27.4 * GB,
+  categories: [
+    { key: "worktrees", label: "Worktrees", bytes: 21.6 * GB },
+    { key: "database", label: "Database", bytes: 1.9 * GB },
+    { key: "backups", label: "Backups", bytes: 2.3 * GB },
+    { key: "session-files", label: "Session files", bytes: 940 * MB },
+    { key: "logs", label: "Logs", bytes: 310 * MB },
+  ],
+  projects: [
+    {
+      projectId: PROJECT_IDS.agentique,
+      name: "agentique",
+      slug: "agentique",
+      color: "blue",
+      icon: "cpu",
+      totalBytes: 9.4 * GB,
+      sessions: [
+        {
+          sessionId: SESSION_IDS.authRefactor,
+          name: "Refactor auth middleware",
+          state: "idle",
+          worktreePath: "~/.local/share/agentique/worktrees/agentique/session-auth-refactor",
+          bytes: 2.1 * GB,
+          updatedAt: hoursAgo(1),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 64 * MB,
+          totalBytes: 2.2 * GB,
+          reclaimable: false,
+          safety: "dirty",
+          safetyReason: "uncommitted changes in the worktree",
+        },
+        {
+          sessionId: SESSION_IDS.queryOptimizer,
+          name: "Optimize query planner",
+          state: "stopped",
+          worktreePath: "~/.local/share/agentique/worktrees/agentique/session-query-planner",
+          bytes: 2.0 * GB,
+          updatedAt: hoursAgo(6),
+          archivedAt: "",
+          archived: false,
+          merged: true,
+          orphaned: false,
+          tempBytes: 48 * MB,
+          totalBytes: 2.1 * GB,
+          reclaimable: true,
+          safety: "merged",
+          safetyReason: "every commit is already on main",
+        },
+        {
+          sessionId: SESSION_IDS.darkMode,
+          name: "Add dark mode support",
+          state: "stopped",
+          worktreePath: "~/.local/share/agentique/worktrees/agentique/session-dark-mode",
+          bytes: 1.9 * GB,
+          updatedAt: daysAgo(3),
+          archivedAt: daysAgo(2),
+          archived: true,
+          merged: true,
+          orphaned: false,
+          tempBytes: 21 * MB,
+          totalBytes: 1.9 * GB,
+          reclaimable: true,
+          safety: "merged",
+          safetyReason: "every commit is already on main",
+        },
+        {
+          sessionId: SESSION_IDS.wsReconnect,
+          name: "Fix WebSocket reconnect",
+          state: "running",
+          worktreePath: "~/.local/share/agentique/worktrees/agentique/session-ws-reconnect",
+          bytes: 3.4 * GB,
+          updatedAt: minutesAgo(6),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 112 * MB,
+          totalBytes: 3.5 * GB,
+          reclaimable: false,
+          safety: "live",
+          safetyReason: "a turn is in flight",
+        },
+      ],
+    },
+    {
+      projectId: PROJECT_IDS.cornerstore,
+      name: "Cornerstore",
+      slug: "cornerstore",
+      color: "green",
+      icon: "",
+      totalBytes: 6.2 * GB,
+      sessions: [
+        {
+          sessionId: SESSION_IDS.paymentFlow,
+          name: "Payment flow redesign",
+          state: "blocked",
+          worktreePath: "~/.local/share/agentique/worktrees/cornerstore/session-payment-flow",
+          bytes: 3.3 * GB,
+          updatedAt: minutesAgo(18),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 77 * MB,
+          totalBytes: 3.4 * GB,
+          reclaimable: false,
+          safety: "live",
+          safetyReason: "waiting on an answer",
+        },
+        {
+          sessionId: SESSION_IDS.imageGallery,
+          name: "Image gallery component",
+          state: "idle",
+          worktreePath: "~/.local/share/agentique/worktrees/cornerstore/session-image-gallery",
+          bytes: 2.8 * GB,
+          updatedAt: hoursAgo(2),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 33 * MB,
+          totalBytes: 2.8 * GB,
+          reclaimable: true,
+          safety: "clean",
+          safetyReason: "nothing uncommitted",
+        },
+      ],
+    },
+    {
+      projectId: PROJECT_IDS.gridwatch,
+      name: "Gridwatch",
+      slug: "gridwatch",
+      color: "amber",
+      icon: "",
+      totalBytes: 5.1 * GB,
+      sessions: [
+        {
+          sessionId: SESSION_IDS.sensorDashboard,
+          name: "Sensor dashboard widgets",
+          state: "running",
+          worktreePath: "~/.local/share/agentique/worktrees/gridwatch/session-sensor-widgets",
+          bytes: 3.0 * GB,
+          updatedAt: minutesAgo(2),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 96 * MB,
+          totalBytes: 3.1 * GB,
+          reclaimable: false,
+          safety: "live",
+          safetyReason: "a turn is in flight",
+        },
+        {
+          sessionId: SESSION_IDS.alertRules,
+          name: "Alert rule configuration",
+          state: "blocked",
+          worktreePath: "~/.local/share/agentique/worktrees/gridwatch/session-alert-rules",
+          bytes: 2.0 * GB,
+          updatedAt: minutesAgo(6),
+          archivedAt: "",
+          archived: false,
+          merged: false,
+          orphaned: false,
+          tempBytes: 18 * MB,
+          totalBytes: 2.0 * GB,
+          reclaimable: false,
+          safety: "live",
+          safetyReason: "waiting on a permission decision",
+        },
+      ],
+    },
+  ],
+  orphans: [
+    {
+      sessionId: "",
+      name: "session-legacy-import",
+      state: "",
+      worktreePath: "~/.local/share/agentique/worktrees/orchard-api/session-legacy-import",
+      bytes: 1.4 * GB,
+      updatedAt: daysAgo(26),
+      archivedAt: "",
+      archived: false,
+      merged: false,
+      orphaned: true,
+      tempBytes: 0,
+      totalBytes: 1.4 * GB,
+      reclaimable: true,
+      safety: "orphaned",
+      safetyReason: "no session row points at this worktree",
+    },
+  ],
+  tempBytes: 1.2 * GB,
+  tempCategories: [
+    { key: "scratchpad", label: "Scratchpads", bytes: 780 * MB },
+    { key: "browser-profile", label: "Browser profiles", bytes: 460 * MB },
+  ],
+  tempArtifacts: [
+    {
+      kind: "scratchpad",
+      path: "/tmp/claude-1000/agentique-session-ws-reconnect",
+      sessionId: SESSION_IDS.wsReconnect,
+      bytes: 112 * MB,
+    },
+    {
+      kind: "browser-profile",
+      path: "~/.local/share/agentique/browser/session-sensor-widgets",
+      sessionId: SESSION_IDS.sensorDashboard,
+      bytes: 96 * MB,
+    },
+    {
+      kind: "foreign-scratchpad",
+      path: "/tmp/claude-1000/-home-dev-code-notecast",
+      sessionId: "",
+      bytes: 214 * MB,
+    },
+  ],
+  foreignScratchpads: 1,
+  backups: {
+    periodicCount: 14,
+    periodicBytes: 1.8 * GB,
+    snapshotCount: 3,
+    snapshotBytes: 512 * MB,
+    oldestPeriodic: daysAgo(21),
+    trimmable: 9,
+  },
+  reclaimableBytes: 7.6 * GB,
+  reclaimableCount: 4,
+};
+
+// --- Subscription usage ------------------------------------------------
+
+export const MOCK_USAGE: UsageDocument = {
+  schemaVersion: 1,
+  fetchedAt: minutesAgo(2),
+  agents: [
+    {
+      id: "claude",
+      name: "Claude",
+      kind: "allowance",
+      tierLabel: "Max 20x",
+      ready: true,
+      updatedAt: minutesAgo(2),
+      todayTokens: 41_800_000,
+      todayPrompts: 214,
+      limits: [
+        { label: "Session", percent: 0.34, resetsAt: inHours(2), detail: "resets at 11:00" },
+        { label: "Week", percent: 0.61, resetsAt: inHours(61), detail: "resets Monday" },
+        {
+          label: "Opus week",
+          percent: 0.82,
+          severity: "warning",
+          resetsAt: inHours(61),
+          detail: "resets Monday",
+        },
+      ],
+    },
+    {
+      id: "codex",
+      name: "Codex",
+      kind: "allowance",
+      tierLabel: "Pro",
+      ready: true,
+      updatedAt: minutesAgo(9),
+      todayTokens: 3_100_000,
+      todayPrompts: 18,
+      limits: [
+        { label: "Session", percent: 0.12, resetsAt: inHours(4) },
+        { label: "Week", percent: 0.29, resetsAt: inHours(61) },
+      ],
+    },
+    {
+      id: "storage",
+      name: "Disk",
+      kind: "gauge",
+      ready: true,
+      updatedAt: minutesAgo(3),
+      limits: [{ label: "Data directory", percent: 0.663, detail: "663 GB of 1.0 TB used" }],
+    },
+  ],
+};
+
+// --- Scheduled loops ---------------------------------------------------
+
+const SCHEDULE_IDS = {
+  nightlyAudit: "5c000001-0000-4000-8000-000000000001",
+  ciWatch: "5c000002-0000-4000-8000-000000000002",
+  flakyTests: "5c000003-0000-4000-8000-000000000003",
+  releaseNotes: "5c000004-0000-4000-8000-000000000004",
+} as const;
+
+export const MOCK_SCHEDULES: ScheduleInfo[] = [
+  {
+    id: SCHEDULE_IDS.nightlyAudit,
+    projectId: PROJECT_IDS.agentique,
+    sessionId: SESSION_IDS.queryOptimizer,
+    name: "Nightly dependency audit",
+    prompt:
+      "Check for outdated or vulnerable dependencies in backend/go.mod and frontend/package.json. Open a session prompt for anything that needs a human decision; fix patch-level bumps yourself and run the checks.",
+    cron: "0 3 * * *",
+    mode: "recurring",
+    enabled: true,
+    pauseReason: "",
+    attention: "",
+    attentionRunId: "",
+    nextRunAt: inHours(14),
+    expiresAt: "",
+    lastRunAt: hoursAgo(10),
+    lastViewedAt: hoursAgo(9),
+    consecutiveFailures: 0,
+    createdBy: "user",
+    createdAt: daysAgo(38),
+    updatedAt: hoursAgo(10),
+  },
+  {
+    id: SCHEDULE_IDS.ciWatch,
+    projectId: PROJECT_IDS.gridwatch,
+    sessionId: SESSION_IDS.alertRules,
+    name: "Watch the release branch",
+    prompt:
+      "Poll the release branch's CI run. If it is red, read the failing job's log, name the failing test and say whether the cause is in this branch or on main. Do not push anything.",
+    cron: "*/20 * * * *",
+    mode: "recurring",
+    enabled: true,
+    pauseReason: "",
+    attention: "waiting",
+    attentionRunId: "run-ci-watch-441",
+    nextRunAt: inMinutes(11),
+    expiresAt: "",
+    lastRunAt: minutesAgo(9),
+    lastViewedAt: hoursAgo(3),
+    consecutiveFailures: 0,
+    createdBy: "agent",
+    createdAt: daysAgo(4),
+    updatedAt: minutesAgo(9),
+  },
+  {
+    id: SCHEDULE_IDS.flakyTests,
+    projectId: PROJECT_IDS.orchardApi,
+    sessionId: SESSION_IDS.schedulerTests,
+    name: "Re-run the flaky scheduler suite",
+    prompt:
+      "Run `go test ./internal/schedule/... -count=5 -race` and report the failure rate. If a test fails twice or more, quote the assertion and the seed.",
+    cron: "0 */6 * * *",
+    mode: "recurring",
+    enabled: false,
+    pauseReason: "3 consecutive failures — the suite has not compiled since the store rename",
+    attention: "failed",
+    attentionRunId: "run-flaky-118",
+    nextRunAt: "",
+    expiresAt: "",
+    lastRunAt: hoursAgo(7),
+    lastViewedAt: hoursAgo(30),
+    consecutiveFailures: 3,
+    createdBy: "user",
+    createdAt: daysAgo(12),
+    updatedAt: hoursAgo(7),
+  },
+  {
+    id: SCHEDULE_IDS.releaseNotes,
+    projectId: PROJECT_IDS.agentique,
+    sessionId: SESSION_IDS.updateDeps,
+    name: "Draft release notes",
+    prompt:
+      "Summarise every commit since the last tag into CHANGELOG.md under an Unreleased heading. One line per user-visible change, nothing about refactors.",
+    cron: "",
+    mode: "once",
+    enabled: true,
+    pauseReason: "",
+    attention: "",
+    attentionRunId: "",
+    nextRunAt: inHours(3),
+    expiresAt: inHours(27),
+    lastRunAt: "",
+    lastViewedAt: "",
+    consecutiveFailures: 0,
+    createdBy: "user",
+    createdAt: hoursAgo(2),
+    updatedAt: hoursAgo(2),
+  },
+];
+
+export const MOCK_SCHEDULE_RUNS: Record<string, ScheduleRunInfo[]> = {
+  [SCHEDULE_IDS.nightlyAudit]: [
+    {
+      id: "run-audit-92",
+      scheduleId: SCHEDULE_IDS.nightlyAudit,
+      sessionId: SESSION_IDS.queryOptimizer,
+      scheduledFor: hoursAgo(10),
+      createdAt: hoursAgo(10),
+      firedAt: hoursAgo(10),
+      finishedAt: hoursAgo(10),
+      status: "finished",
+      overdue: false,
+      attempts: 1,
+      nextAttemptAt: "",
+      turnIndex: 14,
+      summary: "2 patch bumps applied, tests green. One major bump left for a human: vite 7 → 8.",
+      reason: "",
+      error: "",
+      errorKind: "",
+      lateReport: "",
+      durationMs: 184_000,
+    },
+    {
+      id: "run-audit-91",
+      scheduleId: SCHEDULE_IDS.nightlyAudit,
+      sessionId: SESSION_IDS.queryOptimizer,
+      scheduledFor: daysAgo(1),
+      createdAt: daysAgo(1),
+      firedAt: daysAgo(1),
+      finishedAt: daysAgo(1),
+      status: "finished",
+      overdue: false,
+      attempts: 1,
+      nextAttemptAt: "",
+      turnIndex: 13,
+      summary: "Nothing outdated. No action taken.",
+      reason: "",
+      error: "",
+      errorKind: "",
+      lateReport: "",
+      durationMs: 96_000,
+    },
+  ],
+  [SCHEDULE_IDS.ciWatch]: [
+    {
+      id: "run-ci-watch-441",
+      scheduleId: SCHEDULE_IDS.ciWatch,
+      sessionId: SESSION_IDS.alertRules,
+      scheduledFor: minutesAgo(9),
+      createdAt: minutesAgo(9),
+      firedAt: minutesAgo(9),
+      finishedAt: "",
+      status: "running",
+      overdue: false,
+      attempts: 1,
+      nextAttemptAt: "",
+      turnIndex: 7,
+      summary: "",
+      reason: "",
+      error: "",
+      errorKind: "",
+      lateReport: "",
+      durationMs: 0,
+    },
+    {
+      id: "run-ci-watch-440",
+      scheduleId: SCHEDULE_IDS.ciWatch,
+      sessionId: SESSION_IDS.alertRules,
+      scheduledFor: minutesAgo(29),
+      createdAt: minutesAgo(29),
+      firedAt: minutesAgo(29),
+      finishedAt: minutesAgo(28),
+      status: "finished",
+      overdue: false,
+      attempts: 1,
+      nextAttemptAt: "",
+      turnIndex: 6,
+      summary: "CI green on release/1.4. Nothing to report.",
+      reason: "",
+      error: "",
+      errorKind: "",
+      lateReport: "",
+      durationMs: 41_000,
+    },
+  ],
+  [SCHEDULE_IDS.flakyTests]: [
+    {
+      id: "run-flaky-118",
+      scheduleId: SCHEDULE_IDS.flakyTests,
+      sessionId: SESSION_IDS.schedulerTests,
+      scheduledFor: hoursAgo(7),
+      createdAt: hoursAgo(7),
+      firedAt: hoursAgo(7),
+      finishedAt: hoursAgo(7),
+      status: "failed",
+      overdue: false,
+      attempts: 3,
+      nextAttemptAt: "",
+      turnIndex: 21,
+      summary: "",
+      reason: "",
+      error: "build failed: internal/schedule/store_test.go:44: undefined: store.NewRunQueue",
+      errorKind: "build",
+      lateReport: "",
+      durationMs: 12_400,
+    },
+  ],
+  [SCHEDULE_IDS.releaseNotes]: [],
+};
+
+// --- Prompt templates --------------------------------------------------
+
+const templateSettings = (settings: Record<string, unknown>) => JSON.stringify(settings);
+
+export const MOCK_TEMPLATES: PromptTemplate[] = [
+  {
+    id: "7e000001-0000-4000-8000-000000000001",
+    name: "Bug triage",
+    description: "Reproduce, diagnose, and propose the smallest correct fix.",
+    content:
+      "Reproduce this bug from the report below, then diagnose it before changing anything.\n\nReport:\n{{report}}\n\nWork in this order:\n1. Reproduce it with a failing test.\n2. Name the cause in one sentence, with the file and line.\n3. Propose the smallest correct fix, and say what a cheaper workaround would cost.\n\nDo not fix it until the failing test exists.",
+    settings: templateSettings({ model: "opus", effort: "high", planMode: true }),
+    tags: JSON.stringify(["debugging", "tests"]),
+    sort_order: 1,
+    created_at: daysAgo(64),
+    updated_at: daysAgo(9),
+  },
+  {
+    id: "7e000002-0000-4000-8000-000000000002",
+    name: "Ship a pull request",
+    description: "Commit, push, open the PR, and write the description from the diff.",
+    content:
+      "Finish this branch and open a pull request.\n\n- Run the project's checks and tests first; do not open a PR over a red suite.\n- Write the description from the diff, not from the prompt: what changed, why, and what a reviewer should look at.\n- Link any issue the branch name references.",
+    settings: templateSettings({ model: "sonnet", effort: "medium" }),
+    tags: JSON.stringify(["git", "review"]),
+    sort_order: 2,
+    created_at: daysAgo(51),
+    updated_at: daysAgo(3),
+  },
+  {
+    id: "7e000003-0000-4000-8000-000000000003",
+    name: "Performance pass",
+    description: "Measure first, then change one thing at a time.",
+    content:
+      "Find why {{surface}} is slow.\n\nMeasure before you change anything, and keep the measurement in the session so the next turn can compare against it. One change at a time; re-measure after each. Report the numbers as a table and say which change earned its complexity.",
+    settings: templateSettings({ model: "opus", effort: "xhigh" }),
+    tags: JSON.stringify(["performance"]),
+    sort_order: 3,
+    created_at: daysAgo(30),
+    updated_at: daysAgo(30),
+  },
+  {
+    id: "7e000004-0000-4000-8000-000000000004",
+    name: "Write an ADR",
+    description: "Record a decision with its alternatives and its cost.",
+    content:
+      "Write an architecture decision record for {{decision}} under docs/adr/.\n\nCover the context, the decision, the alternatives you rejected and why, and the cost of being wrong. Keep it to one page. No summary section.",
+    settings: templateSettings({ model: "sonnet", effort: "medium", planMode: false }),
+    tags: JSON.stringify(["docs", "design"]),
+    sort_order: 4,
+    created_at: daysAgo(22),
+    updated_at: daysAgo(11),
+  },
+  {
+    id: "7e000005-0000-4000-8000-000000000005",
+    name: "Dependency bump",
+    description: "Upgrade one dependency and prove nothing broke.",
+    content:
+      "Upgrade {{dependency}} to the latest release.\n\nRead its changelog for breaking changes before touching the lockfile. Apply the migration the changelog asks for, run the full suite, and report anything the upgrade changed in behaviour rather than just in version numbers.",
+    settings: templateSettings({ model: "sonnet", effort: "low" }),
+    tags: JSON.stringify(["maintenance"]),
+    sort_order: 5,
+    created_at: daysAgo(18),
+    updated_at: daysAgo(18),
+  },
+];
+
+// --- Teams and personas ------------------------------------------------
+
+const NO_PRESETS = {
+  autoCommit: true,
+  suggestParallel: false,
+  planFirst: false,
+  terse: false,
+};
+
+const profile = (
+  id: string,
+  name: string,
+  role: string,
+  description: string,
+  avatar: string,
+  config: Partial<AgentProfileInfo["config"]>,
+): AgentProfileInfo => ({
+  id,
+  name,
+  role,
+  description,
+  projectId: "",
+  avatar,
+  config: { behaviorPresets: NO_PRESETS, ...config },
+  createdAt: daysAgo(40),
+  updatedAt: daysAgo(6),
+});
+
+const MARA = profile(
+  "a9000001-0000-4000-8000-000000000001",
+  "Mara",
+  "Systems architect",
+  "Argues for the structurally correct fix and names what the cheap one costs. Reads the whole subsystem before answering.",
+  "compass",
+  { model: "opus", effort: "high", systemPromptAdditions: "Prefer structure over expedience." },
+);
+
+const KELL = profile(
+  "a9000002-0000-4000-8000-000000000002",
+  "Kell",
+  "Security reviewer",
+  "Judges every change against an unauthenticated caller, a cross-origin page, and a prompt-injected agent.",
+  "shield",
+  { model: "opus", effort: "high" },
+);
+
+const JUNO = profile(
+  "a9000003-0000-4000-8000-000000000003",
+  "Juno",
+  "Pragmatist",
+  "Asks what ships this week. Keeps the scope honest and the diff small.",
+  "zap",
+  { model: "sonnet", effort: "medium" },
+);
+
+const TERO = profile(
+  "a9000004-0000-4000-8000-000000000004",
+  "Tero",
+  "Test engineer",
+  "Writes the failing test first and refuses a fix that no test would have caught.",
+  "flask",
+  { model: "sonnet", effort: "high" },
+);
+
+export const MOCK_AGENT_PROFILES: AgentProfileInfo[] = [MARA, KELL, JUNO, TERO];
+
+export const MOCK_TEAMS: TeamInfo[] = [
+  {
+    id: "7a000001-0000-4000-8000-000000000001",
+    name: "Review board",
+    description:
+      "Three readings of the same diff: is it right, is it safe, is it worth it. Used for design calls before a branch starts.",
+    members: [MARA, KELL, JUNO],
+    createdAt: daysAgo(40),
+    updatedAt: daysAgo(6),
+  },
+  {
+    id: "7a000002-0000-4000-8000-000000000002",
+    name: "Release crew",
+    description:
+      "Cuts a release: changelog, migration notes, and a test pass over the upgrade path.",
+    members: [TERO, JUNO],
+    createdAt: daysAgo(17),
+    updatedAt: daysAgo(2),
+  },
+];
+
+// --- Brain -------------------------------------------------------------
+
+const memory = (
+  id: string,
+  scope: string,
+  text: string,
+  category: string,
+  extra: Partial<Memory> = {},
+): Memory => ({
+  id,
+  scope,
+  text,
+  category,
+  source: "agent",
+  pinned: false,
+  locked: false,
+  uses: 3,
+  helped: 1,
+  createdAt: daysAgo(20),
+  updatedAt: daysAgo(2),
+  lifecycle: "active",
+  evidence: "observed_once",
+  volatility: "slow",
+  confidence: "inferred",
+  confidenceScore: 0.72,
+  corroborations: 1,
+  ...extra,
+});
+
+export const MOCK_MEMORIES: Memory[] = [
+  memory(
+    "m-0001",
+    "agentique",
+    "`just check` runs biome and tsc from the frontend directory. Running `npx biome` from the repo root reports success without checking anything.",
+    "convention",
+    {
+      source: "human",
+      pinned: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 0.98,
+      uses: 41,
+      helped: 17,
+      volatility: "evergreen",
+      area: "build tooling",
+      keywords: ["biome", "tsc", "checks"],
+    },
+  ),
+  memory(
+    "m-0002",
+    "agentique",
+    "SQL files under backend/db must stay ASCII: sqlc expands SELECT * by byte offset, so one multi-byte character corrupts the generated code for later queries.",
+    "gotcha",
+    {
+      source: "human",
+      locked: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 0.96,
+      uses: 12,
+      helped: 6,
+      volatility: "evergreen",
+      area: "database",
+      keywords: ["sqlc", "encoding"],
+    },
+  ),
+  memory(
+    "m-0003",
+    "agentique",
+    "Zustand selectors must return stable references. Returning an object literal or a mapped array re-renders forever.",
+    "convention",
+    {
+      evidence: "code_verified",
+      confidence: "extracted",
+      confidenceScore: 0.91,
+      uses: 22,
+      helped: 9,
+      area: "frontend state",
+      corroborations: 4,
+      keywords: ["zustand", "rerender"],
+    },
+  ),
+  memory(
+    "m-0004",
+    "agentique",
+    "The orphan reaper matches a process only when the CLI marker, group leadership and the data-dir owner stamp all hold. Matching fails closed.",
+    "design",
+    {
+      evidence: "code_verified",
+      confidence: "extracted",
+      confidenceScore: 0.88,
+      uses: 7,
+      helped: 3,
+      area: "process lifecycle",
+      relations: [{ type: "generalizes", target: "m-0009" }],
+    },
+  ),
+  memory(
+    "m-0005",
+    "agentique",
+    "A second local server must be isolated with AGENTIQUE_HOME. --db and --addr do not isolate: single-instance is a property of the data directory.",
+    "gotcha",
+    {
+      source: "human",
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 0.94,
+      uses: 9,
+      helped: 5,
+      volatility: "evergreen",
+      area: "local development",
+    },
+  ),
+  memory(
+    "m-0006",
+    "cornerstore",
+    "Checkout totals are computed server-side; the client's figure is a preview and never reaches the order row.",
+    "design",
+    {
+      evidence: "code_verified",
+      confidence: "extracted",
+      confidenceScore: 0.86,
+      uses: 14,
+      helped: 4,
+      area: "payments",
+    },
+  ),
+  memory(
+    "m-0007",
+    "cornerstore",
+    "The image pipeline writes AVIF and falls back to WebP. Safari 16 users see WebP, so visual regressions must be checked in both.",
+    "gotcha",
+    { uses: 5, helped: 2, confidenceScore: 0.64, area: "media" },
+  ),
+  memory(
+    "m-0008",
+    "gridwatch",
+    "Sensor timestamps arrive in local time from three of the eleven gateways. Normalise at ingest, never at render.",
+    "gotcha",
+    {
+      evidence: "corroborated",
+      corroborations: 3,
+      confidence: "extracted",
+      confidenceScore: 0.83,
+      uses: 11,
+      helped: 6,
+      area: "ingest",
+    },
+  ),
+  memory(
+    "m-0009",
+    "gridwatch",
+    "Alert rules evaluate on a 30s tick. A rule that reads its own previous verdict deadlocks the evaluator.",
+    "gotcha",
+    {
+      evidence: "code_verified",
+      confidence: "extracted",
+      confidenceScore: 0.79,
+      uses: 6,
+      helped: 3,
+      area: "alerting",
+    },
+  ),
+  memory(
+    "m-0010",
+    "gridwatch",
+    "The dashboard grid may be virtualised — worth checking whether widgets below the fold still poll.",
+    "hypothesis",
+    {
+      confidence: "ambiguous",
+      confidenceScore: 0.41,
+      uses: 1,
+      helped: 0,
+      evidence: "observed_once",
+      volatility: "ephemeral",
+      reviewNote: "Contradicted on recall: the grid renders every widget eagerly as of last week.",
+    },
+  ),
+  memory(
+    "m-0011",
+    "orchard-api",
+    "Stock is reserved inside the order transaction. An eventually-consistent reservation cannot promise the crate.",
+    "design",
+    {
+      source: "human",
+      pinned: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 0.97,
+      uses: 19,
+      helped: 11,
+      volatility: "evergreen",
+      area: "orders",
+    },
+  ),
+  memory(
+    "m-0012",
+    "orchard-api",
+    "Vitest runs against a real Postgres in CI and against pglite locally, so a test that depends on a Postgres extension passes locally and fails in CI.",
+    "gotcha",
+    { uses: 4, helped: 2, confidenceScore: 0.58, area: "testing" },
+  ),
+  memory(
+    "m-0013",
+    "global",
+    "Prefer the structurally correct fix and name the cheap workaround so it can be chosen.",
+    "preference",
+    {
+      source: "human",
+      locked: true,
+      pinned: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 1,
+      uses: 63,
+      helped: 28,
+      volatility: "evergreen",
+      area: "working style",
+    },
+  ),
+  memory(
+    "m-0014",
+    "global",
+    "One observation is not a verification. Re-run an empirical finding two or three times before reporting it.",
+    "preference",
+    {
+      source: "human",
+      locked: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 1,
+      uses: 37,
+      helped: 15,
+      volatility: "evergreen",
+      area: "working style",
+    },
+  ),
+  memory(
+    "m-0015",
+    "global",
+    "Never push unless asked. Commit freely, then offer the push.",
+    "preference",
+    {
+      source: "human",
+      pinned: true,
+      locked: true,
+      evidence: "user_stated",
+      confidence: "extracted",
+      confidenceScore: 1,
+      uses: 52,
+      helped: 21,
+      volatility: "evergreen",
+      area: "working style",
+    },
+  ),
+  memory(
+    "m-0016",
+    "agentique",
+    "Vite inlines small assets as data: URIs, which CSP blocks for audioWorklet.addModule — the worklet must be an emitted file.",
+    "gotcha",
+    {
+      evidence: "code_verified",
+      confidence: "extracted",
+      confidenceScore: 0.89,
+      uses: 3,
+      helped: 3,
+      area: "voice",
+      lastCurated: daysAgo(5),
+      curatorNote: "Cost an afternoon: it works in dev and is silently blocked in production.",
+    },
+  ),
+  memory(
+    "m-0017",
+    "agentique",
+    "Older CLI builds stamp taskType only on task_started, so judging a run per event lets a workflow's notification through as a subagent.",
+    "gotcha",
+    { uses: 2, helped: 1, confidenceScore: 0.61, area: "subagents" },
+  ),
+  memory(
+    "m-0018",
+    "cornerstore",
+    "Legacy coupon codes are uppercased at the edge; the admin UI still sends them mixed-case.",
+    "gotcha",
+    {
+      lifecycle: "superseded",
+      confidenceScore: 0.55,
+      uses: 8,
+      helped: 1,
+      relations: [{ type: "supersedes", target: "m-0006" }],
+    },
+  ),
+];
+
+export const MOCK_BRAIN_STATUS = {
+  semantic: true,
+  counts: {
+    total: MOCK_MEMORIES.length,
+    byLifecycle: { active: 17, superseded: 1, archived: 0 },
+    bySource: { human: 8, agent: 10 },
+    byEvidence: {
+      user_stated: 8,
+      code_verified: 5,
+      corroborated: 1,
+      inferred: 0,
+      observed_once: 4,
+    },
+    byVolatility: { evergreen: 8, slow: 9, ephemeral: 1 },
+    byConfidenceTier: { extracted: 12, inferred: 5, ambiguous: 1 },
+    reviewQueue: 4,
+    corroboratedTotal: 9,
+  },
+};
+
+const GRAPH_EDGES: [string, string, number][] = [
+  ["m-0001", "m-0005", 0.62],
+  ["m-0002", "m-0012", 0.51],
+  ["m-0003", "m-0017", 0.48],
+  ["m-0004", "m-0009", 0.57],
+  ["m-0005", "m-0004", 0.55],
+  ["m-0006", "m-0011", 0.71],
+  ["m-0006", "m-0018", 0.66],
+  ["m-0008", "m-0009", 0.69],
+  ["m-0008", "m-0010", 0.44],
+  ["m-0013", "m-0014", 0.58],
+  ["m-0013", "m-0015", 0.53],
+  ["m-0014", "m-0001", 0.42],
+  ["m-0016", "m-0003", 0.4],
+  ["m-0011", "m-0012", 0.47],
+];
+
+export const MOCK_BRAIN_GRAPH = {
+  nodes: MOCK_MEMORIES.map((m) => {
+    const degree = GRAPH_EDGES.filter((e) => e[0] === m.id || e[1] === m.id).length;
+    return { ...m, degree, betweenness: Math.min(0.9, degree * 0.14) };
+  }),
+  links: GRAPH_EDGES.map(([source, target, score]) => ({
+    source,
+    target,
+    kind: "similar",
+    score,
+  })),
+  report: {
+    godNodes: ["m-0013", "m-0006", "m-0008"],
+    bridges: ["m-0005", "m-0009"],
+    needsConfirmation: ["m-0010", "m-0012", "m-0017", "m-0007"],
+    isolated: [],
+    dueForReview: ["m-0002", "m-0011"],
+    interference: [{ a: "m-0006", b: "m-0018", similarity: 0.66 }],
+  },
+  tuning: {
+    linkStrengthBase: 0.05,
+    linkStrengthSpan: 0.35,
+    linkDistanceBase: 120,
+    linkDistanceSpan: 60,
+    gravity: 0.04,
+  },
+};
+
+// --- Voice, account, machine -------------------------------------------
+
+export const MOCK_VOICE_SETTINGS = {
+  voice: "Kore",
+  verbosity: "brief",
+  character:
+    "Dry, unhurried, and specific. Reads back what it is about to send, then stops talking.",
+  handsFree: false,
+  backend: "gemini",
+};
+
+export const MOCK_CLAUDE_ACCOUNT = {
+  loggedIn: true,
+  email: "dev@example.com",
+  plan: "Max 20x",
+  organization: "Personal",
+};
+
+export const MOCK_MACHINE_PRESENTATION = {
+  label: "workshop",
+  icon: "laptop",
+};
