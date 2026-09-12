@@ -749,6 +749,14 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
         const events = turn.events.map((e, j) => {
           const duration = (e as { duration?: unknown }).duration;
           const isResultWithDuration = e.type === "result" && typeof duration === "number";
+          // An event may pin itself relative to the turn: a subagent still out
+          // is timed from its spawn, and a spawn stamped at request time reads
+          // as "0.0s out" however long the fixture says it has been running.
+          const offset = (e as { timestampOffsetMs?: unknown }).timestampOffsetMs;
+          if (typeof offset === "number") {
+            const { timestampOffsetMs: _drop, ...rest } = e as Record<string, unknown>;
+            return { ...rest, timestamp: turnBase + offset };
+          }
           return {
             ...e,
             timestamp: isResultWithDuration ? turnBase + (duration as number) : turnBase + j * 1500,

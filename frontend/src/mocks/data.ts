@@ -1891,7 +1891,10 @@ const forwardSubagentTurns: MockTurn[] = [
         "general-purpose",
         "Write a harness that spawns an agent which itself spawns one, and report which events arrive with which parent id.",
       ),
-      taskStarted(FORWARD_TOOL.nested, "task-fs-3", "Reproduce with a two-level nested agent"),
+      {
+        ...taskStarted(FORWARD_TOOL.nested, "task-fs-3", "Reproduce with a two-level nested agent"),
+        timestampOffsetMs: -168_000,
+      },
       agentStep(
         FORWARD_TOOL.nested,
         text("Building the harness under internal/wire/testdata so the run is reproducible."),
@@ -1913,7 +1916,10 @@ const forwardSubagentTurns: MockTurn[] = [
         "Explore",
         "Determine whether codex emits any subagent-scoped events, and what the adapter answers today.",
       ),
-      taskStarted(FORWARD_TOOL.codex, "task-fs-4", "Survey what codex reports for subagents"),
+      {
+        ...taskStarted(FORWARD_TOOL.codex, "task-fs-4", "Survey what codex reports for subagents"),
+        timestampOffsetMs: -94_000,
+      },
       agentStep(
         FORWARD_TOOL.codex,
         toolUse(

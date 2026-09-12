@@ -641,7 +641,7 @@ const MARA = profile(
   "Mara",
   "Systems architect",
   "Argues for the structurally correct fix and names what the cheap one costs. Reads the whole subsystem before answering.",
-  "compass",
+  "🧭",
   { model: "opus", effort: "high", systemPromptAdditions: "Prefer structure over expedience." },
 );
 
@@ -650,7 +650,7 @@ const KELL = profile(
   "Kell",
   "Security reviewer",
   "Judges every change against an unauthenticated caller, a cross-origin page, and a prompt-injected agent.",
-  "shield",
+  "🛡️",
   { model: "opus", effort: "high" },
 );
 
@@ -659,7 +659,7 @@ const JUNO = profile(
   "Juno",
   "Pragmatist",
   "Asks what ships this week. Keeps the scope honest and the diff small.",
-  "zap",
+  "⚡",
   { model: "sonnet", effort: "medium" },
 );
 
@@ -668,7 +668,7 @@ const TERO = profile(
   "Tero",
   "Test engineer",
   "Writes the failing test first and refuses a fix that no test would have caught.",
-  "flask",
+  "🧪",
   { model: "sonnet", effort: "high" },
 );
 
