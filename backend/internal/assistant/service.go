@@ -26,6 +26,8 @@ const (
 	EventDelta = "assistant.delta"
 	// EventJournal carries a new [JournalEntry].
 	EventJournal = "assistant.journal"
+	// EventProposal carries a [Proposal] on create and on decide. It is
+	// declared in proposals.go, beside the type it carries.
 )
 
 // Page sizes. Every read is bounded, because the journal and the conversation
@@ -111,17 +113,18 @@ type TurnOutcome struct {
 // whole constructor — a half-wired assistant must degrade, because the
 // alternative is a server that will not boot.
 type Service struct {
-	store Store
-	dir   Directory
-	disp  Dispatcher
-	heads HeadManager
-	allow Allowances
-	facts TurnFacts
-	mem   Memory
-	reg   *Registry
-	bus   eventbus.Broadcaster
-	log   *slog.Logger
-	now   func() time.Time
+	store   Store
+	dir     Directory
+	disp    Dispatcher
+	heads   HeadManager
+	allow   Allowances
+	facts   TurnFacts
+	mem     Memory
+	actions Actions
+	reg     *Registry
+	bus     eventbus.Broadcaster
+	log     *slog.Logger
+	now     func() time.Time
 
 	// The verb table, built once in New. Immutable afterwards: nothing outside
 	// the table can be called, and the table cannot grow at runtime.
@@ -134,6 +137,12 @@ type Service struct {
 	// simultaneous first messages cannot create two conversations.
 	convMu    sync.Mutex
 	channelID string
+
+	// decideMu serialises [Service.Decide]. The status guard in SQL protects
+	// the ROW, not the executing: two accepts arriving together would both read
+	// `open` and both merge. Decisions are rare and the socket op runs off the
+	// dispatch loop, so serialising them costs nothing anybody can feel.
+	decideMu sync.Mutex
 
 	// stateBase is what the session.state observer last knew about each
 	// session's two outcome facts, keyed by session id and holding only the
@@ -166,6 +175,8 @@ func WithDispatcher(d Dispatcher) Option { return func(s *Service) { s.disp = d 
 
 // WithHeadManager gives it the ability to start its own head.
 func WithHeadManager(m HeadManager) Option { return func(s *Service) { s.heads = m } }
+
+// WithActions is in proposals.go, beside the interface it takes.
 
 // WithAllowances lets the `allowances` verb answer.
 func WithAllowances(a Allowances) Option { return func(s *Service) { s.allow = a } }

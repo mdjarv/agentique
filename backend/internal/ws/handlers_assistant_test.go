@@ -24,6 +24,9 @@ func TestAssistantOpsAnswerWhenTheAssistantIsOff(t *testing.T) {
 		{"assistant.journal", `{}`},
 		{"assistant.unseen", `{}`},
 		{"assistant.mark-seen", `{}`},
+		{"assistant.proposals", `{}`},
+		{"assistant.decide", `{"id":"p1","accept":true}`},
+		{"assistant.digest", `{}`},
 	} {
 		t.Run(op.name, func(t *testing.T) {
 			c := newDispatchTestConn()
@@ -42,6 +45,22 @@ func TestAssistantOpsAnswerWhenTheAssistantIsOff(t *testing.T) {
 				t.Errorf("the refusal does not name the switch: %q", resp.Error.Message)
 			}
 		})
+	}
+}
+
+// A decide with no proposal names the field rather than reaching the core.
+func TestAssistantDecideRefusesWithoutAnID(t *testing.T) {
+	c := newDispatchTestConn()
+	defer c.close()
+
+	c.dispatch(ClientMessage{ID: "1", Type: "assistant.decide", Payload: []byte(`{"accept":true}`)})
+
+	resp := awaitResponse(c, time.Second)
+	if resp == nil || resp.Error == nil {
+		t.Fatalf("a decide with no id answered %+v, want a validation refusal", resp)
+	}
+	if !strings.Contains(resp.Error.Message, "id") {
+		t.Errorf("the refusal does not name the field: %q", resp.Error.Message)
 	}
 }
 
@@ -66,12 +85,21 @@ func TestAssistantSayRefusesAnEmptyTurn(t *testing.T) {
 // there is a CLAIM that the handler mutates nothing a later request could
 // observe out of order, and `assistant.say` starts a turn.
 func TestAssistantLanes(t *testing.T) {
-	for _, op := range []string{"assistant.history", "assistant.journal", "assistant.unseen"} {
+	for _, op := range []string{
+		"assistant.history", "assistant.journal", "assistant.unseen", "assistant.proposals",
+	} {
 		if !concurrentOps[op] {
 			t.Errorf("%s is on the serial lane; it is a read", op)
 		}
 	}
-	for _, op := range []string{"assistant.say", "assistant.mark-seen"} {
+	// `assistant.decide` performs the action and `assistant.digest` writes a
+	// message; both are mutations. Both also run off the dispatch loop through
+	// handleRequestAsync rather than on the read lane — a merge takes seconds
+	// and a digest resolves a name per line, and a read there would be claiming
+	// it mutates nothing.
+	for _, op := range []string{
+		"assistant.say", "assistant.mark-seen", "assistant.decide", "assistant.digest",
+	} {
 		if concurrentOps[op] {
 			t.Errorf("%s is on the read lane, and it writes", op)
 		}

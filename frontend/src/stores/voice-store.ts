@@ -28,7 +28,7 @@ import { useMachineStore } from "~/stores/machine-store";
 export interface VoiceLogEntry {
   id: number;
   /** Where it came from — decides how it should be read, and how much to trust it. */
-  source: "you" | "agent" | "dispatched" | "report" | "notice" | "summary" | "focus";
+  source: "you" | "agent" | "dispatched" | "report" | "notice" | "summary" | "focus" | "proposal";
   text: string;
   /** report/notice kind, when there is one. */
   kind?: string;
@@ -335,6 +335,11 @@ export const voiceCallHandlers: VoiceCallHandlers = {
   // The screen copy of a summary, which arrives before it is spoken. It is
   // logged as its own source because it is an answer, not a status line.
   onSummary: (s) => append("summary", s.headline ?? "", { sessionId: s.sessionId }),
+
+  // A decision the assistant cannot take itself, logged because it was said out
+  // loud: the yes is spoken and checked against the name that was read back, so
+  // the line is the record of what was put to them, never a control.
+  onProposal: (p) => append("proposal", p.headline ?? "", { sessionId: p.sessionId }),
 
   // The target rides along: a dispatch card that does not say where it went is
   // the screen half of the fault the server now refuses.

@@ -1,8 +1,8 @@
 import { memo, useMemo } from "react";
+import { useSessionLabel } from "~/components/assistant/use-session-label";
 import { journalMark } from "~/lib/assistant/journal-marks";
 import type { AssistantJournalEntry } from "~/lib/assistant/wire";
-import { cn, sessionShortId } from "~/lib/utils";
-import { useChatStore } from "~/stores/chat-store";
+import { cn } from "~/lib/utils";
 
 /**
  * What has happened, pinned above the conversation.
@@ -91,17 +91,3 @@ const JournalRow = memo(function JournalRow({ entry }: { entry: AssistantJournal
     </li>
   );
 });
-
-/**
- * What to call the session an entry is about.
- *
- * The name comes from the session list this client already holds; a session on
- * a machine that is asleep, or one deleted since, falls back to its short id —
- * which is what the rest of the app calls a session it cannot name. Returns
- * undefined for an entry about no session at all.
- */
-function useSessionLabel(sessionId: string | undefined): string | undefined {
-  const name = useChatStore((s) => (sessionId ? s.sessions[sessionId]?.meta.name : undefined));
-  if (!sessionId) return undefined;
-  return name || sessionShortId(sessionId);
-}

@@ -17,7 +17,7 @@ import (
 // route — makes a plumbing problem look like a missing feature. The degrade is
 // logged at warn, because silently answering with an echo when someone expected
 // a model would be worse than either.
-func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *assistant.Registry, dispatcher assistant.Dispatcher, personas voice.PersonaSource, directory assistant.Directory, conversation voice.Conversation) (*voice.Handler, error) {
+func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *assistant.Registry, dispatcher assistant.Dispatcher, personas voice.PersonaSource, directory assistant.Directory, conversation voice.Conversation, proposals voice.Proposals) (*voice.Handler, error) {
 	opts, err := resolveVoiceOptions(cfg)
 	if err != nil {
 		return nil, err
@@ -32,6 +32,10 @@ func newVoiceHandler(cfg Config, allowedOrigins map[string]bool, registry *assis
 	// own transcript. Passed as an interface the caller already narrowed, so a
 	// typed-nil *assistant.Service cannot arrive here looking non-nil.
 	opts.Conversation = conversation
+	// Nil for the same reason and narrowed at the same place: with the assistant
+	// off there is nothing that can propose anything, and the call's two
+	// proposal tools say so in words rather than pretending the queue is empty.
+	opts.Proposals = proposals
 	return voice.NewHandler(opts)
 }
 

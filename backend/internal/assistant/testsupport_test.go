@@ -398,3 +398,177 @@ func (m *fakeMemory) captures() []captureCall {
 	defer m.mu.Unlock()
 	return append([]captureCall(nil), m.captured...)
 }
+
+// fakeActions is the uncontained tier's executor without the services behind
+// it: canned facts, recorded calls, and one error knob per half.
+//
+// The facts default to a state where every verb is allowed, so a test that
+// cares about one refusal sets one field rather than the whole world.
+type fakeActions struct {
+	mu sync.Mutex
+
+	branch   BranchFacts
+	verdict  DeleteVerdict
+	channel  ChannelFacts
+	settings SessionSettings
+	model    ModelChoice
+
+	branchErr   error
+	verdictErr  error
+	channelErr  error
+	settingsErr error
+	modelErr    error
+	// execErr is what every executor answers, so a test can send one proposal
+	// down the failed path without naming which verb it was.
+	execErr error
+	// onExec runs inside every executor, before it answers. A test uses it to
+	// make something happen WHILE the action is being performed — cancelling
+	// the caller's context, which is what a closed tab mid-merge looks like.
+	onExec func()
+
+	factReads []string
+	calls     []string
+	// resolvedFor is the provider the last ResolveModel was asked about, so a
+	// test can see that a spoken name was resolved against the TARGET's
+	// catalog rather than claude's.
+	resolvedFor string
+}
+
+func newFakeActions() *fakeActions {
+	return &fakeActions{
+		// Ahead and clean: a merge is allowed.
+		branch:  BranchFacts{Ahead: 2, Behind: 0, MergeStatus: "clean"},
+		verdict: DeleteVerdict{Safe: true, Reclaimable: true, Safety: "safe"},
+		channel: ChannelFacts{Name: "the squad", Members: 3},
+		// A live claude session: every capability the two set_* verbs need.
+		settings: SessionSettings{
+			Model: "opus", Mode: PermissionModeDefault, Live: true,
+			Provider: "claude", ModelSwitch: true, PlanMode: true, AcceptEditsMode: true,
+		},
+		model: ModelChoice{ID: "sonnet-4-5", Label: "Sonnet"},
+	}
+}
+
+// codexSettings is what a session whose adapter implements none of the three
+// looks like: the state both set_* verbs must refuse rather than propose.
+func codexSettings() SessionSettings {
+	return SessionSettings{Model: "gpt-5-codex", Mode: PermissionModeDefault, Live: true, Provider: "codex"}
+}
+
+func (a *fakeActions) record(call string) {
+	a.mu.Lock()
+	a.calls = append(a.calls, call)
+	during := a.onExec
+	a.mu.Unlock()
+	if during != nil {
+		during()
+	}
+}
+
+func (a *fakeActions) readFact(name string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.factReads = append(a.factReads, name)
+}
+
+func (a *fakeActions) performed() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.calls...)
+}
+
+func (a *fakeActions) reads(name string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := 0
+	for _, read := range a.factReads {
+		if read == name {
+			n++
+		}
+	}
+	return n
+}
+
+func (a *fakeActions) Merge(context.Context, string) (string, error) {
+	a.record("merge")
+	return "merged into the project's branch as abc1234", a.execErr
+}
+
+func (a *fakeActions) Rebase(context.Context, string) (string, error) {
+	a.record("rebase")
+	return "rebased onto the project's branch", a.execErr
+}
+
+func (a *fakeActions) Archive(context.Context, string) error {
+	a.record("archive")
+	return a.execErr
+}
+
+func (a *fakeActions) Delete(context.Context, string) error {
+	a.record("delete")
+	return a.execErr
+}
+
+func (a *fakeActions) Reclaim(context.Context, string) (string, error) {
+	a.record("reclaim")
+	return "reclaimed 40 MB of disk", a.execErr
+}
+
+func (a *fakeActions) Dissolve(_ context.Context, _ string, keepHistory bool) error {
+	if keepHistory {
+		a.record("dissolve-keep")
+	} else {
+		a.record("dissolve")
+	}
+	return a.execErr
+}
+
+func (a *fakeActions) SetModel(_ context.Context, _, model string) error {
+	a.record("set-model:" + model)
+	return a.execErr
+}
+
+func (a *fakeActions) SetMode(_ context.Context, _, mode string) error {
+	a.record("set-mode:" + mode)
+	return a.execErr
+}
+
+func (a *fakeActions) BranchFacts(context.Context, string) (BranchFacts, error) {
+	a.readFact("branch")
+	return a.branch, a.branchErr
+}
+
+func (a *fakeActions) DeleteVerdict(context.Context, string) (DeleteVerdict, error) {
+	a.readFact("verdict")
+	return a.verdict, a.verdictErr
+}
+
+func (a *fakeActions) Busy(context.Context, string) bool {
+	a.readFact("busy")
+	return a.branch.Busy
+}
+
+func (a *fakeActions) ChannelBusy(context.Context, string) (ChannelFacts, error) {
+	a.readFact("channel")
+	return a.channel, a.channelErr
+}
+
+func (a *fakeActions) SessionSettings(context.Context, string) (SessionSettings, error) {
+	a.readFact("settings")
+	return a.settings, a.settingsErr
+}
+
+func (a *fakeActions) ResolveModel(_ context.Context, provider, _ string) (ModelChoice, error) {
+	a.readFact("model")
+	a.mu.Lock()
+	a.resolvedFor = provider
+	a.mu.Unlock()
+	return a.model, a.modelErr
+}
+
+// resolvedAgainst is the provider whose catalog the last ResolveModel used.
+func (a *fakeActions) resolvedAgainst() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.resolvedFor
+}

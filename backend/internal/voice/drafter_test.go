@@ -328,17 +328,19 @@ func (f *fakeDispatcher) dispatched() (int, string) {
 // every path through runTool tolerates that failing.
 func newTestCall(d assistant.Dispatcher, registry *assistant.Registry, focus string) *call {
 	return &call{
-		engine:          NewEchoEngine(),
-		registry:        registry,
-		dispatcher:      d,
-		focus:           focus,
-		follows:         make(map[string]*followState),
-		offered:         make(map[string]assistant.SessionRow),
-		offeredProjects: make(map[string]assistant.ProjectRow),
-		summaries:       make(map[string]string),
-		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
-		log:             testLogger(),
-		runCtx:          context.Background(),
+		engine:           NewEchoEngine(),
+		registry:         registry,
+		dispatcher:       d,
+		focus:            focus,
+		follows:          make(map[string]*followState),
+		offered:          make(map[string]assistant.SessionRow),
+		offeredProjects:  make(map[string]assistant.ProjectRow),
+		offeredProposals: make(map[string]assistant.Proposal),
+		summaries:        make(map[string]string),
+		toolCalls:        make(chan ToolCallEvent, toolQueueDepth),
+		proposalsIn:      make(chan assistant.Proposal, proposalQueueDepth),
+		log:              testLogger(),
+		runCtx:           context.Background(),
 	}
 }
 

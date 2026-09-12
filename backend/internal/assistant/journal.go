@@ -52,6 +52,12 @@ const (
 	// nearest and is wrong in the one way that matters — a report is untrusted
 	// by construction, where a note is the assistant's own sentence.
 	JournalNote JournalKind = "note"
+	// JournalProposalMade — the assistant asked for something uncontained, and
+	// it is waiting for a person. The rationale is the summary.
+	JournalProposalMade JournalKind = "proposal_made"
+	// JournalProposalDecided — somebody accepted, declined or was too late, and
+	// the summary says which and what happened.
+	JournalProposalDecided JournalKind = "proposal_decided"
 	// JournalDaySummary — a day's raw rows, folded (M4).
 	JournalDaySummary JournalKind = "day_summary"
 )
@@ -69,6 +75,8 @@ var journalKinds = []JournalKind{
 	JournalDispatched,
 	JournalSessionCreated,
 	JournalNote,
+	JournalProposalMade,
+	JournalProposalDecided,
 	JournalDaySummary,
 }
 

@@ -5,7 +5,7 @@
  * — render this, because a call log that reads differently depending on where
  * you opened it is two logs.
  */
-import { Crosshair, FileText, Mic } from "lucide-react";
+import { Crosshair, FileText, Mic, TriangleAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useChatStore } from "~/stores/chat-store";
 import type { VoiceLogEntry, VoiceStatus } from "~/stores/voice-store";
@@ -89,6 +89,9 @@ function LogLine({ entry }: { entry: VoiceLogEntry }) {
   if (entry.source === "focus") {
     return <FocusLine entry={entry} />;
   }
+  if (entry.source === "proposal") {
+    return <ProposalLine entry={entry} />;
+  }
   return (
     <li className="rounded-lg bg-muted/30 px-2.5 py-1.5 ring-1 ring-border/60">
       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground-faint">
@@ -145,6 +148,29 @@ function FocusLine({ entry }: { entry: VoiceLogEntry }) {
     <li className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground-faint">
       <Crosshair className="size-3 shrink-0" />
       <span className="truncate">Now on {sessionName ?? "another session"}</span>
+    </li>
+  );
+}
+
+/**
+ * Something the assistant has proposed and is not allowed to do itself.
+ *
+ * It wears the triangle in orange, the same mark the thread's card wears, on the
+ * rule that one mark means one thing: this is a decision waiting on the person
+ * on the call. And it carries no buttons, which is the whole point of the
+ * surface — a call cannot show a card, so the yes is given out loud and checked
+ * against the name the assistant read back. The line is the record of what was
+ * put to them, so that a call nobody was watching can still be accounted for
+ * afterwards.
+ */
+function ProposalLine({ entry }: { entry: VoiceLogEntry }) {
+  return (
+    <li className="rounded-lg border border-orange/40 bg-orange/5 px-2.5 py-1.5">
+      <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-orange">
+        <TriangleAlert className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">Waiting on you</span>
+      </div>
+      <p className="text-[12.5px] leading-snug">{entry.text}</p>
     </li>
   );
 }

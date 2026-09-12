@@ -41,6 +41,23 @@ type AssistantJournal struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type AssistantProposal struct {
+	ID         string `json:"id"`
+	CreatedAt  string `json:"created_at"`
+	Verb       string `json:"verb"`
+	SessionID  string `json:"session_id"`
+	ProjectID  string `json:"project_id"`
+	ChannelID  string `json:"channel_id"`
+	Args       string `json:"args"`
+	Rationale  string `json:"rationale"`
+	Evidence   string `json:"evidence"`
+	Status     string `json:"status"`
+	DecidedAt  string `json:"decided_at"`
+	DecidedVia string `json:"decided_via"`
+	Outcome    string `json:"outcome"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
 type AssistantState struct {
 	ID              int64  `json:"id"`
 	ChannelID       string `json:"channel_id"`

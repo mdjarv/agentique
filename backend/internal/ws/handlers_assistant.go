@@ -8,8 +8,7 @@ import (
 
 // The assistant's ops (docs/assistant.md).
 //
-// Three of them, split across the socket's two lanes on the rule the lanes are
-// for: `assistant.say` writes and stays on the serial MUTATION lane, so what the
+// Split across the socket's two lanes on the rule the lanes are for: `assistant.say` writes and stays on the serial MUTATION lane, so what the
 // operator sent in order lands in order; `assistant.history` and
 // `assistant.journal` mutate nothing a later request could observe out of order
 // and run on the READ lane, where a slow one cannot hold up the session history
@@ -96,6 +95,71 @@ func (c *conn) handleAssistantMarkSeen(msg ClientMessage) {
 	})
 }
 
+// handleAssistantProposals lists what has been proposed: open first, then
+// decided, newest first.
+//
+// A pure read, on the read lane. The TTL is applied lazily and on the WRITE
+// side — [assistant.Service.Proposals] derives an expired status rather than
+// stamping one — because membership of this lane is the claim that the handler
+// mutates nothing a later request could observe out of order, and an expiring
+// sweep here would be exactly that.
+func (c *conn) handleAssistantProposals(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p AssistantProposalsPayload) (AssistantProposalsResult, error) {
+		if c.assistantSvc == nil {
+			return AssistantProposalsResult{}, errAssistantDisabled
+		}
+		proposals, err := c.assistantSvc.Proposals(ctx, p.Limit)
+		if err != nil {
+			return AssistantProposalsResult{}, err
+		}
+		return AssistantProposalsResult{Proposals: proposals}, nil
+	})
+}
+
+// handleAssistantDecide is the yes and the no.
+//
+// Through handleRequestAsync, because accepting performs the action: a merge
+// shells out to git five times and takes seconds, and on the dispatch loop that
+// would stall every RPC queued behind it — a session stop, an approval answer.
+// Responses match by request id, so this handler has no ordering contract with
+// its neighbours, and the core serialises decisions itself.
+//
+// It answers the ROW, whatever happened: accepted with what the executor did,
+// stale with what had changed, failed with git's own word, or the row unchanged
+// when somebody else had already decided it. A surface renders the answer
+// rather than inferring one.
+func (c *conn) handleAssistantDecide(msg ClientMessage) {
+	handleRequestAsync(c, msg, func(ctx context.Context, p AssistantDecidePayload) (assistant.Proposal, error) {
+		if c.assistantSvc == nil {
+			return assistant.Proposal{}, errAssistantDisabled
+		}
+		// The surface is this socket's, as for every assistant op: a client that
+		// could name one could record a yes as having been given on a call.
+		return c.assistantSvc.Decide(ctx, assistant.SurfaceThread, p.ID, p.Accept)
+	})
+}
+
+// handleAssistantDigest posts a digest and answers the message.
+//
+// A mutation: it writes a message into the conversation and stamps the window
+// it covered. Through handleRequestAsync all the same, like `assistant.decide`
+// and for the same reason — no model runs, but naming the subjects does: every
+// open proposal and every line in every group is resolved through
+// `Directory.SessionBrief`, which is a session enrich plus a project list
+// apiece, so one digest is hundreds of queries. On the dispatch loop that
+// would sit in front of every later mutation on this socket, a session stop
+// and an approval answer included. It has no ordering contract worth holding:
+// nothing a client sends next reads the digest, and the stamp it writes is
+// only the window the next one measures from.
+func (c *conn) handleAssistantDigest(msg ClientMessage) {
+	handleRequestAsync(c, msg, func(ctx context.Context, _ AssistantDigestPayload) (assistant.Message, error) {
+		if c.assistantSvc == nil {
+			return assistant.Message{}, errAssistantDisabled
+		}
+		return c.assistantSvc.Digest(ctx)
+	})
+}
+
 // AssistantJournalResult wraps the entries rather than answering a bare array.
 //
 // An object is the shape every other list op answers with, and it is the one a
@@ -103,4 +167,9 @@ func (c *conn) handleAssistantMarkSeen(msg ClientMessage) {
 // where a top-level array cannot grow at all.
 type AssistantJournalResult struct {
 	Entries []assistant.JournalEntry `json:"entries,omitempty"`
+}
+
+// AssistantProposalsResult wraps the proposals, on the same argument.
+type AssistantProposalsResult struct {
+	Proposals []assistant.Proposal `json:"proposals,omitempty"`
 }

@@ -46,12 +46,66 @@ func (q *Queries) CreateAssistantChannel(ctx context.Context, arg CreateAssistan
 	return i, err
 }
 
+const decideAssistantProposal = `-- name: DecideAssistantProposal :execrows
+UPDATE assistant_proposals
+SET status = ?1,
+    decided_at = ?2,
+    decided_via = ?3,
+    outcome = ?4
+WHERE id = ?5 AND status = 'open'
+`
+
+type DecideAssistantProposalParams struct {
+	Status     string `json:"status"`
+	DecidedAt  string `json:"decided_at"`
+	DecidedVia string `json:"decided_via"`
+	Outcome    string `json:"outcome"`
+	ID         string `json:"id"`
+}
+
+// The decision. Guarded on status = 'open' so two surfaces cannot both decide
+// one proposal: the second write touches nothing, and the caller re-reads the
+// row it did not change.
+//
+// It answers how many rows it changed, so the caller does not have to assume
+// the guard matched. Zero means somebody else settled this proposal first,
+// which is a different thing from the write failing -- and after an action has
+// already been performed, the difference is worth a log line that says which.
+func (q *Queries) DecideAssistantProposal(ctx context.Context, arg DecideAssistantProposalParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, decideAssistantProposal,
+		arg.Status,
+		arg.DecidedAt,
+		arg.DecidedVia,
+		arg.Outcome,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteAssistantFollow = `-- name: DeleteAssistantFollow :exec
 DELETE FROM assistant_follows WHERE session_id = ?
 `
 
 func (q *Queries) DeleteAssistantFollow(ctx context.Context, sessionID string) error {
 	_, err := q.db.ExecContext(ctx, deleteAssistantFollow, sessionID)
+	return err
+}
+
+const expireAssistantProposals = `-- name: ExpireAssistantProposals :exec
+UPDATE assistant_proposals
+SET status = 'expired', decided_at = ?1
+WHERE status = 'open' AND expires_at != '' AND expires_at <= ?1
+`
+
+// Lazy expiry, applied on a decide: an open proposal past its expiry is not an
+// offer any more. There is no timer behind this -- a proposal nobody looks at
+// costs nothing, and a sweep would be a second writer on a table whose whole
+// content is decisions.
+func (q *Queries) ExpireAssistantProposals(ctx context.Context, at string) error {
+	_, err := q.db.ExecContext(ctx, expireAssistantProposals, at)
 	return err
 }
 
@@ -90,6 +144,32 @@ func (q *Queries) GetAssistantFollow(ctx context.Context, sessionID string) (Ass
 	return i, err
 }
 
+const getAssistantProposal = `-- name: GetAssistantProposal :one
+SELECT id, created_at, verb, session_id, project_id, channel_id, args, rationale, evidence, status, decided_at, decided_via, outcome, expires_at FROM assistant_proposals WHERE id = ?
+`
+
+func (q *Queries) GetAssistantProposal(ctx context.Context, id string) (AssistantProposal, error) {
+	row := q.db.QueryRowContext(ctx, getAssistantProposal, id)
+	var i AssistantProposal
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.Verb,
+		&i.SessionID,
+		&i.ProjectID,
+		&i.ChannelID,
+		&i.Args,
+		&i.Rationale,
+		&i.Evidence,
+		&i.Status,
+		&i.DecidedAt,
+		&i.DecidedVia,
+		&i.Outcome,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
 const getAssistantState = `-- name: GetAssistantState :one
 
 SELECT id, channel_id, model, last_heartbeat_at, last_digest_at, surface_marks, created_at, updated_at FROM assistant_state WHERE id = 1
@@ -113,6 +193,49 @@ func (q *Queries) GetAssistantState(ctx context.Context) (AssistantState, error)
 		&i.SurfaceMarks,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getOpenAssistantProposalFor = `-- name: GetOpenAssistantProposalFor :one
+SELECT id, created_at, verb, session_id, project_id, channel_id, args, rationale, evidence, status, decided_at, decided_via, outcome, expires_at FROM assistant_proposals
+WHERE status = 'open'
+  AND verb = ?1
+  AND session_id = ?2
+  AND channel_id = ?3
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetOpenAssistantProposalForParams struct {
+	Verb      string `json:"verb"`
+	SessionID string `json:"session_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+// One open proposal for the same verb and the same target, if there is one.
+//
+// Asking twice for the same thing is one card, not two: a second row would
+// give the operator two buttons for one decision, and accepting either would
+// leave the other pointing at work already done.
+func (q *Queries) GetOpenAssistantProposalFor(ctx context.Context, arg GetOpenAssistantProposalForParams) (AssistantProposal, error) {
+	row := q.db.QueryRowContext(ctx, getOpenAssistantProposalFor, arg.Verb, arg.SessionID, arg.ChannelID)
+	var i AssistantProposal
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.Verb,
+		&i.SessionID,
+		&i.ProjectID,
+		&i.ChannelID,
+		&i.Args,
+		&i.Rationale,
+		&i.Evidence,
+		&i.Status,
+		&i.DecidedAt,
+		&i.DecidedVia,
+		&i.Outcome,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -212,6 +335,63 @@ func (q *Queries) InsertAssistantMessage(ctx context.Context, arg InsertAssistan
 		&i.MessageType,
 		&i.Metadata,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertAssistantProposal = `-- name: InsertAssistantProposal :one
+
+INSERT INTO assistant_proposals (
+    id, created_at, verb, session_id, project_id, channel_id,
+    args, rationale, evidence, status, expires_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+RETURNING id, created_at, verb, session_id, project_id, channel_id, args, rationale, evidence, status, decided_at, decided_via, outcome, expires_at
+`
+
+type InsertAssistantProposalParams struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	Verb      string `json:"verb"`
+	SessionID string `json:"session_id"`
+	ProjectID string `json:"project_id"`
+	ChannelID string `json:"channel_id"`
+	Args      string `json:"args"`
+	Rationale string `json:"rationale"`
+	Evidence  string `json:"evidence"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// Proposals: the uncontained tier's card, and the record of its yes or no.
+// See docs/assistant.md's M3 contract and migration 057.
+func (q *Queries) InsertAssistantProposal(ctx context.Context, arg InsertAssistantProposalParams) (AssistantProposal, error) {
+	row := q.db.QueryRowContext(ctx, insertAssistantProposal,
+		arg.ID,
+		arg.CreatedAt,
+		arg.Verb,
+		arg.SessionID,
+		arg.ProjectID,
+		arg.ChannelID,
+		arg.Args,
+		arg.Rationale,
+		arg.Evidence,
+		arg.ExpiresAt,
+	)
+	var i AssistantProposal
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.Verb,
+		&i.SessionID,
+		&i.ProjectID,
+		&i.ChannelID,
+		&i.Args,
+		&i.Rationale,
+		&i.Evidence,
+		&i.Status,
+		&i.DecidedAt,
+		&i.DecidedVia,
+		&i.Outcome,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -450,6 +630,53 @@ func (q *Queries) ListAssistantMessagesSince(ctx context.Context, arg ListAssist
 	return items, nil
 }
 
+const listAssistantProposals = `-- name: ListAssistantProposals :many
+SELECT id, created_at, verb, session_id, project_id, channel_id, args, rationale, evidence, status, decided_at, decided_via, outcome, expires_at FROM assistant_proposals
+ORDER BY (status != 'open'), created_at DESC, id DESC
+LIMIT ?1
+`
+
+// Open first, then whatever was decided, newest first within each half. A
+// surface renders the open ones as cards and the rest as history, and one read
+// answers both.
+func (q *Queries) ListAssistantProposals(ctx context.Context, lim int64) ([]AssistantProposal, error) {
+	rows, err := q.db.QueryContext(ctx, listAssistantProposals, lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantProposal{}
+	for rows.Next() {
+		var i AssistantProposal
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.Verb,
+			&i.SessionID,
+			&i.ProjectID,
+			&i.ChannelID,
+			&i.Args,
+			&i.Rationale,
+			&i.Evidence,
+			&i.Status,
+			&i.DecidedAt,
+			&i.DecidedVia,
+			&i.Outcome,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionOutcomeBaseline = `-- name: ListSessionOutcomeBaseline :many
 SELECT id, worktree_merged, archived_at FROM sessions
 `
@@ -541,6 +768,26 @@ type SetAssistantChannelParams struct {
 
 func (q *Queries) SetAssistantChannel(ctx context.Context, arg SetAssistantChannelParams) error {
 	_, err := q.db.ExecContext(ctx, setAssistantChannel, arg.ChannelID, arg.Now)
+	return err
+}
+
+const setAssistantDigestAt = `-- name: SetAssistantDigestAt :exec
+INSERT INTO assistant_state (id, last_digest_at, created_at, updated_at)
+VALUES (1, ?1, ?2, ?2)
+ON CONFLICT(id) DO UPDATE SET
+  last_digest_at = excluded.last_digest_at,
+  updated_at = excluded.updated_at
+`
+
+type SetAssistantDigestAtParams struct {
+	LastDigestAt string `json:"last_digest_at"`
+	Now          string `json:"now"`
+}
+
+// Stamps the window the last digest covered, so the next one starts where it
+// finished. Written only by Digest.
+func (q *Queries) SetAssistantDigestAt(ctx context.Context, arg SetAssistantDigestAtParams) error {
+	_, err := q.db.ExecContext(ctx, setAssistantDigestAt, arg.LastDigestAt, arg.Now)
 	return err
 }
 

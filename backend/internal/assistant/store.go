@@ -35,6 +35,7 @@ type Store interface {
 	GetAssistantState(ctx context.Context) (store.AssistantState, error)
 	SetAssistantChannel(ctx context.Context, arg store.SetAssistantChannelParams) error
 	SetAssistantSurfaceMark(ctx context.Context, arg store.SetAssistantSurfaceMarkParams) error
+	SetAssistantDigestAt(ctx context.Context, arg store.SetAssistantDigestAtParams) error
 
 	// The journal: append-only, plus the one update that stamps seen_by --
 	// through a boundary rather than row by row, so a look means "caught up to
@@ -49,6 +50,19 @@ type Store interface {
 	// of two flags: the session.state observer's baseline, so that a snapshot
 	// of a session archived last month is not news (see ObserveSessionState).
 	ListSessionOutcomeBaseline(ctx context.Context) ([]store.ListSessionOutcomeBaselineRow, error)
+
+	// The proposals: the uncontained tier's card and the record of its yes or
+	// no. Expiry is one statement rather than a row-by-row sweep; the decision
+	// is guarded on status = 'open' in SQL so two surfaces cannot both decide
+	// one proposal, and it answers the row count so the caller knows whether
+	// the guard matched; and one open row per verb and target is a partial
+	// unique index (migration 058), so the insert is what refuses a duplicate.
+	InsertAssistantProposal(ctx context.Context, arg store.InsertAssistantProposalParams) (store.AssistantProposal, error)
+	GetAssistantProposal(ctx context.Context, id string) (store.AssistantProposal, error)
+	GetOpenAssistantProposalFor(ctx context.Context, arg store.GetOpenAssistantProposalForParams) (store.AssistantProposal, error)
+	ListAssistantProposals(ctx context.Context, lim int64) ([]store.AssistantProposal, error)
+	DecideAssistantProposal(ctx context.Context, arg store.DecideAssistantProposalParams) (int64, error)
+	ExpireAssistantProposals(ctx context.Context, at string) error
 
 	// The watch list.
 	UpsertAssistantFollow(ctx context.Context, arg store.UpsertAssistantFollowParams) error

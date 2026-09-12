@@ -10,7 +10,7 @@ import "github.com/allbin/agentkit/runtime"
 //
 // Source of truth: runtime.Capabilities. If the adapter side ever advertises
 // values that differ from the static lookup here, the frontend will gate based
-// on the static profile; update capabilitiesForProvider when bumping agentkit
+// on the static profile; update CapabilitiesForProvider when bumping agentkit
 // to keep them in sync.
 type WireCapabilities struct {
 	Provider               string `json:"provider"`
@@ -76,11 +76,18 @@ func runtimeCapsToWire(c runtime.Capabilities, attachments bool) WireCapabilitie
 	}
 }
 
-// capabilitiesForProvider returns the static capability snapshot for a
+// CapabilitiesForProvider returns the static capability snapshot for a
 // canonical provider name. Unknown providers get a zero value with just the
 // name populated, which the UI treats as "nothing is supported" — safer than
 // silently advertising claude's full feature set.
-func capabilitiesForProvider(provider string) WireCapabilities {
+//
+// Exported for a caller that holds a session ROW rather than a live session:
+// the assistant's proposal checks read it to refuse a card that offers an
+// operation the target's adapter does not implement (codex has no ModelSwitch,
+// no PlanMode and no AcceptEditsMode), and the alternative was a second
+// provider list spelled somewhere else. Pure, with no side effect and no live
+// session needed.
+func CapabilitiesForProvider(provider string) WireCapabilities {
 	switch normalizeProvider(provider) {
 	case "claude":
 		return WireCapabilities{

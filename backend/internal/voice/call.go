@@ -148,6 +148,7 @@ type call struct {
 	dispatcher   assistant.Dispatcher
 	directory    assistant.Directory
 	conversation Conversation
+	proposals    Proposals
 	log          *slog.Logger
 
 	// id names this call in the shared conversation, so a mirrored turn can be
@@ -179,6 +180,16 @@ type call struct {
 	// session and sending a prompt to it. Running them through one queue is
 	// also free, because the model is paused until every one is answered.
 	toolCalls chan ToolCallEvent
+
+	// proposalsIn carries a waiting decision from the core's delivery call to
+	// this call's own goroutine.
+	//
+	// [assistant.Surface.Deliver] must not block — its caller is the head's MCP
+	// tool handler with an agent waiting on it — and announcing a proposal is a
+	// control write plus a speech injection, the second of which has no
+	// deadline of its own. So Deliver posts here and [call.pumpProposals] does
+	// the talking.
+	proposalsIn chan assistant.Proposal
 
 	idleTimeout time.Duration
 
@@ -215,6 +226,11 @@ type call struct {
 	// offeredProjects is the same guard for the places a session can be
 	// created. create_session accepts only these.
 	offeredProjects map[string]assistant.ProjectRow
+	// offeredProposals is the same guard for the decisions that can be settled
+	// from this call — listed, or delivered while it was live. decide_proposal
+	// accepts only these, which is what stops an id assembled out of a
+	// transcript from accepting a card nobody described out loud.
+	offeredProposals map[string]assistant.Proposal
 
 	// summaryMu guards the summaries delivered for this call, kept per session
 	// because that is what they describe. A summary warmed by focusing a session
@@ -294,24 +310,27 @@ func newCall(ws *websocket.Conn, engine Engine, opts Options, initialFocus strin
 	}
 	now := time.Now()
 	c := &call{
-		ws:              ws,
-		engine:          engine,
-		registry:        opts.Registry,
-		dispatcher:      opts.Dispatcher,
-		directory:       opts.Directory,
-		conversation:    opts.Conversation,
-		id:              uuid.New().String(),
-		focus:           initialFocus,
-		follows:         make(map[string]*followState),
-		offered:         make(map[string]assistant.SessionRow),
-		offeredProjects: make(map[string]assistant.ProjectRow),
-		summaries:       make(map[string]string),
-		toolCalls:       make(chan ToolCallEvent, toolQueueDepth),
-		log:             log,
-		idleTimeout:     idleTimeout,
-		lastFrame:       now,
-		lastInteraction: now,
-		runCtx:          context.Background(),
+		ws:               ws,
+		engine:           engine,
+		registry:         opts.Registry,
+		dispatcher:       opts.Dispatcher,
+		directory:        opts.Directory,
+		conversation:     opts.Conversation,
+		proposals:        opts.Proposals,
+		id:               uuid.New().String(),
+		focus:            initialFocus,
+		follows:          make(map[string]*followState),
+		offered:          make(map[string]assistant.SessionRow),
+		offeredProjects:  make(map[string]assistant.ProjectRow),
+		offeredProposals: make(map[string]assistant.Proposal),
+		summaries:        make(map[string]string),
+		toolCalls:        make(chan ToolCallEvent, toolQueueDepth),
+		proposalsIn:      make(chan assistant.Proposal, proposalQueueDepth),
+		log:              log,
+		idleTimeout:      idleTimeout,
+		lastFrame:        now,
+		lastInteraction:  now,
+		runCtx:           context.Background(),
 	}
 	// The session the call opened on is offered by construction: the operator
 	// chose it by pressing the button, which is a stronger gesture than any
@@ -624,9 +643,10 @@ func (c *call) answerToolCall(ev ToolCallEvent, result map[string]any) {
 
 // runTool executes the call and returns the model's result payload.
 //
-// Five of the seven tools only look; one creates a session and one starts work.
-// Every branch returns something sayable, including the refusals — what comes
-// back is what the listener hears next.
+// Most of them only look. One creates a session, one starts work, one carries
+// the operator's yes to a decision somebody else proposed, and one ends the
+// call. Every branch returns something sayable, including the refusals — what
+// comes back is what the listener hears next.
 func (c *call) runTool(ev ToolCallEvent) map[string]any {
 	// One deadline for the whole call, tools included: a database read that
 	// hangs is dead air exactly like a dispatch that hangs, and the model is
@@ -654,6 +674,10 @@ func (c *call) dispatchTool(ctx context.Context, ev ToolCallEvent) map[string]an
 		return c.toolListProjects(ctx, ev.Args)
 	case ToolCreateSession:
 		return c.toolCreateSession(ctx, ev.Args)
+	case ToolListProposals:
+		return c.toolListProposals(ctx)
+	case ToolDecideProposal:
+		return c.toolDecideProposal(ctx, ev.Args)
 	case ToolHangUp:
 		return c.toolHangUp()
 	default:
@@ -993,6 +1017,23 @@ func (c *call) run(ctx context.Context) {
 		_ = c.ws.Close()
 	}()
 
+	// A live call is a blind surface on the assistant, and registering is the
+	// only thing that makes a decision proposed mid-call reach it — a report and
+	// a notice arrive through the follow set, which is per session, where a
+	// proposal is not about a session this call started. The release is deferred
+	// AFTER the teardown above so it runs BEFORE it: a proposal landing
+	// mid-teardown would otherwise speak into a socket that is already closing.
+	if c.proposals != nil {
+		release, err := c.proposals.RegisterSurface(c)
+		if err != nil {
+			// A call that hears about no decisions is still a call. Losing the
+			// whole conversation over it would not be.
+			c.log.Warn("voice call not registered as an assistant surface", "error", err)
+		} else {
+			defer release()
+		}
+	}
+
 	if err := c.sendControl(serverMessage{
 		Type:             msgReady,
 		InputSampleRate:  InputSampleRate,
@@ -1008,12 +1049,13 @@ func (c *call) run(ctx context.Context) {
 	c.greet()
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); defer cancel(); c.pumpEngine(ctx) }()
 	go func() { defer wg.Done(); defer cancel(); c.pumpKeepalive(ctx) }()
-	// Not cancel-on-return: the tool pump ending is not a reason to end the
-	// call, it is what happens when the call ends.
+	// Not cancel-on-return: neither of these pumps ending is a reason to end
+	// the call, it is what happens when the call ends.
 	go func() { defer wg.Done(); c.pumpTools(ctx) }()
+	go func() { defer wg.Done(); c.pumpProposals(ctx) }()
 
 	// The read loop owns this goroutine: it is the one that must observe the
 	// socket closing, and cancelling on its return is what stops the others.

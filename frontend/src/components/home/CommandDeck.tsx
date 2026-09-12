@@ -14,7 +14,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { cn, sessionShortId } from "~/lib/utils";
 import { AttentionCard } from "./AttentionCard";
-import { type LiveRow, useDeckRows } from "./use-deck-rows";
+import { deckRowKey, type LiveRow, useDeckRows } from "./use-deck-rows";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -89,7 +89,7 @@ export function CommandDeck() {
           <div className="flex flex-wrap gap-3">
             {needs.map((row) => (
               <AttentionCard
-                key={row.sessionId}
+                key={deckRowKey(row)}
                 row={row}
                 onOpen={() => open(row.projectSlug, row.sessionId)}
               />

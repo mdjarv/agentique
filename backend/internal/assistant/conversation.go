@@ -41,10 +41,12 @@ const (
 	// lists it. Nothing does: kind = 'assistant' keeps it out of every channel
 	// list.
 	conversationChannelName = "Assistant"
-	// messageTypeMessage is the channel vocabulary's ordinary message. A
-	// proposal card will be its own type (M3); informational types are skipped
-	// by the legacy event mirror, which is why they are types rather than
-	// flags.
+	// messageTypeMessage is the channel vocabulary's ordinary message, and the
+	// only type this conversation writes: a proposal is a row in
+	// `assistant_proposals` rather than a message, so a card cannot go stale
+	// against the decision that settled it (proposals.go). Informational types
+	// are skipped by the legacy event mirror, which is why they are types
+	// rather than flags.
 	messageTypeMessage = "message"
 )
 
@@ -65,6 +67,10 @@ func formatMessageTime(t time.Time) string { return t.UTC().Format(messageTimeFo
 const (
 	metadataSurfaceKey = "surface"
 	metadataCallKey    = "callId"
+	// metadataKindKey marks a message that is not a turn in the conversation.
+	// Today that is one thing, the digest: it is composed rather than said, and
+	// a surface renders it as a panel rather than as somebody's reply.
+	metadataKindKey = "kind"
 )
 
 // Roles on the wire. The store's sender types are a channel's vocabulary; a
@@ -83,6 +89,10 @@ type Message struct {
 	Surface string `json:"surface,omitempty"`
 	// CallID is the voice call a mirrored turn came from.
 	CallID string `json:"callId,omitempty"`
+	// Kind is empty for a turn in the conversation and "digest" for a digest,
+	// which is composed rather than said. A surface that does not know a kind
+	// renders it as an ordinary message, which is what it also reads as.
+	Kind string `json:"kind,omitempty"`
 	// CreatedAt is the messages table's own stamp, which is RFC3339 with
 	// fractional seconds — that table predates the seconds rule, and it is
 	// also the history cursor, so it is passed through rather than reformatted.
@@ -250,7 +260,7 @@ func (s *Service) beginSay(ctx context.Context, surface, text string) (said stri
 		return "", Message{}, errors.New("assistant: nothing to say")
 	}
 
-	ask, err = s.appendMessage(ctx, senderUser, surface, "", said)
+	ask, err = s.appendMessage(ctx, senderUser, surface, "", "", said)
 	if err != nil {
 		return "", Message{}, err
 	}
@@ -292,7 +302,7 @@ func (s *Service) answer(ctx context.Context, surface, said string) (Message, er
 		return s.note(ctx, surface, turnSilentText), nil
 	}
 
-	stored, err := s.appendMessage(ctx, senderPersona, surface, "", reply)
+	stored, err := s.appendMessage(ctx, senderPersona, surface, "", "", reply)
 	if err != nil {
 		return Message{}, err
 	}
@@ -305,7 +315,7 @@ func (s *Service) answer(ctx context.Context, surface, said string) (Message, er
 // A failure to store it is logged rather than raised: the caller is already
 // handling one failure, and there is nothing better to do with a second.
 func (s *Service) note(ctx context.Context, surface, text string) Message {
-	stored, err := s.appendMessage(ctx, senderPersona, surface, "", text)
+	stored, err := s.appendMessage(ctx, senderPersona, surface, "", "", text)
 	if err != nil {
 		s.log.Warn("assistant could not store its own note", "surface", surface, "error", err)
 		return Message{}
@@ -340,7 +350,7 @@ func (s *Service) Mirror(ctx context.Context, surface, callID, role, text string
 		return Message{}, fmt.Errorf("assistant: %q is not a role (want %q or %q)", role, RoleUser, RoleAssistant)
 	}
 
-	stored, err := s.appendMessage(ctx, sender, surface, callID, said)
+	stored, err := s.appendMessage(ctx, sender, surface, callID, "", said)
 	if err != nil {
 		return Message{}, err
 	}
@@ -348,7 +358,7 @@ func (s *Service) Mirror(ctx context.Context, surface, callID, role, text string
 }
 
 // appendMessage stores one conversation message and pushes it.
-func (s *Service) appendMessage(ctx context.Context, senderType, surface, callID, text string) (Message, error) {
+func (s *Service) appendMessage(ctx context.Context, senderType, surface, callID, kind, text string) (Message, error) {
 	channelID, err := s.EnsureConversation(ctx)
 	if err != nil {
 		return Message{}, err
@@ -357,6 +367,9 @@ func (s *Service) appendMessage(ctx context.Context, senderType, surface, callID
 	metadata := map[string]string{metadataSurfaceKey: surface}
 	if callID != "" {
 		metadata[metadataCallKey] = callID
+	}
+	if kind != "" {
+		metadata[metadataKindKey] = kind
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {
@@ -481,6 +494,7 @@ func messageFrom(row store.Message) Message {
 		if err := json.Unmarshal([]byte(row.Metadata), &metadata); err == nil {
 			msg.Surface = metadata[metadataSurfaceKey]
 			msg.CallID = metadata[metadataCallKey]
+			msg.Kind = metadata[metadataKindKey]
 		}
 	}
 	return msg

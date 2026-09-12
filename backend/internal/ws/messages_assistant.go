@@ -60,10 +60,36 @@ type AssistantUnseenResult struct {
 // holds. It carries nothing, for the same reason.
 type AssistantMarkSeenPayload struct{}
 
+// AssistantProposalsPayload asks what has been proposed, open first.
+type AssistantProposalsPayload struct {
+	// Limit is how many rows at most. 0 asks for the server's cap.
+	Limit int `json:"limit,omitempty"`
+}
+
+// AssistantDecidePayload is the yes or the no on one proposal.
+//
+// It carries no surface, as no assistant op does: `decided_via` is the record
+// of WHERE a decision was given, and a client that could name its own surface
+// could record a card the operator pressed on screen as a yes spoken on a
+// call.
+type AssistantDecidePayload struct {
+	// ID is the proposal's id.
+	ID string `json:"id,omitempty"`
+	// Accept is the decision. Absent is a decline, which is the safe reading:
+	// nothing is performed.
+	Accept bool `json:"accept,omitempty"`
+}
+
+// AssistantDigestPayload asks for a digest now. It carries nothing: the window
+// is the server's mark, not a range a client picks.
+type AssistantDigestPayload struct{}
+
 // --- Assistant validation ---
 
 var (
 	errAssistantTextRequired = errors.New("text is required")
+	// errAssistantProposalRequired is what a decide with no id answers.
+	errAssistantProposalRequired = errors.New("id is required")
 	// errAssistantDisabled is what every assistant op answers when the feature
 	// is off.
 	//
@@ -75,6 +101,13 @@ var (
 	// telling apart from a bug.
 	errAssistantDisabled = errors.New("the assistant is not enabled on this machine ([experimental] assistant)")
 )
+
+func (p *AssistantDecidePayload) Validate() error {
+	if trimSpace(p.ID) == "" {
+		return errAssistantProposalRequired
+	}
+	return nil
+}
 
 func (p *AssistantSayPayload) Validate() error {
 	text := trimSpace(p.Text)

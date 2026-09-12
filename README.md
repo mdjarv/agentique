@@ -488,9 +488,12 @@ browser = false  # the in-app browser panel
 voice   = false  # live spoken dialog (docs/voice.md). Adds a Live button to the
                  # composer; /dev/voice stays a loopback check for the audio path.
 assistant = false  # the durable assistant (docs/assistant.md): the /assistant
-                   # thread, the journal, the head and its verbs. Off means
-                   # unbuilt — no route, no assistant.* WS ops, no verb tools.
-                   # A live call keeps its own report tool either way.
+                   # thread, the journal, the head and its verbs, and the
+                   # proposals its uncontained verbs put to you. Off means
+                   # unbuilt — no route, no verb tools, nothing that can
+                   # propose anything, and every assistant.* WS op answers a
+                   # refusal naming this switch. A live call keeps its own
+                   # report tool either way.
 
 [claude]
 autocompact = ""     # "auto", or a token count between 100000 and 1000000.
@@ -866,6 +869,7 @@ Subsystem docs, all describing what is built today:
 | [upgrades.md](docs/upgrades.md) | In-app upgrades across machines. |
 | [scheduled-loops.md](docs/scheduled-loops.md) | Recurring prompts with run history and health. |
 | [model-catalog.md](docs/model-catalog.md) | Listing models without shipping a release per upstream model. |
+| [assistant.md](docs/assistant.md) | The durable assistant: the thread, the journal, the verb tiers, and the proposals that carry a yes. |
 | [brain.md](docs/brain.md) | The assistant's long-term memory store, and why it works that way. |
 | [channels.md](docs/channels.md) | Channels, teams, `@spawn` delegation, and web-only personas. |
 | [voice.md](docs/voice.md) | Live spoken dialog: the transport, the drafter, and what it refuses to do. |

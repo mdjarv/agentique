@@ -56,6 +56,11 @@ const (
 	// ItemDelta is the head's reply in progress. A surface that cannot render
 	// partial text ignores it and waits for [ItemMessage].
 	ItemDelta ItemKind = "delta"
+	// ItemProposal is something uncontained waiting on a person, or the record
+	// of it having been decided. A surface that can show cards renders it as
+	// one; a blind surface says it out loud and takes the yes through the
+	// read-back rule ([Surface.CanShowCards]).
+	ItemProposal ItemKind = "proposal"
 )
 
 // Item is one thing the core hands a surface.
@@ -75,6 +80,10 @@ type Item struct {
 	Message *Message `json:"message,omitempty"`
 	// Delta is set for [ItemDelta].
 	Delta *Delta `json:"delta,omitempty"`
+	// Proposal is set for [ItemProposal], on create and on decide. A surface
+	// reads [Proposal.Status] to tell one from the other: an open one is a
+	// card, a decided one is a record.
+	Proposal *Proposal `json:"proposal,omitempty"`
 }
 
 // Surface is anything the operator can be reached on.

@@ -131,6 +131,17 @@ shares the same "rebuilt each apply, will fight a curated source" shape.
 
 ## P2 — Smells / drift
 
+### Assistant: a proposals read resolves session names one brief at a time
+`proposalFrom` (`internal/assistant/proposals.go`) calls `Directory.SessionBrief`
+per row to fill `sessionName`/`projectName`, so `assistant.proposals` and the
+digest cost one query per proposal named, and `OpenProposals` lists every row
+and filters in Go. Bounded by the page cap and off the dispatch loop since the
+digest moved to `handleRequestAsync`, so it is a read on socket connect today.
+The honest fix is a batch `Directory.SessionBriefs(ctx, ids)` on the interface
+and its server implementation plus an open-only SQL filter, which is a new
+seam rather than a fix. → `internal/assistant/proposals.go`,
+`internal/server/assistant_directory.go`, `db/queries/assistant.sql`.
+
 ### CLI detection cannot tell "not installed" from "detection broke"
 
 - **Symptom:** a machine whose `codex` detection fails for any reason renders

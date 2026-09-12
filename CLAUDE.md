@@ -1706,6 +1706,31 @@ Symmetrically, **removal tolerates a refused revoke.** A credential the remote
 already rejects is already revoked, and failing there strands an entry that can
 be neither used nor removed.
 
+### The assistant — `docs/assistant.md`
+
+**Uncontained means proposed, never performed.** The assistant's verb table
+(`internal/assistant`) carries a tier per verb, and the eight uncontained ones —
+merge, rebase, archive, delete, reclaim, dissolve, another session's model or
+mode — are never run by the assistant. Asking for one writes an
+`assistant_proposals` row with a required rationale and the server facts it was
+judged on, and a person decides it: on a surface that shows the card, or on a
+blind one through the read-back rule voice already has. The tier is a property
+of the verb, so no setting, prompt or confidence report can promote one, and the
+head has no verb that decides. When the facts already say no, nothing is
+proposed and the refusal says why — a merge of a branch that is behind is
+"rebase first", because the server's merge is fast-forward only. Accepting
+**re-checks** through the same per-verb check the card was written from
+(`proposalChecks`, one function used at both moments): facts that have moved
+make the row `stale` and perform nothing, on the storage page's rule that a
+stale card narrows what happens and never widens it. Execution goes through
+`assistant.Actions` — the same `GitService` and `session.Service` calls the WS
+ops make — so a yes on a card and a click in the UI are one route, and a git
+status of `conflict`, `needs_rebase` or `dirty_worktree` is `failed` with that
+word as the outcome rather than an error.
+
+Where the assistant's *row* lives is a placement question and is settled under
+"Where a destination lives".
+
 ### Brain and memory — `docs/brain.md`
 
 The liftable core lives in `internal/memory` (stdlib plus yaml/uuid only);

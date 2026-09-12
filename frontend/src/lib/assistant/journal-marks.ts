@@ -13,6 +13,7 @@ import {
   CalendarDays,
   Check,
   GitMerge,
+  Handshake,
   type LucideIcon,
   Pause,
   Plus,
@@ -46,6 +47,14 @@ const MARKS: Record<AssistantJournalKind, JournalMark> = {
   session_created: { glyph: Plus, label: "created", tone: "text-primary" },
   note: { glyph: StickyNote, label: "note", tone: "text-muted-foreground" },
   day_summary: { glyph: CalendarDays, label: "that day", tone: "text-muted-foreground" },
+  // The triangle again, and for the same reason: a proposal made is something
+  // waiting on the operator, which is the one thing that mark means anywhere in
+  // this app. The card and the deck row wear it too.
+  proposal_made: { glyph: TriangleAlert, label: "proposed", tone: "text-warning" },
+  // A decision is not waiting on anybody, so it drops the triangle. The
+  // handshake is the strip's only claim here: what happened is in the summary,
+  // which carries the verb, the target and the outcome the server wrote.
+  proposal_decided: { glyph: Handshake, label: "decided", tone: "text-muted-foreground" },
 };
 
 const UNKNOWN: JournalMark = {

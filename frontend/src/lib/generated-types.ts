@@ -1154,6 +1154,7 @@ export interface AssistantMessage {
   text?: string;
   surface?: string;
   callId?: string;
+  kind?: string;
   createdAt?: string;
 }
 
@@ -1192,6 +1193,29 @@ export interface AssistantJournalResult {
 
 export interface AssistantUnseenResult {
   count?: number;
+}
+
+export interface AssistantProposal {
+  id?: string;
+  createdAt?: string;
+  verb?: string;
+  sessionId?: string;
+  sessionName?: string;
+  projectId?: string;
+  projectName?: string;
+  channelId?: string;
+  args?: Record<string, unknown>;
+  rationale?: string;
+  evidence?: Record<string, unknown>;
+  status?: string;
+  decidedAt?: string;
+  decidedVia?: string;
+  outcome?: string;
+  expiresAt?: string;
+}
+
+export interface AssistantProposalsResult {
+  proposals?: AssistantProposal[];
 }
 
 export interface ScheduleInfo {
@@ -1293,6 +1317,7 @@ export interface PushEventMap {
   "assistant.message": AssistantMessage;
   "assistant.delta": AssistantDelta;
   "assistant.journal": AssistantJournalEntry;
+  "assistant.proposal": AssistantProposal;
   "schedule.updated": ScheduleInfo;
   "schedule.deleted": ScheduleInfo;
   "schedule.run": ScheduleRunInfo;

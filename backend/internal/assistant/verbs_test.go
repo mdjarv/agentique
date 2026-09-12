@@ -26,6 +26,7 @@ func baseVerbTiers() map[string]Tier {
 		VerbFollowSession:   TierContained,
 		VerbUnfollowSession: TierContained,
 		VerbNote:            TierContained,
+		VerbDigest:          TierContained,
 
 		VerbMergeSession:    TierUncontained,
 		VerbRebaseSession:   TierUncontained,
@@ -74,15 +75,11 @@ func assertVerbTable(t *testing.T, svc *Service, want map[string]Tier) {
 			t.Errorf("%q has no description — it is what a head is told the verb does", verb.Name)
 		}
 
-		switch verb.Tier {
-		case TierRead, TierContained:
-			if !verb.HasHandler() {
-				t.Errorf("%q is %s and has no handler", verb.Name, verb.Tier)
-			}
-		case TierUncontained:
-			if verb.HasHandler() {
-				t.Errorf("%q is uncontained and has a handler — these are never performed", verb.Name)
-			}
+		// Every verb is callable, uncontained ones included: what an
+		// uncontained verb's handler does is write a proposal, and the tier is
+		// what keeps it from doing anything else.
+		if !verb.HasHandler() {
+			t.Errorf("%q is %s and has no handler", verb.Name, verb.Tier)
 		}
 	}
 }
@@ -329,22 +326,33 @@ func TestFlagMemoryNeedsAReason(t *testing.T) {
 	}
 }
 
-// Asking for an uncontained verb is a proposal, not an action and not a crash.
-func TestUncontainedVerbsNeedAProposal(t *testing.T) {
-	svc, _, _ := newTestService(t)
+// With no [Actions] wired, an uncontained verb refuses in WORDS and writes
+// nothing. A proposal is a claim that the facts were checked, and there is
+// nothing here to check them with.
+func TestUncontainedVerbsRefuseWithoutActions(t *testing.T) {
+	svc, queries, _ := newTestService(t)
 
 	for _, verb := range svc.Verbs() {
 		if verb.Tier != TierUncontained {
 			continue
 		}
-		_, err := svc.Invoke(context.Background(), verb.Name, nil)
-		if !errors.Is(err, ErrProposalRequired) {
-			t.Errorf("Invoke(%q) = %v, want ErrProposalRequired", verb.Name, err)
+		payload, err := svc.Invoke(context.Background(), verb.Name, map[string]any{
+			"rationale": "because", "session_id": "s1", "channel_id": "c1",
+		})
+		if err != nil {
+			t.Fatalf("Invoke(%q) = %v, want a refusal payload", verb.Name, err)
 		}
-		var typed *ProposalRequiredError
-		if !errors.As(err, &typed) || typed.Verb != verb.Name {
-			t.Errorf("Invoke(%q) did not name the verb in a typed error: %v", verb.Name, err)
+		if _, refused := payload["error"]; !refused {
+			t.Errorf("Invoke(%q) = %v, want a refusal", verb.Name, payload)
 		}
+	}
+
+	rows, err := queries.ListAssistantProposals(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListAssistantProposals() = %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("%d proposals were written with nothing to check them", len(rows))
 	}
 }
 
@@ -362,7 +370,7 @@ func TestToolHandlerStripsTheReason(t *testing.T) {
 		t.Fatalf("payload = %v, want a refusal", payload)
 	}
 
-	raw, err := svc.Invoke(context.Background(), VerbMergeSession, nil)
+	raw, err := svc.Invoke(context.Background(), "no_such_verb", nil)
 	if raw != nil || err == nil {
 		t.Fatal("Invoke must return the error rather than a refusal payload")
 	}

@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { AssistantJournalEntry, AssistantMessage } from "~/lib/assistant/wire";
+import type {
+  AssistantJournalEntry,
+  AssistantMessage,
+  AssistantProposal,
+} from "~/lib/assistant/wire";
 import {
   EMPTY_JOURNAL,
   EMPTY_MESSAGES,
+  EMPTY_PROPOSALS,
   selectAssistantJournal,
   selectAssistantMessages,
+  selectAssistantOpenProposals,
+  selectAssistantProposals,
   selectAssistantReplying,
   useAssistantStore,
 } from "~/stores/assistant-store";
@@ -26,6 +33,19 @@ function entry(overrides: Partial<AssistantJournalEntry> = {}): AssistantJournal
     kind: "session_finished",
     sessionId: "sess-1",
     summary: "tests pass",
+    ...overrides,
+  };
+}
+
+function proposal(overrides: Partial<AssistantProposal> = {}): AssistantProposal {
+  return {
+    id: "p1",
+    createdAt: "2026-01-01T00:00:00Z",
+    verb: "merge_session",
+    sessionId: "sess-1",
+    rationale: "the branch is ahead and clean",
+    evidence: { ahead: 2, behind: 0, dirty: false, mergeStatus: "clean", busy: false },
+    status: "open",
     ...overrides,
   };
 }
@@ -197,6 +217,91 @@ describe("assistant-store", () => {
       const after = useAssistantStore.getState();
       expect(after.messages.map((m) => m.id)).toEqual(["a", "b"]);
       expect(after.before).toBe("");
+    });
+  });
+
+  describe("proposals", () => {
+    it("merges by id and takes the later copy", () => {
+      const store = useAssistantStore.getState();
+      store.applyProposals([proposal()]);
+      store.applyProposal(proposal({ status: "accepted", outcome: "merged, fast-forward" }));
+      const held = useAssistantStore.getState().proposals;
+      expect(held).toHaveLength(1);
+      expect(held[0]?.status).toBe("accepted");
+      expect(held[0]?.outcome).toBe("merged, fast-forward");
+    });
+
+    it("keeps a decided row and drops it from the open list", () => {
+      const store = useAssistantStore.getState();
+      store.applyProposals([proposal(), proposal({ id: "p2" })]);
+      expect(selectAssistantOpenProposals(useAssistantStore.getState())).toHaveLength(2);
+
+      store.applyProposal(proposal({ id: "p2", status: "declined" }));
+      const after = useAssistantStore.getState();
+      // Still held — the card the reader pressed has to be able to say what
+      // happened — and no longer open.
+      expect(selectAssistantProposals(after)).toHaveLength(2);
+      expect(selectAssistantOpenProposals(after).map((p) => p.id)).toEqual(["p1"]);
+    });
+
+    it("orders open first, then newest first", () => {
+      useAssistantStore
+        .getState()
+        .applyProposals([
+          proposal({ id: "old-open", createdAt: "2026-01-01T00:00:00Z" }),
+          proposal({ id: "new-open", createdAt: "2026-01-03T00:00:00Z" }),
+          proposal({ id: "newest-decided", createdAt: "2026-01-04T00:00:00Z", status: "accepted" }),
+        ]);
+      expect(useAssistantStore.getState().proposals.map((p) => p.id)).toEqual([
+        "new-open",
+        "old-open",
+        "newest-decided",
+      ]);
+    });
+
+    it("drops a row with no id rather than offering a press nothing can send", () => {
+      useAssistantStore.getState().applyProposals([proposal({ id: undefined })]);
+      expect(useAssistantStore.getState().proposals).toHaveLength(0);
+    });
+
+    it("treats an absent status as decided, not as open", () => {
+      useAssistantStore.getState().applyProposals([proposal({ status: undefined })]);
+      const after = useAssistantStore.getState();
+      expect(after.proposals).toHaveLength(1);
+      expect(selectAssistantOpenProposals(after)).toBe(EMPTY_PROPOSALS);
+    });
+
+    it("returns the same references when a read brings nothing new", () => {
+      const fresh = useAssistantStore.getState();
+      expect(selectAssistantProposals(fresh)).toBe(EMPTY_PROPOSALS);
+      expect(selectAssistantOpenProposals(fresh)).toBe(EMPTY_PROPOSALS);
+
+      useAssistantStore.getState().applyProposals([proposal()]);
+      const all = selectAssistantProposals(useAssistantStore.getState());
+      const open = selectAssistantOpenProposals(useAssistantStore.getState());
+
+      useAssistantStore.getState().applyProposals([proposal()]);
+      expect(selectAssistantProposals(useAssistantStore.getState())).toBe(all);
+      expect(selectAssistantOpenProposals(useAssistantStore.getState())).toBe(open);
+
+      useAssistantStore.getState().applyProposals([]);
+      expect(selectAssistantProposals(useAssistantStore.getState())).toBe(all);
+      expect(selectAssistantOpenProposals(useAssistantStore.getState())).toBe(open);
+    });
+
+    it("keeps the open reference when a decided row arrives beside it", () => {
+      const store = useAssistantStore.getState();
+      store.applyProposals([proposal()]);
+      const open = selectAssistantOpenProposals(useAssistantStore.getState());
+      store.applyProposal(proposal({ id: "p9", status: "accepted" }));
+      expect(selectAssistantOpenProposals(useAssistantStore.getState())).toBe(open);
+    });
+
+    it("is cleared by a reset", () => {
+      useAssistantStore.getState().applyProposals([proposal()]);
+      useAssistantStore.getState().reset();
+      expect(useAssistantStore.getState().proposals).toBe(EMPTY_PROPOSALS);
+      expect(useAssistantStore.getState().openProposals).toBe(EMPTY_PROPOSALS);
     });
   });
 });

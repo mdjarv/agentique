@@ -125,7 +125,14 @@ func (s *Session) TryLockForGitOp(operation string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state == StateRunning {
-		return fmt.Errorf("session is running")
+		// Carries ErrBusy, because "a turn is in flight" is a fact a caller acts
+		// on differently from "git refused it": the scheduler retries at the
+		// next idle boundary, and the assistant's proposal reports that the
+		// session started working between the check and the yes. Through
+		// [busyf] rather than a %w wrap, because this sentence reaches the
+		// operator as the merge button's toast and a wrap appends ErrBusy's own
+		// words to it — "session is running: session busy".
+		return busyf("session is running")
 	}
 	if !s.state.CanTransitionTo(StateMerging) {
 		return fmt.Errorf("cannot start %s from state %s", operation, string(s.state))

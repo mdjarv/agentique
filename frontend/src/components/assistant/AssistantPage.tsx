@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { AssistantComposer } from "~/components/assistant/AssistantComposer";
 import { AssistantConversation } from "~/components/assistant/AssistantConversation";
 import { AssistantThreadHeader } from "~/components/assistant/AssistantHeader";
+import { AssistantProposals } from "~/components/assistant/AssistantProposals";
 import { AssistantUpdatesStrip } from "~/components/assistant/AssistantUpdatesStrip";
 import { HaloOrb } from "~/components/voice/HaloOrb";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -148,6 +149,7 @@ export function AssistantPage() {
     <div className="flex flex-col h-full">
       <AssistantThreadHeader />
       <AssistantUpdatesStrip entries={entries} />
+      <AssistantProposals />
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         {error && !loaded ? (
           <p className="text-xs text-destructive text-center py-6">{error}</p>

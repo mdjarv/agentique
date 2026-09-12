@@ -148,3 +148,72 @@ SELECT * FROM assistant_follows WHERE session_id = ?;
 
 -- name: ListAssistantFollows :many
 SELECT * FROM assistant_follows ORDER BY since ASC;
+
+-- Proposals: the uncontained tier's card, and the record of its yes or no.
+-- See docs/assistant.md's M3 contract and migration 057.
+
+-- name: InsertAssistantProposal :one
+INSERT INTO assistant_proposals (
+    id, created_at, verb, session_id, project_id, channel_id,
+    args, rationale, evidence, status, expires_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+RETURNING *;
+
+-- name: GetAssistantProposal :one
+SELECT * FROM assistant_proposals WHERE id = ?;
+
+-- One open proposal for the same verb and the same target, if there is one.
+--
+-- Asking twice for the same thing is one card, not two: a second row would
+-- give the operator two buttons for one decision, and accepting either would
+-- leave the other pointing at work already done.
+-- name: GetOpenAssistantProposalFor :one
+SELECT * FROM assistant_proposals
+WHERE status = 'open'
+  AND verb = sqlc.arg(verb)
+  AND session_id = sqlc.arg(session_id)
+  AND channel_id = sqlc.arg(channel_id)
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- Open first, then whatever was decided, newest first within each half. A
+-- surface renders the open ones as cards and the rest as history, and one read
+-- answers both.
+-- name: ListAssistantProposals :many
+SELECT * FROM assistant_proposals
+ORDER BY (status != 'open'), created_at DESC, id DESC
+LIMIT sqlc.arg(lim);
+
+-- The decision. Guarded on status = 'open' so two surfaces cannot both decide
+-- one proposal: the second write touches nothing, and the caller re-reads the
+-- row it did not change.
+--
+-- It answers how many rows it changed, so the caller does not have to assume
+-- the guard matched. Zero means somebody else settled this proposal first,
+-- which is a different thing from the write failing -- and after an action has
+-- already been performed, the difference is worth a log line that says which.
+-- name: DecideAssistantProposal :execrows
+UPDATE assistant_proposals
+SET status = sqlc.arg(status),
+    decided_at = sqlc.arg(decided_at),
+    decided_via = sqlc.arg(decided_via),
+    outcome = sqlc.arg(outcome)
+WHERE id = sqlc.arg(id) AND status = 'open';
+
+-- Lazy expiry, applied on a decide: an open proposal past its expiry is not an
+-- offer any more. There is no timer behind this -- a proposal nobody looks at
+-- costs nothing, and a sweep would be a second writer on a table whose whole
+-- content is decisions.
+-- name: ExpireAssistantProposals :exec
+UPDATE assistant_proposals
+SET status = 'expired', decided_at = sqlc.arg(at)
+WHERE status = 'open' AND expires_at != '' AND expires_at <= sqlc.arg(at);
+
+-- Stamps the window the last digest covered, so the next one starts where it
+-- finished. Written only by Digest.
+-- name: SetAssistantDigestAt :exec
+INSERT INTO assistant_state (id, last_digest_at, created_at, updated_at)
+VALUES (1, sqlc.arg(last_digest_at), sqlc.arg(now), sqlc.arg(now))
+ON CONFLICT(id) DO UPDATE SET
+  last_digest_at = excluded.last_digest_at,
+  updated_at = excluded.updated_at;

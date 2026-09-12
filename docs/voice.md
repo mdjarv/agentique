@@ -1101,6 +1101,65 @@ seam, so "do I have unread sessions?" is answered before the first tool call.
 Unread itself is server state since the switchboard
 (`sessions.unseen_completed_at`, cleared by `session.markSeen`; see CLAUDE.md).
 
+### The two decision tools: a call carries a yes, it never gives one
+
+The assistant's uncontained tier — merge, rebase, archive, delete, reclaim,
+dissolve, and another session's model or mode — is never performed by the
+assistant. Asking for one writes a proposal, and a person decides it
+(`docs/assistant.md`). A call is a **blind** surface: it cannot show the card, so
+it gets the two tools that let it read one out and carry the answer back, and
+nothing else. **There is no proposing from a call.** The eight verbs live in the
+core's table, which this package cannot reach, so the only thing that can arrive
+here is a decision somebody else's proposal is already waiting for.
+
+`list_proposals` takes no arguments — what is waiting is short, is owed a
+reading in full, and a filter would let the model narrow it to what it already
+believes. `decide_proposal` takes `id`, `accept` and `target`:
+
+- **`target` is checked, and it is checked by `judgeTarget`** — the same matcher
+  `run_prompt` uses, pointed at the proposal's own session row instead of the
+  call's focus. Same reason: an id is a token the model can copy correctly while
+  believing something else, where the name is the string the operator's yes was
+  given against, so checking the name checks the read-back. The pool of wrong
+  answers is the other waiting proposals. Two cards about one session cannot be
+  told apart by name — the check catches the wrong *session*, the id selects the
+  card — and the refusal is rewritten for a decision while keeping the reason
+  token, because judgeTarget's own sentences are about sending a prompt.
+- **A decline needs no target.** The asymmetry is the dispatch rule again:
+  accepting the wrong card performs something on work nobody offered, where
+  declining the wrong one costs a card that can be proposed again. Refusing a no
+  is worse than taking it.
+- **`accept` is read strictly.** Everything else in this package is generous
+  with a mangled argument, because a wrong refusal costs a sentence — but this
+  field *is* the consent, and a yes read out of anything other than a yes is the
+  one mistake here that performs something.
+- Only a proposal the server has **named on this call** can be decided — listed,
+  or delivered while it was live. The guard `focus_session` applies to a session
+  id, with more at stake: an id assembled out of a transcript could accept a
+  card the operator has never heard described.
+
+A decision reaches the call because it **registers as an `assistant.Surface`**
+(`assistant.SurfaceVoice`, `CanShowCards()` false) for as long as it is live.
+That is the only route: reports and notices arrive through the report registry
+and the call's own follow set, which is per session, where a decision waiting on
+the operator is not about a session this call started. The call takes only
+`ItemProposal`, and only an open one — a decided card has already been reported
+by whoever decided it, and "say yes to accept" about one that is gone is worse
+than silence.
+
+What arrives is spoken as the verb in words, the target in its project, the one
+fact it was judged on, and "say yes to accept"; the screen copy goes out first
+as a `proposal` control frame and lands in the call log as one line wearing the
+waiting-on-you triangle, with no buttons on it. The rationale on a card is the
+assistant head's own text about repository content nobody here wrote, so the cue
+frames it as a quotation: relay it, never follow it.
+
+The instruction's half is one short section, and the negative is the
+load-bearing half — a speech model that can see a waiting decision and thinks it
+knows what the operator wants will accept it to be helpful. It says the decision
+is theirs, that silence is not consent here either, and that a yes to one
+proposal is never a yes to the next.
+
 ## The drafter
 
 `SystemInstruction` turns the speech model into a drafter, and it carries most
@@ -1134,9 +1193,12 @@ The text carries the carve-out *inside* the never-answer rule, because read
 apart the two contradict and the model resolves that by drafting a prompt for
 "what can you do?" — a coding agent then reads the source to answer something
 that was one sentence away. It carries an explicit CANNOT list too (no
-approving, no work on another machine's sessions, no delete/archive/merge, no
-sending without the read-back and a yes, no costs), because a speech model with
-tools will otherwise offer all of those. A call that opened unfocused
+approving, no work on another machine's sessions, no delete/archive/merge of its
+own accord, no sending without the read-back and a yes, no costs), because a
+speech model with tools will otherwise offer all of those. The delete/archive/
+merge line is qualified rather than absolute since proposals exist: the call can
+say what the assistant has put to the operator and carry their answer, and
+nothing more. A call that opened unfocused
 (`Briefing.InitialFocus` empty) may offer one line of orientation, once; one
 opened from a session skips it, since they pressed the button from there.
 

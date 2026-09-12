@@ -1,5 +1,5 @@
 /**
- * The assistant's three global pushes, applied to the store.
+ * The assistant's four global pushes, applied to the store.
  *
  * They arrive on the primary's socket on the global topic (the conversation is
  * a project-less channel, which already fans out there), and there is one
@@ -16,6 +16,7 @@ import {
   AssistantDeltaSchema,
   AssistantJournalEntrySchema,
   AssistantMessageSchema,
+  AssistantProposalSchema,
 } from "~/lib/assistant/wire";
 import { useAssistantStore } from "~/stores/assistant-store";
 
@@ -58,4 +59,23 @@ export function applyAssistantJournal(payload: unknown): void {
   store.addJournalEntry(parsed.data);
   const after = useAssistantStore.getState();
   if (after.viewing && after.journal !== before) after.look?.();
+}
+
+/**
+ * `assistant.proposal` — one proposal row, on create and on every decision.
+ *
+ * The same push carries both, because both are the row as it now stands: a
+ * create arrives `open` and a decision arrives `accepted`, `declined`, `stale`
+ * or `failed`, and the store merges by id so the card the reader is looking at
+ * becomes its own outcome rather than vanishing. Nothing is counted as unseen
+ * here — a proposal's claim on attention is the card and the deck row, and the
+ * `proposal_made` journal entry rides the journal push beside it.
+ */
+export function applyAssistantProposal(payload: unknown): void {
+  const parsed = AssistantProposalSchema.safeParse(payload);
+  if (!parsed.success) {
+    console.warn("[assistant] unreadable assistant.proposal", parsed.error.issues);
+    return;
+  }
+  useAssistantStore.getState().applyProposal(parsed.data);
 }

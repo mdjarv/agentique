@@ -631,11 +631,16 @@ func main() {
 	g.register(assistant.Update{}, "AssistantUpdate")
 	g.register(ws.AssistantJournalResult{}, "AssistantJournalResult")
 	g.register(ws.AssistantUnseenResult{}, "AssistantUnseenResult")
-	// All three ride the GLOBAL topic: the conversation is project-less, so
+	// The uncontained tier's card (docs/assistant.md, the M3 contract). The row
+	// is what a card, the deck's band and a call all read, so it is one type.
+	assistantProposalRef := g.register(assistant.Proposal{}, "AssistantProposal")
+	g.register(ws.AssistantProposalsResult{}, "AssistantProposalsResult")
+	// All four ride the GLOBAL topic: the conversation is project-less, so
 	// there is no topic to scope them to and no new routing to add.
 	g.addPushEvent("assistant.message", assistantMessageRef)
 	g.addPushEvent("assistant.delta", assistantDeltaRef)
 	g.addPushEvent("assistant.journal", assistantJournalRef)
+	g.addPushEvent("assistant.proposal", assistantProposalRef)
 
 	// ── Scheduled loops (docs/scheduled-loops.md) ──
 

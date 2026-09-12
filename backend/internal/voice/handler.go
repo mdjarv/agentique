@@ -99,6 +99,14 @@ type Options struct {
 	// Nil is valid and means a call keeps no record beyond its own transcript —
 	// which is what a server with the assistant switched off has.
 	Conversation Conversation
+	// Proposals is the uncontained tier as a call sees it: what is waiting for a
+	// decision, and the one way to record one. It is also what registers the
+	// call as a surface, so a proposal made mid-call is spoken.
+	//
+	// Nil is valid: the two tools refuse in words, which is what a server with
+	// the assistant switched off has — there is nothing there to propose
+	// anything.
+	Proposals Proposals
 }
 
 // Conversation is the assistant's shared conversation as a call uses it.

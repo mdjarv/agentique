@@ -22,6 +22,7 @@ import {
   type VoiceDispatched,
   type VoiceFocus,
   type VoiceNotice,
+  type VoiceProposal,
   type VoiceReportMessage,
   type VoiceSummary,
   type VoiceTranscript,
@@ -53,6 +54,8 @@ export interface VoiceCallHandlers {
   onActivity?: (a: VoiceActivity) => void;
   /** A session summary, on screen before it is spoken. */
   onSummary?: (s: VoiceSummary) => void;
+  /** Something the assistant proposed, waiting on the operator's spoken yes. */
+  onProposal?: (p: VoiceProposal) => void;
 }
 
 /**
@@ -422,6 +425,10 @@ export class VoiceCall {
 
       case "summary":
         this.handlers.onSummary?.(msg);
+        return;
+
+      case "proposal":
+        this.handlers.onProposal?.(msg);
         return;
 
       case "error":

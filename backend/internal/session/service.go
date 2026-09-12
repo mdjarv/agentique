@@ -44,6 +44,28 @@ var (
 	ErrRepoRootUnsupported = errors.New("provider does not support registering repo roots")
 )
 
+// busyError carries [ErrBusy] without appending its words.
+//
+// `fmt.Errorf("session is running: %w", ErrBusy)` is the obvious way to carry a
+// sentinel and the wrong one here, because both of the messages that need it
+// already say what ErrBusy says: the git-op refusals reach the operator as a
+// toast, and wrapping turned "session is running" into "session is running:
+// session busy". Nothing reads either string — every caller uses errors.Is — so
+// the sentinel travels in Unwrap and the sentence stays as it was.
+type busyError struct{ what string }
+
+func (e *busyError) Error() string { return e.what }
+
+// Unwrap is what makes errors.Is(err, ErrBusy) true: the scheduler retries on
+// it, and the assistant's proposal reports "it started working" rather than
+// "git refused it".
+func (e *busyError) Unwrap() error { return ErrBusy }
+
+// busyf builds a refusal that a turn (or another git operation) is in flight.
+func busyf(format string, a ...any) error {
+	return &busyError{what: fmt.Sprintf(format, a...)}
+}
+
 // WireQuestionOption is a selectable option within a question.
 type WireQuestionOption struct {
 	Label       string `json:"label"`
@@ -465,7 +487,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	profileName, profileAvatar := s.resolveAgentProfileMeta(ctx, p.AgentProfileID, tc)
 
 	provider := normalizeProvider(p.Provider)
-	caps := capabilitiesForProvider(provider)
+	caps := CapabilitiesForProvider(provider)
 
 	s.hub.Publish(p.ProjectID, "session.created", SessionInfo{
 		ID:                 sess.ID,
@@ -1069,7 +1091,7 @@ func (s *Service) enrichSession(
 // SessionInfo. Pure projection — no external lookups.
 func baseSessionInfo(ss store.Session) SessionInfo {
 	provider := normalizeProvider(ss.Provider)
-	caps := capabilitiesForProvider(provider)
+	caps := CapabilitiesForProvider(provider)
 	return SessionInfo{
 		ID:              ss.ID,
 		ProjectID:       ss.ProjectID,

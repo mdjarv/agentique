@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { AssistantJournalEntry, AssistantMessage, AssistantPage } from "~/lib/assistant/wire";
+import {
+  type AssistantJournalEntry,
+  type AssistantMessage,
+  type AssistantPage,
+  type AssistantProposal,
+  isOpenProposal,
+} from "~/lib/assistant/wire";
 
 /**
  * The assistant thread's client state.
@@ -20,6 +26,7 @@ import type { AssistantJournalEntry, AssistantMessage, AssistantPage } from "~/l
 /** Fallbacks are module-level so a selector never mints a new reference. */
 export const EMPTY_MESSAGES: AssistantMessage[] = [];
 export const EMPTY_JOURNAL: AssistantJournalEntry[] = [];
+export const EMPTY_PROPOSALS: AssistantProposal[] = [];
 
 /** What identifies a journal entry when merging. */
 function journalKey(entry: AssistantJournalEntry): string {
@@ -109,11 +116,77 @@ function mergeMessages(held: AssistantMessage[], incoming: AssistantMessage[]): 
   return [...byId.values(), ...anonymous].sort(messageOrder);
 }
 
+/**
+ * Proposals, open first and then newest first — the order the server's own list
+ * answers in, because an open row is a claim on attention and a decided one is
+ * a record.
+ */
+function proposalOrder(a: AssistantProposal, b: AssistantProposal): number {
+  const openness = Number(isOpenProposal(b.status)) - Number(isOpenProposal(a.status));
+  if (openness !== 0) return openness;
+  const at = (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+  if (at !== 0) return at;
+  return (a.id ?? "").localeCompare(b.id ?? "");
+}
+
+/**
+ * Merges proposals by id.
+ *
+ * Later wins: a row arrives open on the create push and decided on the decide
+ * push, and the decided copy is the one a card must render. A row with no id
+ * cannot be identified, so it is DROPPED rather than kept — unlike a message,
+ * an unidentifiable proposal is one nothing could ever decide, and rendering
+ * Accept on it would offer a press that cannot be sent.
+ */
+function mergeProposals(
+  held: AssistantProposal[],
+  incoming: AssistantProposal[],
+): AssistantProposal[] {
+  if (incoming.length === 0) return held;
+  const byId = new Map<string, AssistantProposal>();
+  for (const row of held) if (row.id) byId.set(row.id, row);
+  let changed = false;
+  for (const row of incoming) {
+    if (!row.id) continue;
+    const known = byId.get(row.id);
+    if (!known || JSON.stringify(known) !== JSON.stringify(row)) changed = true;
+    byId.set(row.id, row);
+  }
+  // A read that re-delivers what is already held leaves the reference alone, so
+  // the deck and the thread re-render nothing.
+  if (!changed) return held;
+  return [...byId.values()].sort(proposalOrder);
+}
+
+/**
+ * The open subset, STORED rather than derived in a selector.
+ *
+ * `.filter()` in a selector mints a new array on every call, which is the rule
+ * that re-renders a subscriber forever — and this list has two subscribers (the
+ * thread and the deck). Computed once per write, and the previous reference is
+ * kept when the subset is unchanged.
+ */
+function openOf(all: AssistantProposal[], previous: AssistantProposal[]): AssistantProposal[] {
+  const open = all.filter((row) => isOpenProposal(row.status));
+  if (open.length === 0) return previous.length === 0 ? previous : EMPTY_PROPOSALS;
+  if (open.length === previous.length && open.every((row, i) => row === previous[i])) {
+    return previous;
+  }
+  return open;
+}
+
 interface AssistantState {
   /** The conversation, oldest first. */
   messages: AssistantMessage[];
   /** The journal, oldest first. The strip reads the tail of it. */
   journal: AssistantJournalEntry[];
+  /**
+   * Proposals, open first then newest first — decided ones included, because a
+   * card the reader just pressed has to be able to say what happened.
+   */
+  proposals: AssistantProposal[];
+  /** The open ones, kept as their own array so a subscriber can read it. */
+  openProposals: AssistantProposal[];
   /**
    * The head's reply so far, or null when nothing is in flight. Also the
    * composer's gate: a reply is streaming exactly when this is a string.
@@ -156,6 +229,10 @@ interface AssistantState {
   prependHistory: (page: AssistantPage) => void;
   /** A read of the journal: merges what came back under what is held. */
   applyJournal: (entries: AssistantJournalEntry[]) => void;
+  /** A read of the proposals: merges what came back under what is held. */
+  applyProposals: (rows: AssistantProposal[]) => void;
+  /** One row, from the push or from the answer to a decide. Merges by id. */
+  applyProposal: (row: AssistantProposal) => void;
   appendMessage: (message: AssistantMessage) => void;
   /**
    * The ask is away and the head owes an answer. Arms the gate before the
@@ -173,6 +250,8 @@ interface AssistantState {
 export const useAssistantStore = create<AssistantState>((set) => ({
   messages: EMPTY_MESSAGES,
   journal: EMPTY_JOURNAL,
+  proposals: EMPTY_PROPOSALS,
+  openProposals: EMPTY_PROPOSALS,
   streaming: null,
   before: "",
   loaded: false,
@@ -209,6 +288,20 @@ export const useAssistantStore = create<AssistantState>((set) => ({
 
   applyJournal: (entries) => set((s) => ({ journal: mergeJournal(s.journal, entries) })),
 
+  applyProposals: (rows) =>
+    set((s) => {
+      const proposals = mergeProposals(s.proposals, rows);
+      if (proposals === s.proposals) return s;
+      return { proposals, openProposals: openOf(proposals, s.openProposals) };
+    }),
+
+  applyProposal: (row) =>
+    set((s) => {
+      const proposals = mergeProposals(s.proposals, [row]);
+      if (proposals === s.proposals) return s;
+      return { proposals, openProposals: openOf(proposals, s.openProposals) };
+    }),
+
   appendMessage: (message) =>
     set((s) => ({
       messages: mergeMessages(s.messages, [message]),
@@ -244,6 +337,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     set({
       messages: EMPTY_MESSAGES,
       journal: EMPTY_JOURNAL,
+      proposals: EMPTY_PROPOSALS,
+      openProposals: EMPTY_PROPOSALS,
       streaming: null,
       before: "",
       loaded: false,
@@ -263,6 +358,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
  */
 export const selectAssistantMessages = (s: AssistantState) => s.messages;
 export const selectAssistantJournal = (s: AssistantState) => s.journal;
+export const selectAssistantProposals = (s: AssistantState) => s.proposals;
+/** The rows still waiting on somebody — the thread's cards and the deck's. */
+export const selectAssistantOpenProposals = (s: AssistantState) => s.openProposals;
 export const selectAssistantStreaming = (s: AssistantState) => s.streaming;
 /** A reply is in flight exactly while the head has streamed something. */
 export const selectAssistantReplying = (s: AssistantState) => s.streaming !== null;

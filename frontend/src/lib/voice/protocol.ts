@@ -90,6 +90,22 @@ export interface VoiceSummary {
 }
 
 /**
+ * Something the assistant has proposed and cannot do itself, waiting on the
+ * operator.
+ *
+ * One line, sent before it is spoken, like a report: a call that cannot speak
+ * still leaves the thing that needs deciding on screen. It is a record and not
+ * a control — the yes is given out loud and checked against the name the
+ * assistant read back, so there is nothing here to press.
+ */
+export interface VoiceProposal {
+  type: "proposal";
+  proposalId?: string;
+  sessionId?: string;
+  headline?: string;
+}
+
+/**
  * The screen follows the voice: the call has moved its focus, and the client
  * navigates there.
  *
@@ -110,6 +126,7 @@ export type VoiceServerMessage =
   | VoiceReportMessage
   | VoiceNotice
   | VoiceDispatched
+  | VoiceProposal
   | VoiceFocus
   | VoiceActivity
   | VoiceSummary;
@@ -192,6 +209,7 @@ export function parseServerMessage(raw: string): VoiceServerMessage | null {
     case "report":
     case "notice":
     case "dispatched":
+    case "proposal":
     case "focus":
     case "activity":
     case "summary":

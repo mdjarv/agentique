@@ -49,6 +49,15 @@ type Querier interface {
 	CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error
+	// The decision. Guarded on status = 'open' so two surfaces cannot both decide
+	// one proposal: the second write touches nothing, and the caller re-reads the
+	// row it did not change.
+	//
+	// It answers how many rows it changed, so the caller does not have to assume
+	// the guard matched. Zero means somebody else settled this proposal first,
+	// which is a different thing from the write failing -- and after an action has
+	// already been performed, the difference is worth a log line that says which.
+	DecideAssistantProposal(ctx context.Context, arg DecideAssistantProposalParams) (int64, error)
 	DeleteAgentProfile(ctx context.Context, id string) error
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
@@ -67,6 +76,11 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id string) error
 	DeleteTeam(ctx context.Context, id string) error
 	DeleteUser(ctx context.Context, id string) error
+	// Lazy expiry, applied on a decide: an open proposal past its expiry is not an
+	// offer any more. There is no timer behind this -- a proposal nobody looks at
+	// costs nothing, and a sweep would be a second writer on a table whose whole
+	// content is decisions.
+	ExpireAssistantProposals(ctx context.Context, at string) error
 	GetActiveSessionByAgentProfile(ctx context.Context, agentProfileID sql.NullString) (Session, error)
 	GetAdminUser(ctx context.Context) (User, error)
 	GetAgentProfile(ctx context.Context, id string) (AgentProfile, error)
@@ -74,6 +88,7 @@ type Querier interface {
 	// one was ever created, the first is the one the history is in.
 	GetAssistantChannel(ctx context.Context) (Channel, error)
 	GetAssistantFollow(ctx context.Context, sessionID string) (AssistantFollow, error)
+	GetAssistantProposal(ctx context.Context, id string) (AssistantProposal, error)
 	// The assistant's state, journal, follow list and conversation channel.
 	// See docs/assistant.md and migration 056.
 	//
@@ -91,6 +106,12 @@ type Querier interface {
 	// One learned mapping, for a session whose own run never reported a model: the
 	// last_seen_at that comes back is what dates the answer.
 	GetModelResolution(ctx context.Context, arg GetModelResolutionParams) (ModelResolution, error)
+	// One open proposal for the same verb and the same target, if there is one.
+	//
+	// Asking twice for the same thing is one card, not two: a second row would
+	// give the operator two buttons for one decision, and accepting either would
+	// leave the other pointing at work already done.
+	GetOpenAssistantProposalFor(ctx context.Context, arg GetOpenAssistantProposalForParams) (AssistantProposal, error)
 	GetProject(ctx context.Context, id string) (Project, error)
 	GetProjectBySlug(ctx context.Context, slug string) (Project, error)
 	GetPromptTemplate(ctx context.Context, id string) (PromptTemplate, error)
@@ -113,6 +134,9 @@ type Querier interface {
 	// sorting there is. Nothing else writes to an assistant channel, so the
 	// sharper format is consistent within the timeline that reads it.
 	InsertAssistantMessage(ctx context.Context, arg InsertAssistantMessageParams) (Message, error)
+	// Proposals: the uncontained tier's card, and the record of its yes or no.
+	// See docs/assistant.md's M3 contract and migration 057.
+	InsertAssistantProposal(ctx context.Context, arg InsertAssistantProposalParams) (AssistantProposal, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertEventWithMessageID(ctx context.Context, arg InsertEventWithMessageIDParams) error
 	InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error)
@@ -135,6 +159,10 @@ type Querier interface {
 	// What has been said in the conversation since a surface last looked, oldest
 	// first: this is read to be pasted into a preamble or a strip, in order.
 	ListAssistantMessagesSince(ctx context.Context, arg ListAssistantMessagesSinceParams) ([]Message, error)
+	// Open first, then whatever was decided, newest first within each half. A
+	// surface renders the open ones as cards and the rest as history, and one read
+	// answers both.
+	ListAssistantProposals(ctx context.Context, lim int64) ([]AssistantProposal, error)
 	ListAuthSessions(ctx context.Context) ([]ListAuthSessionsRow, error)
 	ListChannelMemberSessions(ctx context.Context, channelID string) ([]ListChannelMemberSessionsRow, error)
 	// Ordinary channels only. The assistant's conversation is a channel with
@@ -209,6 +237,9 @@ type Querier interface {
 	// result rows.
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
 	SetAssistantChannel(ctx context.Context, arg SetAssistantChannelParams) error
+	// Stamps the window the last digest covered, so the next one starts where it
+	// finished. Written only by Digest.
+	SetAssistantDigestAt(ctx context.Context, arg SetAssistantDigestAtParams) error
 	SetAssistantFollowBriefed(ctx context.Context, arg SetAssistantFollowBriefedParams) error
 	SetAssistantModel(ctx context.Context, arg SetAssistantModelParams) error
 	// Records that a surface has looked. json_set on the existing object rather

@@ -37,10 +37,12 @@ import (
 func TestNoToolAsksAboutMachines(t *testing.T) {
 	want := []string{
 		ToolCreateSession,
+		ToolDecideProposal,
 		ToolFindSession,
 		ToolFocusSession,
 		ToolHangUp,
 		ToolListProjects,
+		ToolListProposals,
 		ToolListSessions,
 		ToolRunPrompt,
 		ToolSummarizeSession,

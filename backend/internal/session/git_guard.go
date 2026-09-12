@@ -1,7 +1,6 @@
 package session
 
 import (
-	"fmt"
 	"log/slog"
 	"sync"
 )
@@ -29,7 +28,12 @@ type gitOpGuard struct {
 func tryLockForGitOp(mgr *Manager, sessionID string, session *Session, operation string, fallback State) (*gitOpGuard, error) {
 	opMu := mgr.gitOpLock(sessionID)
 	if !opMu.TryLock() {
-		return nil, fmt.Errorf("another operation is in progress for this session")
+		// ErrBusy for the same reason TryLockForGitOp carries it: a caller that
+		// can retry or report "it is working" needs to tell this apart from git
+		// refusing the operation itself. Through busyf, so the sentinel rides
+		// along without its own words being appended to a sentence the operator
+		// reads.
+		return nil, busyf("another operation is in progress for this session")
 	}
 	if session != nil {
 		if err := session.TryLockForGitOp(operation); err != nil {

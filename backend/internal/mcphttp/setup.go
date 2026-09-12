@@ -105,8 +105,9 @@ type ScheduleCreator interface {
 // Two endpoints rather than one, because `tools/list` is not scoped to the
 // caller: a handler answers it from everything registered on it, whoever asks.
 // One shared endpoint therefore handed twenty verbs — merge_session,
-// delete_session and the rest of the uncontained tier included, which exist in
-// the table only to be refused — to every coding session on every turn. That is
+// delete_session and the rest of the uncontained tier included, whose handlers
+// put a card in front of the operator — to every coding session on every turn.
+// That is
 // context those sessions pay for, tool names they can never call, and, for a
 // prompt-injected one, the assistant's own vocabulary to aim a crafted report
 // at. [NewAssistantHandler] is the head's, mounted for head tokens only;
@@ -431,8 +432,10 @@ func registerAssistantReportTool(h *akmcp.Handler, a AssistantReporter) {
 
 // registerVerbTool exposes one verb from the closed table to the head.
 //
-// Asking for an uncontained one answers a refusal naming its tier, which until
-// proposals exist (M3) is the whole of the answer.
+// Asking for an uncontained one writes a PROPOSAL and performs nothing: the
+// tier gate lives in the verb table, so what comes back here is a proposal id
+// and the sentence that the operator decides it on the thread or on a call
+// (docs/assistant.md, the M3 contract).
 func registerVerbTool(h *akmcp.Handler, a AssistantHead, verb assistant.Verb) {
 	registerHeadTool(h, akmcp.Tool{
 		Name:        verb.Name,

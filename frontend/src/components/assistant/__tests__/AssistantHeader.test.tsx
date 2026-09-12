@@ -8,12 +8,18 @@
  * gate leads somewhere that looks alive and is not.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantThreadHeader } from "~/components/assistant/AssistantHeader";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useVoiceStore } from "~/stores/voice-store";
+
+const digest = vi.fn();
+
+// No socket is wanted here: the assertion is that the control fires the op.
+vi.mock("~/hooks/useWebSocket", () => ({ useWebSocket: () => ({}) }));
+vi.mock("~/lib/assistant/rpc", () => ({ digest: (...args: unknown[]) => digest(...args) }));
 
 // Nothing here mounts a router, and the destination is the whole assertion.
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -48,6 +54,8 @@ beforeEach(() => {
     })),
   });
   useVoiceStore.setState({ status: "idle" } as never);
+  digest.mockReset();
+  digest.mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
@@ -66,6 +74,15 @@ describe("AssistantThreadHeader", () => {
     expect(screen.queryByLabelText("Memory")).toBeNull();
     // The call is a different feature and is unaffected.
     expect(screen.getByLabelText(/live call/i)).toBeTruthy();
+  });
+
+  it("asks for a digest, whatever else is off", () => {
+    features({ brain: false, voice: false });
+    render(<AssistantThreadHeader />);
+    // The digest is the core's own, so it is gated on neither the brain nor
+    // voice — it is the one control that is always there.
+    fireEvent.click(screen.getByLabelText("Digest"));
+    expect(digest).toHaveBeenCalledTimes(1);
   });
 
   it("keeps memory when voice is off", () => {

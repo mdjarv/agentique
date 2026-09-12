@@ -105,12 +105,20 @@ func TestHeadPreambleCarriesTheStores(t *testing.T) {
 			t.Errorf("preamble is missing %q", want)
 		}
 	}
-	// Every verb it may call is named, and nothing it may not.
+	// Every verb it may call is named, and the uncontained ones are named as
+	// something it PROPOSES rather than performs — a verb it cannot see is one
+	// it invents a way around, and a verb it thinks it performs is one it
+	// reports as done.
 	if !strings.Contains(preamble, VerbRunPrompt) || !strings.Contains(preamble, VerbJournal) {
 		t.Error("the preamble must name the verbs the head has")
 	}
-	if strings.Contains(preamble, VerbMergeSession) {
-		t.Errorf("the preamble offers %s, which the assistant never performs", VerbMergeSession)
+	if !strings.Contains(preamble, VerbMergeSession) {
+		t.Errorf("the preamble does not name %s at all", VerbMergeSession)
+	}
+	for _, want := range []string{"propose", "waiting for them", "rationale"} {
+		if !strings.Contains(preamble, want) {
+			t.Errorf("the uncontained section is missing %q", want)
+		}
 	}
 }
 

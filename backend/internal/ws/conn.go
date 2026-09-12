@@ -277,6 +277,7 @@ var concurrentOps = map[string]bool{
 	"assistant.history":         true,
 	"assistant.journal":         true,
 	"assistant.unseen":          true,
+	"assistant.proposals":       true,
 }
 
 // dispatchConcurrently runs a read-lane handler on its own goroutine once a
@@ -483,6 +484,9 @@ var handlerRegistry = map[string]handlerFunc{
 	"assistant.journal":   (*conn).handleAssistantJournal,
 	"assistant.unseen":    (*conn).handleAssistantUnseen,
 	"assistant.mark-seen": (*conn).handleAssistantMarkSeen,
+	"assistant.proposals": (*conn).handleAssistantProposals,
+	"assistant.decide":    (*conn).handleAssistantDecide,
+	"assistant.digest":    (*conn).handleAssistantDigest,
 
 	// ping
 	"ping": (*conn).handlePing,

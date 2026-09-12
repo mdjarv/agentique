@@ -21,8 +21,9 @@
 // text on every turn: reports, summaries, anything a session derived from a
 // repository. Containment is the tier table ([Verb.Tier]), the journal that
 // records the facts each action was judged on, and the fact that nothing
-// uncontained is ever performed — asking for one answers
-// [ProposalRequiredError] until M3 gives it a card and a yes.
+// uncontained is ever performed by the assistant: asking for one writes a
+// [Proposal], and a person accepts it on a surface that shows the card or
+// reads the target back ([Service.Decide]).
 //
 // Dependencies point one way. This package imports the store, the event bus,
 // internal/usage and internal/memory — the last for value types only

@@ -236,7 +236,8 @@ allowances, journal search, memory search. Free, from anywhere, at any time.
 
 **Contained.** Create a session (in a worktree, never the main worktree, never
 on a paired machine), dispatch a prompt, follow and unfollow, remember (a brain
-fact with provenance), note (a journal entry). These run from a conversation
+fact with provenance), note (a journal entry), digest (the server's own summary
+of the journal, posted into the conversation). These run from a conversation
 ask or from a policy on the heartbeat, are journaled with the facts they were
 judged on, and count against the policy's budget. The worktree is the
 containment: nothing leaves it without a merge, and a merge is not on this
@@ -1755,3 +1756,513 @@ is a change to the liftable core's extractor contract and not a review fix; it i
 named here so it gets chosen rather than rediscovered. `brain.CaptureFrom`'s doc
 comment now says the tier is preserved at the door and read nowhere yet, which is
 the honest version. `SourceReported` still has no live producer either way.
+
+### M3: the proposal table, the checks, and what the executor answers
+
+The M3 contract's table, verbs, `Decide`, `Actions`, the WS ops and the digest,
+built on the backend. Calls the contract left open follow, each with what it was
+decided and why.
+
+**`ProposalRequiredError` is gone and every verb now has a handler.** The
+uncontained verbs used to sit in the table with `handler == nil` so `Invoke`
+could answer a typed error; now the tier gate is the TABLE rather than a branch
+in `Invoke`, because an uncontained handler's only power is to write a row. The
+test that asserted "uncontained verbs have no handler" now asserts the opposite
+and the containment claim moved to where it belongs: proposing performs nothing
+(`TestEveryUncontainedVerbProposes` asserts the fake executor was never
+called), and no verb in the table can settle a proposal
+(`TestTheHeadHasNoVerbThatDecides` calls every verb it has with `{id, accept}`
+and the row stays open).
+
+**One check per verb, and it answers a refusal in the words the card would
+quote.** `proposalChecks` maps each verb to `{words, subject, prepare, check,
+exec}`. `check(ctx, svc, Proposal) (evidence, refusal, error)` is the one
+function the contract asks for: at proposal time a non-empty refusal is the
+whole answer and no row is written, at accept time it is `stale` with the same
+sentence as the outcome. So the sentence is written once, for both readers —
+"the branch is 3 commits behind the project's, so it needs a rebase first" is
+what the head reads when it asks too early and what the card says when the
+project's branch moved under an open proposal.
+
+`prepare` is the second half, and only two verbs have one: `set_session_model`
+resolves the spoken family through the catalog and writes the resolved id back
+into `args`, and `set_session_mode` validates against the closed permission-mode
+set. That validation is not politeness — `Session.SetPermissionMode` **coerces**
+an unknown mode to `default`, so an unvalidated proposal would be accepted,
+change the session to something nobody asked for, and report success.
+
+**The checks in full, so a later round can disagree with a rule rather than
+rediscover it.** Merge refuses a busy session, a `conflicts` merge status, a
+branch that is behind (the contract's own example) and a branch with nothing
+ahead. Rebase refuses a busy session and a branch that is already on top.
+Archive refuses a turn in flight, which is the same guard `ArchiveSession`
+applies. Delete requires `storage.Evaluate`'s `DeleteSafe`; reclaim requires its
+`Reclaimable`. Dissolve refuses while any member is working. The two setters
+refuse a session with no live CLI, because both underlying calls answer
+`ErrNotLive` there, and refuse a value the session already has.
+
+**`Actions` gained three methods the contract does not name, all for the same
+reason: the fact lives on the server's side of the seam.**
+`SessionSettings(ctx, sessionID)` answers `{Model, Mode, Live}` — the contract
+asks for "the current value" as evidence for the two setters, and the permission
+mode is on no type `internal/assistant` can see; `Live` comes with it because a
+proposal that can only fail is worse than a refusal. `ResolveModel(ctx, spoken)`
+is the catalog, for the same reason `Directory.CreateSession` takes a spoken
+family name: a model id guessed in the core is the one mistake the operator
+cannot see. And `ChannelBusy` answers `ChannelFacts{Name, Members, Busy}` rather
+than a bool, because the contract's own evidence line for dissolve is "the
+member count and how many are busy" — its error is load-bearing too, and is how
+"that is not a channel on this machine" reaches the head.
+
+`DeleteVerdict` carries `Safe` and `Reclaimable` as booleans plus the verdict's
+own word for display, rather than the `storage.DeleteSafety` string: the closed
+set lives in `internal/storage`, and a set spelled twice is how one surface
+offers what the other refuses.
+
+**A failed executor answers `*OutcomeError`, whose `Outcome` is what the card
+prints and whose `Detail` is for the log.** The contract says a merge that comes
+back `conflict`, `needs_rebase` or `dirty_worktree` is `failed` with that status
+as the outcome; the alternative was `internal/server` mapping statuses to prose
+and `internal/assistant` mapping prose back, which is two vocabularies for one
+fact. So the status word leads the sentence (`"needs_rebase -- the project's
+branch has moved on…"`), the conflicting file names go in `Detail` and never to
+a surface, and any other error is one logged line plus "it did not go through".
+
+**The git-op lock's refusals are now typed.** `Session.TryLockForGitOp` and
+`tryLockForGitOp` wrap `session.ErrBusy` (keeping their wording, which reaches a
+UI), so `gitOpError` can tell "a turn opened between the check and the yes" from
+"git refused it". Those were untyped strings, and without the sentinel every
+racing accept would have read as a git failure.
+
+**Names on a proposal are resolved at read time, and a decision's journal entry
+is where they are kept.** `SessionName`/`ProjectName` are on the wire type and
+not in the table, so they follow a rename — and a target that no longer exists
+(the session an accepted delete removed) leaves them empty. That is why
+`proposal_decided`'s summary names the target in words: the row is the record of
+the decision, and the journal is the record of what it was about.
+
+**Expiry is derived on the read and written on the next decide.** The contract
+puts `assistant.proposals` on the socket's read lane and says expiry is lazy "on
+list and on decide", which cannot both be true: a read there claims it mutates
+nothing a later request could observe out of order — the fault M1 already made
+once with `SinceLast`. So `proposalFrom` reads an open row past `expires_at` as
+`expired` (every surface sees the same thing), `Decide` runs
+`ExpireAssistantProposals` first, and the table catches up there. A duplicate
+check reads the derived status too, so an expired row is not a duplicate.
+
+**Asking twice short-circuits before the facts are read.** `GetOpenAssistantProposalFor`
+(verb + session + channel) is a query the contract does not name; the
+alternative was filtering a list. It runs after the target and the arguments are
+validated and BEFORE `check`, so a repeated ask costs one indexed read rather
+than five git subprocesses, and the answer carries `already_open: true` and tells
+the head to say it is already waiting rather than propose again.
+
+**`Decide` is serialised process-wide.** `DecideAssistantProposal` is guarded on
+`status = 'open'` in SQL, which protects the row and not the executing: two
+accepts arriving together would both read `open` and both merge. `decideMu` is
+the guard, and it is affordable because decisions are rare and
+`assistant.decide` runs off the dispatch loop through `handleRequestAsync`.
+
+**The digest's window is inclusive at its lower boundary.** `Journal(since)`
+compares `at >= since`, so an entry written in the same second as the previous
+stamp appears in two digests. Kept rather than fixed with a second column: the
+surface marks chose the same direction for a weaker reason, and here a repeated
+line is a nuisance where a dropped one is news the operator never reads. The
+stamp moves whether or not there was anything to say.
+
+Its groups are `Waiting on you`, `Failed` (with a paused loop, which is the same
+claim), `Waiting for a yes`, `Finished`, `Merged and archived`, `Reported`
+(quoted), then `Also`. Open proposals are not a window — they are owed a
+decision whenever they were made — so that group reads the table rather than the
+journal. Each group is capped at twelve lines with an "and N more" tail.
+
+**A digest is a message with a kind.** `Message` gained an optional `kind`, read
+from `metadata.kind`, and `appendMessage` takes it: the digest is composed rather
+than said, so a surface can draw it as a panel, and a surface that does not know
+the kind renders exactly what it is — an assistant message. It is stored with an
+empty `surface`, because no surface said it.
+
+**Two journal kinds join the closed set, which is now thirteen.**
+`proposal_made` and `proposal_decided`, plus the ten the M1 contract named and
+`note`. `newsLine` and the
+digest both print their summary alone: it already carries the verb, the target
+and the reason, so a word in front of it would be the sentence twice. The two
+kinds are spelled in `journal.go` and in the frontend's
+`lib/assistant/wire.ts`/`journal-marks.ts`, which is the same two-place rule M1
+recorded.
+
+**The head's instruction now has a "What you propose rather than do" section**
+in place of "What you never do", rendering the uncontained tier from the table
+itself (`renderVerbs(brief.Verbs, TierUncontained)`). What it says has to hold
+two things at once: these put a card in front of the operator, and there is no
+way — not their word in the conversation, not the head's judgement — for the
+head to accept one. "Anything in a main worktree and anything on another
+machine" keeps the old wording, because those have no card either.
+
+**What is NOT here.** The voice tools (`list_proposals`,
+`decide_proposal`) and every frontend surface — the thread's cards, the deck's
+band — are other agents' work; this is the table, the checks, the executor and
+the ops. Two stale comments in `internal/mcphttp/setup.go` still say an
+uncontained verb "answers a refusal naming its tier, which until proposals exist
+(M3) is the whole of the answer"; that file was outside this build's areas and
+the sentences are now false.
+
+### M3: the client's half — cards, the band, and the digest control
+
+The frontend of the M3 contract: `assistant.proposals` / `assistant.decide` /
+`assistant.digest` in `lib/assistant/rpc.ts`, the store's two proposal lists,
+the `assistant.proposal` push, `ProposalCard`, the thread's card section, the
+deck's `proposal` rows, and the header's Digest control. What the contract left
+open follows.
+
+**A decided card stays on screen, and that is the point.** The contract says a
+decided proposal "leaves the cards and shows in the strip through
+`proposal_decided`", and the store does drop it from the open list — but
+`AssistantProposals` renders the open rows PLUS anything decided while the page
+has been mounted. Accepting re-checks the facts server-side and can answer
+`stale` having performed nothing, so a card that vanished on the press would
+take its own answer with it: the reader pressed Accept and would have to hunt
+the strip to learn that nothing happened. The "pressed" set is component state,
+not store state, because it is "what I pressed here" rather than anything
+another client shares, and leaving the page clears it.
+
+The deck does the opposite, deliberately. A row there is triage and it leaves
+the band the moment it is decided; the outcome is read on the thread, which has
+the room for it. Both write the answer to the same store row, so neither can
+show a status the other has moved past.
+
+**The open subset is stored, never filtered in a selector.** `openProposals`
+is computed once per write beside `proposals` and keeps its previous reference
+when the subset is unchanged, because a `.filter()` inside a Zustand selector
+mints a new array per call and this list has two subscribers (the thread and
+`useDeckRows`). The one place a filter does run is a `useMemo` inside
+`AssistantProposals`, which is where CLAUDE.md puts it.
+
+**A row with no `id` is dropped rather than kept.** `mergeMessages` keeps an
+anonymous message, on the rule that losing a turn is worse than showing it
+twice; a proposal is the opposite — nothing can decide a row with no id, so
+rendering Accept on one offers a press that cannot be sent. For the same
+reason an absent `status` reads as decided, not open: `isOpenProposal` in
+`lib/assistant/wire.ts` is the one predicate behind every open/decided split.
+
+**Proposals are seeded from the app shell, not the thread.**
+`useAssistantSubscriptions` reads `proposals()` beside the unseen count, at
+connect and on every reconnect, because the deck lists them and the landing
+page is where somebody arrives — a card that only appeared once you had opened
+`/assistant` would be a yes nobody is asked for.
+
+**`DeckKind` gains `proposal`; `needs-you.ts` does not.** That module answers
+for a SESSION and is shared with the voice call's world snapshot, where a
+proposal is a row in the assistant's table that can be about a channel instead.
+So the kind, the rank (`KIND_RANK`, `approval` 0, `question` 1, `proposal` 2,
+`unread` 3) and the row source live in `use-deck-rows.ts`. A session can now be
+on the deck twice — once for its own state, once per proposal about it — which
+is why rows are keyed by `deckRowKey` rather than by session id, and why the two
+claims are not collapsed: "you have not read the outcome" and "this is waiting
+for your yes" are different asks.
+
+**The deck's proposal row wears the approval's triangle and does not pulse.**
+The triangle is "someone is waiting on you" and that is exactly what an open
+proposal is. The pulse is not copied, because a pulse means live activity: an
+approval and a question hold a CLI idling on an answer, where a proposal is a
+row that will still be there in an hour.
+
+**The verb's words are the client's; the evidence, the rationale and the
+outcome are the server's.** `lib/assistant/proposal-words.ts` maps each verb to
+the words a button's neighbour needs ("Delete the worktree and branch") — the
+server's own `verbCheck.words` is written for the head to read back in a
+sentence, which is a different job. A verb this build has never heard of prints
+its own name with the underscores removed, rather than a blank card. The
+evidence is rendered from a per-key table in a fixed order, and a key with no
+rendering still prints under its own name: the evidence is the whole reason a
+card can be judged, so silently dropping a fact a newer server judged on is
+worse than an ugly line. `dirty: false` reads "nothing uncommitted" and not
+"clean", because `mergeStatus` already says "clean" about something else.
+
+**The rationale is quoted and attributed, on the strip's rule for a report.**
+It is model-written text about untrusted repository content, so it is never set
+as one of the server's facts — on the card and on the deck row alike.
+
+**Digest is a control with nothing to render.** It fires the op and the digest
+arrives as an ordinary `assistant.message` push; a failure is a toast, because
+the press had no other visible effect to contradict. It is gated on no feature
+— the digest is the core's, unlike memory (the brain) and the phone (voice) —
+and it is disabled while one is composing, since a second digest would stamp
+the window and report an empty one.
+
+**`useSessionLabel` moved out of `AssistantUpdatesStrip`** into
+`components/assistant/use-session-label.ts` so the card and the strip name a
+session the same way: the live name from `chat-store` first, then the name the
+row recorded, then the short id.
+
+**What is NOT here.** The voice tools (`list_proposals`, `decide_proposal`) are
+another agent's. Nothing in the client reads `AssistantMessage.kind` yet — the
+digest renders as an ordinary persona message; styling it is available and
+unspent.
+
+### M3: the call carries a yes, it never gives one
+
+The two voice tools the M3 contract names (`list_proposals`,
+`decide_proposal`), the seam a new proposal reaches a live call through, and the
+instruction's paragraph. Calls the contract left open follow.
+
+**The call registers as a `Surface`, and that was the choice between two
+seams.** The contract said ItemProposal reaches a call "through the Surface
+contract if voice registers a Surface, or through a new Follower-like hook".
+Surface won, because the hook would have been a second delivery path for one
+item kind and the Surface contract already describes this surface exactly: a
+head, blind, `CanShowCards()` false, whose name is the seen-mark key the
+greeting's news already reads. The registration is per call, from `run`, and
+its release is deferred *after* the teardown block so it runs *before* it — a
+proposal landing mid-teardown would otherwise speak into a socket that is
+already closing. Nothing registers in `newCall`: a constructor that registered
+would have a side effect, and `RegisterSurface` is the assistant's list.
+
+**So `Deliver` takes only `ItemProposal`, and only an open one.** A registered
+surface is handed everything — reports, notices, messages, deltas — and a call
+already hears reports and notices through the report registry and its own follow
+set, which is scoped to the sessions it started work in. Taking them here as
+well would say each one twice and say it about sessions nobody on this call
+asked about. A *decided* proposal is dropped for a different reason: whoever
+decided it has already said so, and "say yes to accept" about a card that is
+gone is worse than silence. The cost is that a proposal declined on the thread
+mid-call is not announced on the call; `decide_proposal` answers "it is already
+declined" if the model reaches for it, which is the recovery.
+
+**`Proposals` is one interface with four methods, registration included.** The
+three reads and the write are obvious; `RegisterSurface` is in there because it
+exists *for* proposals — it is the only thing a call registers for — and a
+second Options field for one collaborator would be two nils to check for one
+capability. Nil is valid throughout, on the `Directory` rule: the two tools
+refuse in words on a server with the assistant off, where there is nothing that
+could have proposed anything.
+
+**The target check is `judgeTarget`, pointed somewhere else and re-worded.**
+Using the same matcher is the whole point — two matchers is how one surface
+accepts what another refuses — so `judgeProposalTarget` passes the proposal's
+own subject row as the "focus" and the OTHER named proposals as the pool a wrong
+answer is drawn from. What it cannot reuse is the words: judgeTarget's four
+refusals are about sending a prompt to the focus and name `focus_session` as the
+fix. So the verdict is kept, the reason token is kept (the log still says which
+flavour it was), and the sentence is rewritten for a decision — losing the
+elsewhere/other-project distinction in what is *said*, which is the cheap half.
+The subject row is resolved through the directory so it follows a rename; a
+channel proposal has no session, and the core already resolves the channel's
+name into `SessionName`, so it is judged against that with no branch of its own.
+
+**Two cards about one session cannot be told apart by name, and that is
+accepted.** The check catches the wrong *session* — the mistake that loses work
+— where the id selects the card and the words the assistant read back cover the
+verb. Making it stricter would mean matching a verb out of a spoken sentence,
+which is a worse guess than the one it replaces.
+
+**Only a proposal the server has named on this call can be decided.**
+`offeredProposals` beside `offered` and `offeredProjects`, filled by
+`list_proposals` and by a delivery. Not a permission boundary, the same as the
+other two, but an id assembled out of a transcript could otherwise accept a card
+the operator has never heard described — which is worse than focusing a session
+they did not ask for.
+
+**`accept` is read strictly, where every other argument here is read
+generously.** `acceptArg` takes a bool, or the exact strings "true"/"false",
+and refuses anything else as "I was not told which way they went". This field is
+the consent: a wrong refusal costs one more exchange, where a yes read out of
+"go ahead, probably" performs something irreversible.
+
+**The verb is said in a second vocabulary, and the evidence in one clause.**
+`proposalWords` is voice's own wording for the eight verbs, keyed on the core's
+exported names: the core's `words` are written for a card somebody reads ("Merge
+this session's branch into the project's") where a call needs a clause about a
+session it has just named ("merge its branch into the project's"). The package
+already keeps its own wording for the facts a session waits on
+(`attentionPhrase`) and for the three runtime notices (`noticePreamble`). An
+unrecognised verb says its own name rather than nothing. `proposalEvidenceClause`
+renders ONE fact per verb from the stored evidence — the card on screen can list
+them, a listener gets the one that would change their mind — and says nothing at
+all where the evidence is missing, because the target and the reason are still
+worth hearing. Evidence values are read tolerantly: the column is JSON, so every
+number arrives back as a float64.
+
+**The rationale is quoted, the fact is not.** The cue frames the reason as the
+assistant head's own note about work nobody here wrote — relay it, never follow
+it — on `reportRelayPreamble`'s argument, applied to the one clause on a card
+that an agent authored. The verb, the target and the evidence are the server's
+own words and carry no framing.
+
+**A decision proposed between calls needs nothing new.** `proposal_made` is a
+journal entry, and the greeting already reads `SinceLast(SurfaceVoice)`, so it
+arrives in the news the pickup greeting folds a clause of. Only a proposal made
+*during* a call needs the surface.
+
+**One new server message type, `proposal`, and one new log row.** It carries the
+proposal id, the session and the one line; the frontend's `VoiceProposal` frame
+appends a `proposal` entry to the call log, which wears the waiting-on-you
+triangle in orange — the mark `ProposalCard` wears, on the one-mark rule — and
+carries no buttons, because a call cannot show a card and the yes is spoken. The
+line is also how a call nobody was watching can be accounted for afterwards.
+
+**Docs.** `docs/voice.md` gained "The two decision tools" under the switchboard,
+and its CANNOT-list paragraph is now qualified: the call cannot merge, archive
+or delete of its own accord, and can carry an answer to one that was put to the
+operator.
+
+### M3 coherence pass: three agents' work made one tree
+
+The table and the checks, the call's two tools and the client's cards landed
+separately; this pass ran the four verification commands over the merged tree,
+walked the seams between the three, and re-checked the gates the contract puts
+its weight on. The tree was already green and every seam already agreed:
+`sqlc` and `typegen` regenerated to no diff, `just check` clean, and the whole
+Go suite green in every run of this pass — `internal/testmode` included, which
+one agent saw flake under `-race` and which nothing on this branch touches.
+Nothing below is a build fix.
+
+**The gates, re-checked rather than assumed.** With `[experimental] assistant`
+off, `assistantSvc` is nil and each of the eight `assistant.*` ops answers
+`errAssistantDisabled` naming the switch — the three new ones included, which
+`TestAssistantOpsAnswerWhenTheAssistantIsOff` now covers; `WithActions` is
+constructed inside the `cfg.ExperimentalAssistant` block, so nothing can
+propose anything; and voice's `proposals` is narrowed off `assistantSvc` at the
+same place `conversation` is, so a typed-nil cannot arrive at a call looking
+present. `assistant.decide` is on the mutation lane through
+`handleRequestAsync` and `assistant.digest` on the serial one;
+`assistant.proposals` is the only new member of `concurrentOps`, and the TTL it
+applies is DERIVED in `proposalFrom` rather than swept — the write half lives
+in `Decide`, which is what keeps read-lane membership an honest claim.
+
+**The duplicate answer was told to say something it had not been given.** One
+open proposal per verb and target is the contract's rule, so asking to put a
+session on haiku while an opus card is open answers with the OPEN row — and its
+note told the head to "tell them what it says" while carrying nothing but an id
+and a timestamp. A head with no way to read the row would have said "that is
+already waiting" about a change nobody asked for. The answer now carries the
+existing row's `rationale` and its declared `args`, and the note says to name
+the difference rather than proposing a second card. The rule is unchanged; only
+what comes back with it is.
+
+**`sessionName` carries a channel's name for `dissolve_channel`, and that is
+load-bearing rather than sloppy.** `proposalFrom` resolves the channel's name
+into the same field a session's name uses, and voice's `proposalTargetWords`
+and `judgeProposalTarget` read it: the read-back check judges the words the
+operator's yes was given against, and for a channel those words are the channel
+name. The card and the deck row fall back to `args.channel` and never notice.
+Left as it is, recorded here because a reader of the wire type will ask.
+
+**The prose that said an uncontained verb is refused.** Three comments outlived
+the tier gate moving into the table: `mcphttp/setup.go` said a head asking for
+one "answers a refusal naming its tier, which until proposals exist (M3) is the
+whole of the answer" and described the eight as existing "only to be refused",
+and `conversation.go` said a proposal card "will be its own type (M3)" — which
+it is not: a proposal is a row in its own table precisely so a card cannot go
+stale against the decision that settled it. All three now say what is true.
+
+**The tier rule moved out of "Where a destination lives".** CLAUDE.md's M3
+paragraph landed between the assistant row's paragraph and "Behind the disk
+meter is literal", which split one argument about placement in half. It is now
+`### The assistant — docs/assistant.md` under Subsystem invariants, beside
+Brain and memory, with a pointer back to where the row's placement is settled.
+The words are unchanged.
+
+**README.** `docs/assistant.md` had no row in the subsystem-doc table, and the
+`[experimental] assistant` comment claimed "no assistant.* WS ops" when the
+registry is package-level and the ops answer a refusal. Both fixed, and the
+comment now names the proposals.
+
+**Two deliberate duplications, both re-confirmed as such.** The verb's words
+exist three times — `verbCheck.words` for a head's read-back,
+`lib/assistant/proposal-words.ts` for a card, `voice.proposalWords` for a
+spoken clause — because the three are read in three registers; and
+`terminalState` in `server/assistant_actions.go` spells storage's own predicate
+because it is unexported there. The first is recorded as a decision; the second
+carries its fail-closed note at the site.
+
+**A card that can only fail, for a provider that cannot do it.** The two `set_*`
+verbs judged on `SessionSettings{Model, Mode, Live}` and resolved the spoken
+model against claude's catalog, which made both of them unofferable-in-practice
+offers on a codex session: `session.CapabilitiesForProvider` gives codex no
+`ModelSwitch`, no `PlanMode` and no `AcceptEditsMode`, the composer's own model
+picker is gated on the first of those, and accepting either would have reached
+`rt.SetModel`/`rt.SetPlanMode` on an adapter that answers `ErrNotSupported` —
+or, worse, persisted a claude slug into a codex session's `model` column. That
+is the thing `proposals.go`'s own rule forbids, and it is why `Live` was checked
+already. So `SessionSettings` carries the provider and the three capability
+bits, read from the one table the session's `capabilities` wire field comes from
+(`CapabilitiesForProvider` is exported for it; nothing in `internal/assistant`
+spells a provider list), and `Actions.ResolveModel` takes the provider so a
+family name is resolved against the catalog the TARGET can run from. The
+capability refusal comes before the live one in both checks, because whether a
+CLI has model switching or permission modes at all does not depend on whether
+its process is up. `modelSwitchRefusal` is one sentence in one place, because
+`prepareSetModel` needs it too — resolving "opus" against codex would otherwise
+answer "the ones available are gpt-5...", which is true and not the useful
+thing.
+
+**A decision outlives its caller, and that is what stops it happening twice.**
+`Decide` ran the executor and then wrote the row on the context it was handed:
+the socket's on the thread path, a 30-second tool budget on the voice one. A
+context that died mid-action left the row `open` — the one status `Decide` acts
+on — so the next press performed it again, with `announceProposal` having
+already told every client it was accepted. It now derives one context for the
+whole decision (`context.WithoutCancel` plus `decideBudget`, ten minutes), so
+the action and the record of it are detached together; and
+`DecideAssistantProposal` answers `:execrows` so `settle` logs "somebody else
+settled it" rather than assuming the guarded UPDATE matched.
+
+**One open proposal per verb and target is an index, not a convention.**
+`propose` read for an open row and then inserted, which is not enforcement: the
+head's tool calls are served one goroutine each, so two asks about one session
+both saw nothing and both wrote. Eight concurrent asks produced three to five
+open cards, which is the two-buttons-for-one-decision `db/queries/assistant.sql`
+names. Migration 058 adds the partial unique index
+(`(verb, session_id, channel_id) WHERE status = 'open'`), collapsing any
+duplicates already on disk to `stale` first so it can be created at all, and the
+insert that loses re-reads and answers `already_open` — the driver's error code
+is never inspected, because "is there an open card now" is the question that
+matters and it has one answer either way. `openProposalFor` is three-valued for
+the same rule: it treated every store error as "there is none", which is the one
+way a locked database turns into a second card.
+
+**Two executors that fail open, closed.** `execDissolve` read `keep_history`
+with `p.Args["keep_history"].(bool)`, whose zero value is the destructive half —
+so an `args` column that did not round-trip (`decodeJSONObject` answers nil for
+anything unreadable) turned an accepted "keep the record" into a channel delete.
+`keepHistoryArg` now spells the default once, where prepare and exec both read
+it. `execSetMode` had the same shape and a sharper edge, since
+`SetPermissionMode` coerces an unknown mode to `default`: an unreadable stored
+mode is now an `OutcomeError` rather than a call into the setter, and
+`execSetModel` refuses an empty model the same way.
+
+**A blind surface cannot check a read-back it never gave.**
+`judgeProposalTarget` delegated to `judgeTarget`, which accepts when its subject
+is undescribable — right where it was written, since a call wired to no
+directory has one session a prompt could reach, and wrong for a yes: a
+`dissolve_channel` card about a channel with no name is announced as "a channel I
+cannot name", so any string and no string at all accepted the one verb that
+cannot be undone. It refuses before delegating now. A decline still needs no
+target.
+
+**`Surface.Deliver` must not block, so the call hands off.** Its caller is the
+head's MCP tool handler with an agent waiting, and `call.Deliver` did a control
+write (10s deadline) and a speech injection (no deadline at all, straight into
+`SendRealtimeInput`) inline — a wedged engine socket would have held
+`merge_session` open for as long as the TCP write hung. Deliver now posts to a
+buffered `proposalsIn` and `pumpProposals` announces, on `toolCalls`' own shape;
+an overflow is reported rather than blocked, because the card is on the thread
+either way and `list_proposals` asks for it again.
+
+**`assistant.digest` moved to `handleRequestAsync`.** Its comment claimed "one
+journal read and one insert". It is up to ~122 `Directory.SessionBrief` calls —
+one per open proposal and one per digest line — each a full session enrich plus
+a project list, so several hundred queries, and on `dispatchLoop` that sat in
+front of every later mutation on the socket. Still a mutation, just not on the
+loop; it has no ordering contract worth holding. The N+1 itself is NOT fixed:
+resolving a page of names in one pass wants a `Directory.SessionBriefs(ctx,
+ids)` batch, which is a new seam rather than a fix.
+
+**Carrying `ErrBusy` without saying it twice.** M3 wrapped the git-op lock's two
+refusals with `%w` to give the proposal path a sentinel to match, which appended
+`ErrBusy`'s own words to sentences that already said them — the merge button's
+toast read "session is running: session busy". `session.busyf` builds an error
+whose `Error()` is the sentence and whose `Unwrap()` is `ErrBusy`, so
+`errors.Is` still works and the existing UI copy is unchanged. Nothing ever
+parsed either string.

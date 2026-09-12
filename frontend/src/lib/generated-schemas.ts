@@ -1156,6 +1156,7 @@ export const AssistantMessageSchema = z.object({
   text: z.string().optional(),
   surface: z.string().optional(),
   callId: z.string().optional(),
+  kind: z.string().optional(),
   createdAt: z.string().optional(),
 });
 
@@ -1194,6 +1195,29 @@ export const AssistantJournalResultSchema = z.object({
 
 export const AssistantUnseenResultSchema = z.object({
   count: z.number().optional(),
+});
+
+export const AssistantProposalSchema = z.object({
+  id: z.string().optional(),
+  createdAt: z.string().optional(),
+  verb: z.string().optional(),
+  sessionId: z.string().optional(),
+  sessionName: z.string().optional(),
+  projectId: z.string().optional(),
+  projectName: z.string().optional(),
+  channelId: z.string().optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
+  rationale: z.string().optional(),
+  evidence: z.record(z.string(), z.unknown()).optional(),
+  status: z.string().optional(),
+  decidedAt: z.string().optional(),
+  decidedVia: z.string().optional(),
+  outcome: z.string().optional(),
+  expiresAt: z.string().optional(),
+});
+
+export const AssistantProposalsResultSchema = z.object({
+  proposals: z.array(AssistantProposalSchema).optional(),
 });
 
 export const ScheduleInfoSchema = z.object({
@@ -1296,6 +1320,7 @@ export const pushSchemaMap = {
   "assistant.message": AssistantMessageSchema,
   "assistant.delta": AssistantDeltaSchema,
   "assistant.journal": AssistantJournalEntrySchema,
+  "assistant.proposal": AssistantProposalSchema,
   "schedule.updated": ScheduleInfoSchema,
   "schedule.deleted": ScheduleInfoSchema,
   "schedule.run": ScheduleRunInfoSchema,

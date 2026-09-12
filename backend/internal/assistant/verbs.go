@@ -31,8 +31,14 @@ const (
 	// containment: nothing leaves it without a merge, and a merge is not on
 	// this list.
 	TierContained Tier = "contained"
-	// TierUncontained is never performed. Asking for one is a proposal, and
-	// until proposals exist (M3) asking answers [ProposalRequiredError].
+	// TierUncontained is never performed BY THE ASSISTANT. Asking for one of
+	// these creates a proposal: a person decides it on a surface that shows the
+	// card or reads the target back, and accepting re-checks the live facts
+	// before the same service the UI uses performs it (see proposals.go).
+	//
+	// So the handler on an uncontained verb writes a row and can do nothing
+	// else, which is what keeps the tier a property of the verb rather than of
+	// a prompt.
 	TierUncontained Tier = "uncontained"
 )
 
@@ -52,6 +58,7 @@ const (
 	VerbFollowSession   = "follow_session"
 	VerbUnfollowSession = "unfollow_session"
 	VerbNote            = "note"
+	VerbDigest          = "digest"
 	VerbRemember        = "remember"
 	VerbConfirmMemory   = "confirm_memory"
 	VerbFlagMemory      = "flag_memory"
@@ -120,9 +127,9 @@ type Verb struct {
 	handler Handler
 }
 
-// HasHandler reports whether this verb can be performed at all. Read and
-// contained verbs have one; uncontained verbs never will — performing one is
-// what a proposal is for.
+// HasHandler reports whether this verb can be called at all. Every verb in the
+// table has one; what an UNCONTAINED verb's handler does is write a proposal,
+// never perform the thing it names.
 func (v Verb) HasHandler() bool { return v.handler != nil }
 
 // Verbs returns the closed table.
@@ -144,38 +151,19 @@ func (s *Service) Verb(name string) (Verb, bool) {
 // ErrUnknownVerb is what a name outside the table answers with.
 var ErrUnknownVerb = errors.New("no such verb")
 
-// ErrProposalRequired is what an uncontained verb answers with: it is never
-// performed, and asking for one creates a proposal instead.
-var ErrProposalRequired = errors.New("this verb is never performed; it needs a proposal and a yes")
-
-// ProposalRequiredError names the verb that was asked for.
-//
-// Typed so the wiring can tell "this needs a card" from "this broke", which
-// are two different sentences to a person and two different log lines. It
-// unwraps to [ErrProposalRequired], so errors.Is works either way.
-type ProposalRequiredError struct {
-	Verb string
-	Tier Tier
-}
-
-func (e *ProposalRequiredError) Error() string {
-	return fmt.Sprintf("%s is %s: %s", e.Verb, e.Tier, ErrProposalRequired)
-}
-
-func (e *ProposalRequiredError) Unwrap() error { return ErrProposalRequired }
-
 // Invoke runs one verb by name.
 //
 // This is the only way in, for a head calling a tool and for a transport
 // acting on the operator's behalf, which is what makes the tier gate a
 // property of the system rather than of a call site.
+//
+// The gate is in the TABLE, not here: an uncontained verb's handler creates a
+// proposal and cannot perform anything, so there is one dispatch and no branch
+// that could be forgotten by whatever calls this next.
 func (s *Service) Invoke(ctx context.Context, name string, args map[string]any) (map[string]any, error) {
 	verb, ok := s.byName[name]
 	if !ok {
 		return nil, fmt.Errorf("%q: %w", name, ErrUnknownVerb)
-	}
-	if verb.Tier == TierUncontained {
-		return nil, &ProposalRequiredError{Verb: verb.Name, Tier: verb.Tier}
 	}
 	if verb.handler == nil {
 		return nil, fmt.Errorf("verb %q has no handler", name)
@@ -206,12 +194,7 @@ func (s *Service) ToolHandler(ctx context.Context, name string, args map[string]
 
 // refusalFor turns an Invoke error into something a head can read out.
 func (s *Service) refusalFor(name string, err error) map[string]any {
-	var needsProposal *ProposalRequiredError
 	switch {
-	case errors.As(err, &needsProposal):
-		return refuse("proposal-required:"+name, fmt.Sprintf("%s is not something I can do. It needs "+
-			"their own hand: say so plainly, say what it would have done, and tell them where on "+
-			"screen it is. Do not offer to try it another way.", name))
 	case errors.Is(err, ErrUnknownVerb):
 		return refuse("unknown-verb:"+name, fmt.Sprintf("There is no %q. Use only the tools you were "+
 			"given, and tell them plainly if what they asked for is not among them.", name))
@@ -232,7 +215,7 @@ func refuse(reason, say string) map[string]any {
 }
 
 // buildVerbs is the table. Read first, then contained, then the uncontained
-// ones that exist only to be refused with their tier named.
+// ones, whose handlers create a proposal and perform nothing.
 //
 // The four memory verbs are in it only when a [Memory] is wired. That is not a
 // feature flag being polite: a verb in the table is a verb the head is told
@@ -406,34 +389,25 @@ func (s *Service) buildVerbs() []Verb {
 			},
 			handler: s.verbNote,
 		},
+		{
+			Name: VerbDigest,
+			Tier: TierContained,
+			Description: "Post a digest into this conversation: everything that has happened since " +
+				"the last one, grouped, plus anything waiting for their yes. Written by the server, " +
+				"not by you.",
+			handler: s.verbDigest,
+		},
 	}
 
 	if s.mem != nil {
 		verbs = append(verbs, s.memoryVerbs()...)
 	}
 
-	return append(verbs,
-		// Uncontained. Listed with their tier and no handler: a head can see
-		// that they exist and that they are not its to perform, which is what
-		// stops it inventing a way round one. M3 turns each into a proposal.
-		uncontained(VerbMergeSession, "Merge a session's branch into the project's."),
-		uncontained(VerbRebaseSession, "Rebase a session's branch onto the project's."),
-		uncontained(VerbArchiveSession, "File a session away."),
-		uncontained(VerbDeleteSession, "Delete a session, its worktree and its branch."),
-		uncontained(VerbReclaimSession, "Free a session's disk, keeping its row and branch."),
-		uncontained(VerbDissolveChannel, "Remove a channel's workers, worktrees and branches."),
-		uncontained(VerbSetSessionModel, "Change which model another session runs."),
-		uncontained(VerbSetSessionMode, "Change another session's permission mode."),
-	)
-}
-
-// uncontained builds a verb that exists to be refused.
-func uncontained(name, description string) Verb {
-	return Verb{
-		Name:        name,
-		Tier:        TierUncontained,
-		Description: description + " Never performed by the assistant.",
-	}
+	// Uncontained: each one CREATES A PROPOSAL and performs nothing. They are
+	// in the table unconditionally, because the table is what a head is told
+	// exists and a verb it cannot see is one it invents a way around — and
+	// because "ask, and they decide" is a real answer where a refusal was not.
+	return append(verbs, s.uncontainedVerbs()...)
 }
 
 func (s *Service) verbOrientation(ctx context.Context, _ map[string]any) (map[string]any, error) {

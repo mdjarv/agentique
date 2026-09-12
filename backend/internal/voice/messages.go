@@ -50,6 +50,14 @@ const (
 	// before the spoken version, the same way a report does: a call whose engine
 	// has no voice still shows what it found.
 	msgSummary = "summary"
+	// msgProposal is the screen copy of a decision the assistant has put to the
+	// operator and cannot take itself. One line, sent before it is spoken, for
+	// the same reason a report is: a call that cannot speak still leaves the
+	// thing that needs deciding on screen.
+	//
+	// It is a record, never a control: the yes is given out loud and checked
+	// against the name that was read back, so the log line carries no buttons.
+	msgProposal = "proposal"
 
 	// msgStop is the client asking to end the call.
 	msgStop = "stop"
@@ -108,10 +116,14 @@ type serverMessage struct {
 	// closed
 	Reason string `json:"reason,omitempty"`
 
-	// report, notice, dispatched, summary
+	// report, notice, dispatched, summary, proposal
 	Kind      string `json:"kind,omitempty"`
 	Headline  string `json:"headline,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
+
+	// proposal. The id is what a later decision names, so the log line and the
+	// spoken yes are demonstrably about one row.
+	ProposalID string `json:"proposalId,omitempty"`
 
 	// activity. Empty means the call has nothing slow in hand any more, which is
 	// why this one carries no omitempty of its own meaning: absent and empty say

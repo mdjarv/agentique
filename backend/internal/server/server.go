@@ -1126,6 +1126,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			// The collector answers from cache and never touches the network,
 			// which is what makes it safe to ask inside a verb.
 			assistant.WithAllowances(usageCollector),
+			// The uncontained tier's executor and its facts. Without it those
+			// eight verbs refuse in words rather than proposing something
+			// nothing has checked — so it is passed here, where every service
+			// it needs already exists, and never constructed inside the core.
+			assistant.WithActions(newAssistantActions(svc, gitSvc, mgr, queries, catalog)),
 			assistant.WithRegistry(reportRegistry),
 			assistant.WithBroadcaster(bus),
 		}
@@ -1203,11 +1208,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// typed-nil *assistant.Service would arrive at the call looking present
 		// and panic on the first turn it tried to mirror.
 		var conversation voice.Conversation
+		// The proposal half, narrowed for the same reason: it is also what
+		// registers a live call as a surface, so a decision proposed mid-call
+		// reaches the person on the line.
+		var proposals voice.Proposals
 		if assistantSvc != nil {
 			conversation = assistantSvc
+			proposals = assistantSvc
 		}
 		vh, err := newVoiceHandler(cfg, allowedOrigins, reportRegistry, assistantDisp,
-			voiceSettings, assistantDir, conversation)
+			voiceSettings, assistantDir, conversation, proposals)
 		if err != nil {
 			slog.Error("live voice disabled: bad configuration", "error", err)
 		} else {

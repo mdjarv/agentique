@@ -20,6 +20,21 @@ describe("parseServerMessage", () => {
     });
   });
 
+  // A waiting decision reaches the screen as well as the ear: a call whose
+  // engine has no voice still has to leave it somewhere it can be read.
+  it("accepts a proposal frame", () => {
+    expect(
+      parseServerMessage(
+        '{"type":"proposal","proposalId":"p1","sessionId":"s1","headline":"Live Voice Dialog in agentique -- merge its branch into the project\'s"}',
+      ),
+    ).toEqual({
+      type: "proposal",
+      proposalId: "p1",
+      sessionId: "s1",
+      headline: "Live Voice Dialog in agentique -- merge its branch into the project's",
+    });
+  });
+
   it("drops a control type this build does not know, rather than throwing", () => {
     expect(parseServerMessage('{"type":"someday"}')).toBeNull();
   });

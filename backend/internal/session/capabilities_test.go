@@ -3,7 +3,7 @@ package session
 import "testing"
 
 func TestCapabilitiesForProvider_Claude(t *testing.T) {
-	caps := capabilitiesForProvider("claude")
+	caps := CapabilitiesForProvider("claude")
 	if caps.Provider != "claude" {
 		t.Fatalf("expected provider=claude, got %q", caps.Provider)
 	}
@@ -23,7 +23,7 @@ func TestCapabilitiesForProvider_Claude(t *testing.T) {
 }
 
 func TestCapabilitiesForProvider_Codex(t *testing.T) {
-	caps := capabilitiesForProvider("codex")
+	caps := CapabilitiesForProvider("codex")
 	if caps.Provider != "codex" {
 		t.Fatalf("expected provider=codex, got %q", caps.Provider)
 	}
@@ -64,7 +64,7 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 func TestCapabilitiesForProvider_EmptyDefaultsToClaude(t *testing.T) {
 	// normalizeProvider turns "" into "claude" — keep this seam working so a
 	// stale frontend payload still ends up with claude capabilities.
-	caps := capabilitiesForProvider("")
+	caps := CapabilitiesForProvider("")
 	if caps.Provider != "claude" {
 		t.Fatalf("empty provider should default to claude caps, got %q", caps.Provider)
 	}
@@ -73,7 +73,7 @@ func TestCapabilitiesForProvider_EmptyDefaultsToClaude(t *testing.T) {
 func TestCapabilitiesForProvider_Unknown(t *testing.T) {
 	// An unknown provider name should not silently advertise claude's
 	// feature set — the safe default is "nothing supported".
-	caps := capabilitiesForProvider("made-up")
+	caps := CapabilitiesForProvider("made-up")
 	// normalizeProvider currently coerces anything non-codex to claude, so
 	// this test pins that exact behavior. If the coercion ever loosens,
 	// this guards against falsely advertising features the new provider

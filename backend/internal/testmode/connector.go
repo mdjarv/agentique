@@ -116,6 +116,14 @@ type ScriptedEvent struct {
 // Session implements runtime.CLISession for testing.
 type Session struct {
 	events chan runtime.CLIEvent
+	// done is closed by Close before events is, and every sender selects on it:
+	// a send racing a close used to be a send on a closed channel, which is a
+	// panic with no test message — the suite's one flake under load. senders
+	// counts the goroutines holding a right to send; Close waits for them to
+	// leave before it closes events, so the channel closes only when nothing can
+	// write to it.
+	done    chan struct{}
+	senders sync.WaitGroup
 
 	mu          sync.Mutex
 	queries     []string
@@ -139,10 +147,42 @@ type Session struct {
 func NewSession() *Session {
 	return &Session{
 		events: make(chan runtime.CLIEvent, 64),
+		done:   make(chan struct{}),
 	}
 }
 
 func (s *Session) Events() <-chan runtime.CLIEvent { return s.events }
+
+// send delivers one event unless the session is closed or closes while the
+// send is blocked. It is the only writer to s.events. The right to send is
+// taken under mu, so Close cannot observe zero senders and close the channel
+// between the check and the send; the select is what lets a sender parked on
+// a full channel leave when Close arrives.
+func (s *Session) send(event runtime.CLIEvent, timeout time.Duration) bool {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.senders.Add(1)
+	s.mu.Unlock()
+	defer s.senders.Done()
+
+	var expired <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		expired = timer.C
+	}
+	select {
+	case s.events <- event:
+		return true
+	case <-s.done:
+		return false
+	case <-expired:
+		return false
+	}
+}
 
 func (s *Session) State() runtime.SessionState {
 	s.mu.Lock()
@@ -191,12 +231,7 @@ func (s *Session) Query(_ context.Context, prompt string, _ ...runtime.Attachmen
 		// the session transitions back to idle instead of hanging in
 		// Running.
 		go func() {
-			s.mu.Lock()
-			closed := s.closed
-			s.mu.Unlock()
-			if !closed {
-				s.events <- runtime.TurnCompletedEvent{Status: runtime.TurnStatusCompleted, StopReason: "end_turn"}
-			}
+			s.send(runtime.TurnCompletedEvent{Status: runtime.TurnStatusCompleted, StopReason: "end_turn"}, 0)
 		}()
 	}
 	return nil
@@ -245,30 +280,34 @@ func (s *Session) Interrupt(_ context.Context) error {
 
 func (s *Session) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.endTurnLocked()
-	if !s.closed {
-		s.closed = true
-		close(s.events)
+	if s.closed {
+		s.mu.Unlock()
+		return nil
 	}
+	s.closed = true
+	close(s.done)
+	s.mu.Unlock()
+
+	// No new sender can register (closed is set under mu) and every parked one
+	// leaves on done, so this returns, and only then is the channel closed.
+	s.senders.Wait()
+	close(s.events)
 	return nil
 }
 
 // InjectEvent pushes a runtime.CLIEvent into the session's channel.
 func (s *Session) InjectEvent(event runtime.CLIEvent) error {
 	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
+	closed := s.closed
+	s.mu.Unlock()
+	if closed {
 		return fmt.Errorf("session is closed")
 	}
-	s.mu.Unlock()
-
-	select {
-	case s.events <- event:
-		return nil
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("event channel full or blocked")
+	if !s.send(event, 5*time.Second) {
+		return fmt.Errorf("event channel full or blocked, or the session closed")
 	}
+	return nil
 }
 
 // replayScenario pushes scripted events with delays.
@@ -292,11 +331,13 @@ func (s *Session) replayScenario(ctx context.Context, sc *Scenario) {
 		s.mu.Unlock()
 		if closed || interrupted {
 			if interrupted && !closed {
-				s.events <- runtime.TurnCompletedEvent{Status: runtime.TurnStatusInterrupted, StopReason: "interrupted"}
+				s.send(runtime.TurnCompletedEvent{Status: runtime.TurnStatusInterrupted, StopReason: "interrupted"}, 0)
 			}
 			return
 		}
-		s.events <- event
+		if !s.send(event, 0) {
+			return
+		}
 
 		// After pushing a tool_use event, invoke the permission callback.
 		// This blocks until the user resolves the approval (or

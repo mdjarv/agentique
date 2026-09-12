@@ -25,6 +25,8 @@ export {
   AssistantJournalResultSchema,
   AssistantMessageSchema,
   AssistantPageSchema,
+  AssistantProposalSchema,
+  AssistantProposalsResultSchema,
   AssistantUnseenResultSchema,
 } from "~/lib/generated-schemas";
 export type {
@@ -33,6 +35,8 @@ export type {
   AssistantJournalResult,
   AssistantMessage,
   AssistantPage,
+  AssistantProposal,
+  AssistantProposalsResult,
   AssistantUnseenResult,
 } from "~/lib/generated-types";
 
@@ -62,5 +66,40 @@ export const ASSISTANT_JOURNAL_KINDS = [
   "session_created",
   "note",
   "day_summary",
+  "proposal_made",
+  "proposal_decided",
 ] as const;
 export type AssistantJournalKind = (typeof ASSISTANT_JOURNAL_KINDS)[number];
+
+/**
+ * Where a proposal has got to. The closed set from the M3 contract, and the one
+ * vocabulary a card reads: `open` is the only status that can be decided, and
+ * the other five are each a different sentence afterwards — `stale` and
+ * `failed` in particular, because one performed nothing and the other tried.
+ *
+ * Closed in the doc and, unlike the journal kinds, closed in the reader too:
+ * every status here decides whether a card offers two buttons, so a status this
+ * build has never heard of is treated as decided rather than pressed. See
+ * `isOpenProposal`.
+ */
+export const ASSISTANT_PROPOSAL_STATUSES = [
+  "open",
+  "accepted",
+  "declined",
+  "stale",
+  "failed",
+  "expired",
+] as const;
+export type AssistantProposalStatus = (typeof ASSISTANT_PROPOSAL_STATUSES)[number];
+
+/**
+ * Whether this row is still somebody's to decide.
+ *
+ * The one predicate behind every open/decided split in the client — the
+ * thread's cards, the deck's rows, the store's open list — so no surface can
+ * offer Accept on a row another has already closed. An absent status is NOT
+ * open: a row whose status did not survive the wire is not something to act on.
+ */
+export function isOpenProposal(status: string | undefined): boolean {
+  return status === "open";
+}
