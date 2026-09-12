@@ -651,6 +651,106 @@ head gets a contained `digest` verb. The timed digest is M4.
 heading it already has for the row: uncontained means proposed, the yes is
 given where the card is shown or the target is read back, accept re-checks.
 
+## The M4 contract
+
+Autonomy. The assistant wakes on its own, judges cheaply whether anything
+needs doing, and acts only under standing instructions with budgets. Nothing
+here widens a tier: what the heartbeat can do is what a conversation could
+ask for, and anything uncontained is still a proposal. The names are binding.
+
+**Config.** A `[assistant]` section in `config.go`: `heartbeat-interval`
+(duration string, default `"15m"`, `"0"` disables), `digest-at` (a local
+wall-clock time `"HH:MM"`, empty disables the timed digest), `triage-model`
+(a family name resolved through the catalog, default the Haiku family).
+Environment overrides `AGENTIQUE_ASSISTANT_HEARTBEAT`,
+`AGENTIQUE_ASSISTANT_DIGEST_AT`, `AGENTIQUE_ASSISTANT_TRIAGE_MODEL`. Unknown
+or unparsable values warn at boot and fall back to the default; nothing
+refuses to boot.
+
+**The table.** Migration 059, ASCII: `assistant_policies` (`id` TEXT PK,
+`name`, `text`, `enabled` INTEGER, `budget_in_flight` INTEGER default 1,
+`budget_per_day` INTEGER default 3, `last_fired_at`, `created_at`,
+`updated_at`), and `sessions.origin TEXT NOT NULL DEFAULT ''` (`''` or
+`assistant`). Queries: `ListAssistantPolicies`, `GetAssistantPolicy`,
+`UpsertAssistantPolicy`, `DeleteAssistantPolicy`, `TouchAssistantPolicy`
+(last_fired_at), `SetAssistantHeartbeatAt`, `CountAssistantJournalSince`,
+`SetSessionOrigin`, `CountSessionsByOriginSince` (created since a stamp,
+by origin), `ListLiveSessionsByOrigin`.
+
+**The wire type** `assistant.Policy` `{ID, Name, Text, Enabled,
+BudgetInFlight, BudgetPerDay, LastFiredAt, CreatedAt, UpdatedAt}`, every
+field optional. WS ops: `assistant.policies` (read lane), `assistant.policy-save`
+(mutation; upsert; `text` capped at 8 KiB; name required), and
+`assistant.policy-delete`. Push `assistant.policy` on the global topic on save
+and delete (a deleted row carries `deleted: true`).
+
+**The heartbeat.** `Service.RunHeartbeat(ctx, interval)` is a loop started
+from the serve command's production block and stopped through the context;
+`New` starts nothing. Each tick, in this order:
+
+1. The gate. `CountAssistantJournalSince(last_heartbeat_at)` and whether the
+   timed digest is due (`digest-at` set, `last_digest_at` before today's
+   `digest-at` in local time, now after it). Zero entries and nothing due
+   stamps `last_heartbeat_at` and returns. No model runs.
+2. The timed digest, when due, posts through `Digest` without a model.
+3. Triage, only when entries exist and at least one policy is enabled: one
+   Haiku one-shot through a `Triager` collaborator (`WithTriager`), an
+   interface in the assistant package (`Triage(ctx, prompt) (string,
+   error)`) implemented in the server package over `session.BlockingRunner`
+   with the persona service's Haiku options (`MaxTurns(1)`, no builtin
+   tools). The prompt carries the enabled policies' text, the entries since
+   the last beat rendered as the digest renders them (untrusted ones quoted
+   and marked), and the closed answer format: exactly one line, `none`,
+   `digest`, or `act: <one sentence naming the policy and why>`. The parser
+   is strict and fails closed: anything else is `none`.
+4. `digest` posts the digest. `act` wakes the head: a message with role
+   `system` and `metadata.kind = "heartbeat"` is written to the conversation
+   carrying the triage sentence and the entries since the last beat, and the
+   head runs one turn on it with a preamble section "This turn was started by
+   the heartbeat, not by the operator" naming the enabled policies and their
+   budgets, and saying that anything the operator would need to see is a
+   proposal. The head's reply is a persona message with `kind = "heartbeat"`.
+5. Every tick that ran triage journals a `heartbeat` entry (a fourteenth
+   kind) whose summary is the verdict, and stamps `last_heartbeat_at`.
+   Ticks that took the gate's early return journal nothing.
+
+Ticks never overlap: a tick that finds the previous one still running is
+skipped and logged. A tick is bounded by `heartbeatBudget` (three minutes
+excluding the head's own turn budget).
+
+**Budgets.** `create_session` and `run_prompt` gain an optional `policy`
+argument, the policy's name, which the head supplies when it acts under one.
+With a policy named, the verb refuses unless both budgets allow: sessions
+with `origin = assistant` created under that policy today are fewer than
+`budget_per_day` (counted from journal `session_created` entries whose
+payload names the policy), and those of them still live (not archived, not
+finished) are fewer than `budget_in_flight`. A refusal names the budget and
+the count. Without a policy the verbs are unbudgeted, because the operator
+asked. A session the assistant creates is written with `origin = assistant`
+and the journal entry's payload carries `policy`; a turn it dispatches carries
+`session.QueryOrigin{Kind: "assistant", PolicyID}` (`QueryOrigin` gains
+`PolicyID` and `ProposalID`). Assistant-origin turns set
+`unseen_completed_at` like a person's do.
+
+**Frontend.** `/assistant/policies` lists policies with name, enabled,
+the two budgets and the text in a textarea, with Save and Delete; a new one
+is a blank row. The thread header's three secondary controls collapse into
+one ⋯ menu — Memory, Policies, Digest — leaving the orb, the name and the
+call button on the band; the mobile band is the same. A session row whose
+session is `origin = assistant` says so in its third line ("· assistant")
+and in its aria-label; `SessionInfo` carries `origin` on the wire,
+optional. A heartbeat message renders in the thread as a quiet divider line
+(the verdict sentence and the time) rather than a bubble, and the head's
+heartbeat reply as an ordinary persona message with a small "heartbeat" mark.
+
+**Docs.** CLAUDE.md gains one paragraph under the assistant heading: the
+heartbeat's gate, that triage is Haiku and its parse fails closed, that
+budgets are on the verbs and tiers never widen, and that confidence is never
+a dial. `README.md` gains the `[assistant]` block. `ROADMAP.md`'s "The
+assistant" entry moves to Shipped with what landed and what is next
+(gateway transport, server-to-server follow, the scheduler absorbing the
+heartbeat, provenance-aware consolidation).
+
 ## Build notes
 
 **The session.state observer journals transitions against a primed baseline,
