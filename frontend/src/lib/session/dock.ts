@@ -28,6 +28,34 @@ export const DOCK_LABELS: Record<DockView, string> = {
   browser: "Browser",
 };
 
+/**
+ * The dock's width is stored in pixels, so it outlives the window it was
+ * dragged in: a dock widened on a large monitor comes back on a laptop, or
+ * beside a sidebar that was collapsed at the time, and the chat is what pays
+ * for it. At 160px the composer's placeholder wrapped one character per line
+ * and its controls overflowed into the dock.
+ *
+ * So the stored width is a *request* and the pane decides what it gets. The
+ * chat keeps `MIN_CHAT_WIDTH` wherever there is room for it; where there is
+ * not, neither half can have what it wants and they split the pane evenly
+ * rather than one of them collapsing.
+ */
+export const MIN_DOCK_WIDTH = 300;
+export const MAX_DOCK_WIDTH = 900;
+export const MIN_CHAT_WIDTH = 380;
+
+/** The widest the dock may be drawn in a pane this wide. */
+export function maxDockWidth(paneWidth: number): number {
+  // Unmeasured (0, before the first observation) is not "no room".
+  if (paneWidth <= 0) return MAX_DOCK_WIDTH;
+  return Math.min(MAX_DOCK_WIDTH, Math.max(paneWidth / 2, paneWidth - MIN_CHAT_WIDTH));
+}
+
+/** The width to draw the dock at, given what was stored and what there is. */
+export function clampDockWidth(stored: number, paneWidth: number): number {
+  return Math.min(stored, maxDockWidth(paneWidth));
+}
+
 /** What a session has to show. Every field is a fact about the session. */
 export interface DockAvailability {
   work: boolean;

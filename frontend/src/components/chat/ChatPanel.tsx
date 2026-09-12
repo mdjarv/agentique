@@ -36,6 +36,7 @@ import { useSessionAttention } from "~/hooks/session/useSessionAttention";
 import { useSessionState } from "~/hooks/session/useSessionState";
 import { useAgentRuns } from "~/hooks/useAgentRuns";
 import { useAutoOpenDock } from "~/hooks/useAutoOpenDock";
+import { useElementWidth } from "~/hooks/useElementWidth";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
@@ -64,9 +65,11 @@ import {
 import { deriveCrew } from "~/lib/session/crew";
 import {
   availableDockViews,
+  clampDockWidth,
   type DockAvailability,
   type DockView,
   dockAlertState,
+  maxDockWidth,
   resolveDockView,
 } from "~/lib/session/dock";
 import { loadSessionHistory } from "~/lib/session/history";
@@ -231,6 +234,9 @@ export function ChatPanel({
   const setDockOpen = useUIStore((s) => s.setDockOpen);
   const dockWidth = useUIStore((s) => s.dockWidth);
   const dockMaximized = useUIStore((s) => s.dockMaximized);
+  // The stored dock width is a request in pixels and survives the window it was
+  // dragged in, so the pane it has to fit in is measured rather than assumed.
+  const [paneRef, paneWidth] = useElementWidth<HTMLDivElement>();
   const setDockMaximized = useUIStore((s) => s.setDockMaximized);
 
   const latestTurnIndex = turns[turns.length - 1]?.turnIndex;
@@ -719,7 +725,7 @@ export function ChatPanel({
         />
 
         {/* The chat is the page; the dock sits beside it. */}
-        <div className="flex-1 flex min-h-0 min-w-0">
+        <div ref={paneRef} className="flex-1 flex min-h-0 min-w-0">
           {!chatHidden && (
             <div className="flex-1 flex flex-col min-h-0 min-w-0">
               <MessageList
@@ -834,9 +840,13 @@ export function ChatPanel({
           {!isMobile && dockElement && (
             <div
               className="relative flex shrink-0 flex-col border-l"
-              style={dockMaximized ? { flex: "1 1 auto" } : { width: dockWidth }}
+              style={
+                dockMaximized
+                  ? { flex: "1 1 auto" }
+                  : { width: clampDockWidth(dockWidth, paneWidth) }
+              }
             >
-              {!dockMaximized && <DockResizeHandle />}
+              {!dockMaximized && <DockResizeHandle max={maxDockWidth(paneWidth)} />}
               {dockElement}
             </div>
           )}

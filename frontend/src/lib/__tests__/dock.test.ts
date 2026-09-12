@@ -3,9 +3,13 @@ import type { AgentBadgeState } from "~/lib/agent-runs";
 import type { LoopBadgeState } from "~/lib/loop-attention";
 import {
   availableDockViews,
+  clampDockWidth,
   type DockAvailability,
   dockAlertState,
   legacyTabToDock,
+  MAX_DOCK_WIDTH,
+  MIN_CHAT_WIDTH,
+  maxDockWidth,
   resolveDockView,
 } from "~/lib/session/dock";
 
@@ -97,5 +101,31 @@ describe("dockAlertState", () => {
 
   it("reports live agents when nothing worse is happening", () => {
     expect(dockAlertState({ running: 2 }, null)).toEqual({ kind: "live", count: 2 });
+  });
+});
+
+describe("clampDockWidth", () => {
+  it("gives the dock what it asked for when the pane can spare it", () => {
+    expect(clampDockWidth(500, 1600)).toBe(500);
+  });
+
+  it("keeps the chat readable when the pane is narrower than the stored width", () => {
+    // The reported glitch: a dock widened elsewhere, restored beside a sidebar,
+    // left the chat ~160px and its composer wrapped one character per line.
+    expect(clampDockWidth(800, 957)).toBe(957 - MIN_CHAT_WIDTH);
+    expect(957 - clampDockWidth(800, 957)).toBe(MIN_CHAT_WIDTH);
+  });
+
+  it("splits the pane evenly when neither half can have its minimum", () => {
+    expect(clampDockWidth(800, 600)).toBe(300);
+  });
+
+  it("treats an unmeasured pane as no constraint rather than no room", () => {
+    expect(clampDockWidth(500, 0)).toBe(500);
+    expect(maxDockWidth(0)).toBe(MAX_DOCK_WIDTH);
+  });
+
+  it("never exceeds the stored ceiling on a very wide pane", () => {
+    expect(maxDockWidth(4000)).toBe(MAX_DOCK_WIDTH);
   });
 });

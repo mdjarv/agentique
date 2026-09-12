@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { ModelId } from "~/lib/session/actions";
-import type { DockView } from "~/lib/session/dock";
+import { type DockView, MAX_DOCK_WIDTH, MIN_DOCK_WIDTH } from "~/lib/session/dock";
 import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type Theme = "light" | "dark" | "system";
@@ -233,7 +233,11 @@ export const useUIStore = create<UIState>()(
           return { dock: pruneDock({ ...s.dock, [sessionId]: { open: true, view } }) };
         }),
 
-      setDockWidth: (width) => set({ dockWidth: Math.max(300, Math.min(900, width)) }),
+      // The stored width is the request; the pane clamps it again at render
+      // (`clampDockWidth`), because this number outlives the window it was
+      // dragged in.
+      setDockWidth: (width) =>
+        set({ dockWidth: Math.max(MIN_DOCK_WIDTH, Math.min(MAX_DOCK_WIDTH, width)) }),
       setDockMaximized: (maximized) => set({ dockMaximized: maximized }),
 
       setSyncDockExpanded: (expanded) => set({ syncDockExpanded: expanded }),
