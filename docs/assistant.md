@@ -378,15 +378,77 @@ That residual is stated so nobody widens a tier to save a click.
 - **Later.** A gateway transport. Server-to-server follow for remote sessions.
   The scheduler absorbing the heartbeat once it has target kinds.
 
-## Open
+## Decided
 
-- The head's default model and effort, and whether the triage prompt can stay
-  a one-shot as policies grow.
-- Whether a `sessions` row would after all be the better home for the head:
-  it would buy resume, streaming and the transcript for free at the cost of a
-  nullable `sessions.project_id` and a `kind` every list query must filter on.
-  The channel was chosen because the memory must be ours for the voice head's
-  sake either way.
-- Machine reachability as a server fact, which the journal wants and only the
-  browser has.
-- Which journal kinds compact into what, and at what age.
+Four questions were open when this document was first written. They are
+settled here so that a build does not have to guess.
+
+**The head runs the service's default model, and triage runs Haiku.** No
+family is hardcoded, on the model-catalog rule: the head takes whatever
+`session.Service` would give a new session, overridable in the assistant's
+settings row by family name, resolved through `providers.Catalog`. Effort is
+the service default. Triage on the heartbeat is a Haiku one-shot through
+`msggen`, on the auto-namer's precedent, and if policies grow past what one
+shot can judge the answer is a second shot per policy, never the head.
+
+**The conversation is a channel, not a `sessions` row.** A `sessions` row
+would buy resume, streaming and a transcript for free, at the cost of a
+nullable `sessions.project_id` and a `kind` every list query must filter on.
+It is declined because the memory must be ours either way: a Gemini call
+cannot resume a Claude transcript, so a CLI-resumed history would be a second
+conversation memory beside the channel. The head's context is a cache.
+
+**Machine reachability is not a server fact yet, and the journal does not
+pretend.** No machine entries until the primary subscribes to its peers.
+
+**The journal compacts by day.** A row older than fourteen days folds into one
+`day_summary` row for its day, written by the same Haiku one-shot, and the raw
+rows go. Notable rows are exempt and stay whole. Summary rows are kept for
+ninety days. Reports keep their `untrusted` mark through compaction: a summary
+of untrusted text is untrusted text.
+
+## The M1 contract
+
+The names below are the ones a build uses. Anything not named here is the
+builder's call, and should be recorded in this document when it is made.
+
+- Package `internal/assistant`, wired in `server.go` inside a block gated by
+  `[experimental] assistant`, on the brain's precedent: off means unbuilt,
+  and `features.assistant` in `/api/health` is false.
+- Migration: `channels.kind TEXT NOT NULL DEFAULT ''` (`''` or `assistant`);
+  `assistant_state` (single row `id = 1`: `channel_id`, `model`,
+  `last_heartbeat_at`, `last_digest_at`, `created_at`, `updated_at`);
+  `assistant_journal` (`id`, `at`, `kind`, `session_id`, `project_id`,
+  `summary`, `payload` JSON, `untrusted` INTEGER, `notable` INTEGER,
+  `seen_by` JSON, `created_at`); `assistant_follows` (`session_id` PK,
+  `since`, `briefed` INTEGER, `source`). Timestamps are UTC RFC3339 seconds,
+  as the scheduler's are. SQL stays ASCII.
+- Journal kinds, a closed set: `session_finished`, `session_failed`,
+  `session_blocked`, `session_merged`, `session_archived`, `loop_paused`,
+  `report`, `dispatched`, `session_created`, `day_summary`. Proposals add
+  theirs in M3.
+- The core's Go surface: `assistant.Service` with `Say(ctx, surface, text)`,
+  `History(ctx, before, limit)`, `SinceLast(ctx, surface)`, `Journal(ctx,
+  since, limit)`, `Follow`/`Unfollow`, and `Verbs()` returning the closed
+  table. `assistant.Surface` is the contract above. `assistant.Registry` is
+  `voice.Registry` moved, `Follower` unchanged. The directory interface moves
+  with its methods and its nil-is-valid rule; `server.voiceDirectory` becomes
+  `server.assistantDirectory` and voice receives it through the core.
+- Session-facing MCP tool `AssistantReport`, same schema as `VoiceReport`
+  had, registered from a fourth group in `mcphttp` behind a one-method
+  interface. `VoiceReport` is not kept.
+- WS ops, all on the `assistant.*` prefix: `assistant.say` (mutation),
+  `assistant.history` and `assistant.journal` (reads, on the concurrent lane).
+  Pushes on the global topic: `assistant.message` (a stored message),
+  `assistant.delta` (the head's in-progress text), `assistant.journal` (a new
+  entry). Wire fields optional, generated Zod schemas through `just typegen`.
+- Frontend: route `/assistant`, a row in the sidebar's ⋯ menu shown only when
+  `features.assistant` is true, a page that renders the channel's messages,
+  the head's streaming reply, a recent-updates strip from `SinceLast`, and
+  the ordinary composer sending `assistant.say`. Mobile renders the same page.
+  State in a `assistant-store` with stable selectors.
+- Voice: `internal/voice` imports `internal/assistant` for the directory, the
+  registry, the dispatcher's delivery mapping and the reporting instruction,
+  and mirrors each call's turns into the conversation with
+  `metadata.surface = "voice"`. Its greeting reads `SinceLast("voice")`.
+  Nothing visible from a call changes.
