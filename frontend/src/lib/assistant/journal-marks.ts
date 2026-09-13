@@ -14,6 +14,7 @@ import {
   Check,
   GitMerge,
   Handshake,
+  HeartPulse,
   type LucideIcon,
   Pause,
   Plus,
@@ -55,6 +56,11 @@ const MARKS: Record<AssistantJournalKind, JournalMark> = {
   // handshake is the strip's only claim here: what happened is in the summary,
   // which carries the verb, the target and the outcome the server wrote.
   proposal_decided: { glyph: Handshake, label: "decided", tone: "text-muted-foreground" },
+  // The assistant woke by itself and judged what it found. Nobody is waiting on
+  // it and nothing failed, so it takes the quietest tone on the table: what the
+  // tick decided is in the summary, and what it DID has its own entry beside
+  // this one (a dispatch, a proposal, a session created).
+  heartbeat: { glyph: HeartPulse, label: "heartbeat", tone: "text-muted-foreground" },
 };
 
 const UNKNOWN: JournalMark = {

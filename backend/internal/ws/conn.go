@@ -278,6 +278,7 @@ var concurrentOps = map[string]bool{
 	"assistant.journal":         true,
 	"assistant.unseen":          true,
 	"assistant.proposals":       true,
+	"assistant.policies":        true,
 }
 
 // dispatchConcurrently runs a read-lane handler on its own goroutine once a
@@ -485,8 +486,15 @@ var handlerRegistry = map[string]handlerFunc{
 	"assistant.unseen":    (*conn).handleAssistantUnseen,
 	"assistant.mark-seen": (*conn).handleAssistantMarkSeen,
 	"assistant.proposals": (*conn).handleAssistantProposals,
+	"assistant.policies":  (*conn).handleAssistantPolicies,
 	"assistant.decide":    (*conn).handleAssistantDecide,
 	"assistant.digest":    (*conn).handleAssistantDigest,
+
+	// The standing instructions behind the heartbeat (docs/assistant.md, the M4
+	// contract). The list is a read; the two writes stay on the serial lane so
+	// two edits of one policy land in the order they were sent.
+	"assistant.policy-save":   (*conn).handleAssistantPolicySave,
+	"assistant.policy-delete": (*conn).handleAssistantPolicyDelete,
 
 	// ping
 	"ping": (*conn).handlePing,

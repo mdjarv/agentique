@@ -121,10 +121,19 @@ type Service struct {
 	facts   TurnFacts
 	mem     Memory
 	actions Actions
+	triager Triager
 	reg     *Registry
 	bus     eventbus.Broadcaster
 	log     *slog.Logger
 	now     func() time.Time
+
+	// digestAt is the local wall-clock time the timed digest posts, or the zero
+	// value for no timed digest. Configuration rather than a constant, and
+	// parsed before it gets here: an unparsable one is a boot warning, never a
+	// tick that guesses.
+	digestAt DigestTime
+	// beat guards the heartbeat's ticks against each other.
+	beat heartbeatState
 
 	// The verb table, built once in New. Immutable afterwards: nothing outside
 	// the table can be called, and the table cannot grow at runtime.
@@ -176,7 +185,8 @@ func WithDispatcher(d Dispatcher) Option { return func(s *Service) { s.disp = d 
 // WithHeadManager gives it the ability to start its own head.
 func WithHeadManager(m HeadManager) Option { return func(s *Service) { s.heads = m } }
 
-// WithActions is in proposals.go, beside the interface it takes.
+// WithActions is in proposals.go, beside the interface it takes;
+// WithTriager and WithDigestAt are in heartbeat.go, beside theirs.
 
 // WithAllowances lets the `allowances` verb answer.
 func WithAllowances(a Allowances) Option { return func(s *Service) { s.allow = a } }
@@ -226,8 +236,10 @@ func WithClock(now func() time.Time) Option {
 //
 // **It starts nothing.** No subprocess, no ticker, no sweep, no head: a
 // constructor a test might call must not reach outside the process, and the
-// head is started lazily by the first [Service.Say]. Shutting down is
-// [Service.Close], called from the serve command's production block.
+// head is started lazily by the first [Service.Say]. The heartbeat's timer is
+// the same rule — [Service.RunHeartbeat] is called from the serve command's
+// production block and stops with its context. Shutting down is
+// [Service.Close], called from the same block.
 func New(st Store, opts ...Option) (*Service, error) {
 	if st == nil {
 		return nil, errors.New("assistant: a store is required")

@@ -515,6 +515,9 @@ func main() {
 	g.register(ws.AssistantJournalPayload{}, "AssistantJournalPayload")
 	g.register(ws.AssistantUnseenPayload{}, "AssistantUnseenPayload")
 	g.register(ws.AssistantMarkSeenPayload{}, "AssistantMarkSeenPayload")
+	g.register(ws.AssistantPoliciesPayload{}, "AssistantPoliciesPayload")
+	g.register(ws.AssistantPolicySavePayload{}, "AssistantPolicySavePayload")
+	g.register(ws.AssistantPolicyDeletePayload{}, "AssistantPolicyDeletePayload")
 
 	// ── Push event payload types ──
 
@@ -635,12 +638,19 @@ func main() {
 	// is what a card, the deck's band and a call all read, so it is one type.
 	assistantProposalRef := g.register(assistant.Proposal{}, "AssistantProposal")
 	g.register(ws.AssistantProposalsResult{}, "AssistantProposalsResult")
+	// A standing instruction (docs/assistant.md, the M4 contract). One type for
+	// the row, the save's reply and the push -- the push adds `deleted`, so a
+	// removed policy arrives on the same event rather than as a second kind a
+	// client would have to learn.
+	assistantPolicyRef := g.register(assistant.Policy{}, "AssistantPolicy")
+	g.register(ws.AssistantPoliciesResult{}, "AssistantPoliciesResult")
 	// All four ride the GLOBAL topic: the conversation is project-less, so
 	// there is no topic to scope them to and no new routing to add.
 	g.addPushEvent("assistant.message", assistantMessageRef)
 	g.addPushEvent("assistant.delta", assistantDeltaRef)
 	g.addPushEvent("assistant.journal", assistantJournalRef)
 	g.addPushEvent("assistant.proposal", assistantProposalRef)
+	g.addPushEvent("assistant.policy", assistantPolicyRef)
 
 	// ── Scheduled loops (docs/scheduled-loops.md) ──
 

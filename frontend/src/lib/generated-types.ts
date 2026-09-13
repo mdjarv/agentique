@@ -240,6 +240,7 @@ export interface SessionInfo {
   parentSessionId?: string;
   pinned: boolean;
   pinOrder: number;
+  origin?: string;
   createdAt: string;
   updatedAt: string;
   lastQueryAt?: string;
@@ -277,6 +278,8 @@ export interface QueryOrigin {
   scheduleId?: string;
   runId?: string;
   scheduleName?: string;
+  policyId?: string;
+  proposalId?: string;
 }
 
 export interface HistoryTurn {
@@ -926,6 +929,21 @@ export type AssistantUnseenPayload = Record<string, never>;
 
 export type AssistantMarkSeenPayload = Record<string, never>;
 
+export type AssistantPoliciesPayload = Record<string, never>;
+
+export interface AssistantPolicySavePayload {
+  id?: string;
+  name?: string;
+  text?: string;
+  enabled?: boolean;
+  budgetInFlight?: number;
+  budgetPerDay?: number;
+}
+
+export interface AssistantPolicyDeletePayload {
+  id?: string;
+}
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -1218,6 +1236,23 @@ export interface AssistantProposalsResult {
   proposals?: AssistantProposal[];
 }
 
+export interface AssistantPolicy {
+  id?: string;
+  name?: string;
+  text?: string;
+  enabled?: boolean;
+  budgetInFlight?: number;
+  budgetPerDay?: number;
+  lastFiredAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deleted?: boolean;
+}
+
+export interface AssistantPoliciesResult {
+  policies?: AssistantPolicy[];
+}
+
 export interface ScheduleInfo {
   id: string;
   projectId: string;
@@ -1318,6 +1353,7 @@ export interface PushEventMap {
   "assistant.delta": AssistantDelta;
   "assistant.journal": AssistantJournalEntry;
   "assistant.proposal": AssistantProposal;
+  "assistant.policy": AssistantPolicy;
   "schedule.updated": ScheduleInfo;
   "schedule.deleted": ScheduleInfo;
   "schedule.run": ScheduleRunInfo;

@@ -25,6 +25,7 @@ function vm(overrides: Partial<ThreadRowVM>): ThreadRowVM {
     projectLabel: "agentkit",
     projectInitials: "AK",
     workspace: "linked",
+    originAssistant: false,
     projectColorBg: "#73daca",
     projectColorFg: "#73daca",
     badge: null,
@@ -224,6 +225,19 @@ const ROWS: { label: string; vm: ThreadRowVM }[] = [
       timeLabel: "6h",
       remoteMachineLabel: "zbook",
       remoteMachineOffline: true,
+    }),
+  },
+  {
+    // The one fact about a row nothing else can hint at, and the one state that
+    // keeps the third line while resting.
+    label: "started by the assistant",
+    vm: vm({
+      name: "Fix the overnight test failures",
+      badge: null,
+      awake: false,
+      originAssistant: true,
+      restToken: "stopped",
+      timeLabel: "31m",
     }),
   },
   {

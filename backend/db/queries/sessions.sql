@@ -127,3 +127,49 @@ WHERE project_id = ? AND archived_at IS NULL AND state NOT IN ('done', 'stopped'
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;
+
+-- Where a session came from (docs/assistant.md, the M4 contract, and migration
+-- 059). '' is a person's, 'assistant' is the assistant's own.
+
+-- The one writer, called from INSIDE CreateSession (from CreateSessionParams.
+-- Origin) before the session.created push is built, so a client never draws an
+-- assistant's session as a person's and correct it on the next list. Every
+-- other creation path leaves the parameter at its zero value, which is '' --
+-- a person asked.
+-- name: SetSessionOrigin :exec
+UPDATE sessions SET origin = sqlc.arg(origin), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE id = sqlc.arg(id);
+
+-- How many sessions of one origin were created since a stamp. The day cap's
+-- backstop: the per-policy count comes from the journal, which names the
+-- policy, and this is the total the assistant may have created in the window
+-- whatever the journal says -- a journal write is logged rather than fatal, so
+-- a lost entry must not be able to widen a budget.
+-- name: CountSessionsByOriginSince :one
+SELECT COUNT(*) FROM sessions
+WHERE origin = sqlc.arg(origin) AND created_at >= sqlc.arg(since);
+
+-- A policy's in-flight budget: how many of the sessions it created are still
+-- unfinished. One count rather than a list intersected in Go, for the reason
+-- CountPolicySessionsCreatedSince gives.
+--
+-- "Unfinished" is 'not archived, not finished', which is the contract's own
+-- wording -- and deliberately NOT the repo's 'active' triple beside this, which
+-- also excludes 'stopped'. A stopped session is PARKED (CLAUDE.md): idle
+-- eviction and a restart's reap both leave that state, the work is still there,
+-- and the next message resumes it. Counting one as finished would hand a policy
+-- its slot back after every server restart while the worktree and the branch it
+-- was working on were still open. Filing it away (archiving) is what releases
+-- the slot, because that is a person saying they are done with it.
+-- name: CountLiveSessionsForPolicy :one
+SELECT COUNT(*) FROM sessions s
+WHERE s.origin = sqlc.arg(origin)
+  AND s.archived_at IS NULL
+  AND s.state NOT IN ('done', 'failed')
+  AND EXISTS (
+    SELECT 1 FROM assistant_journal j
+    WHERE j.session_id = s.id
+      AND j.kind = 'session_created'
+      AND j.at >= sqlc.arg(since)
+      AND json_extract(j.payload, '$.policyId') = sqlc.arg(policy_id)
+  );

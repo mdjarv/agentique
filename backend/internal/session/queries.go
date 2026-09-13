@@ -70,6 +70,7 @@ type serviceQueries interface {
 	UpdateSessionAutoApproveMode(ctx context.Context, arg store.UpdateSessionAutoApproveModeParams) error
 	UpdateSessionName(ctx context.Context, arg store.UpdateSessionNameParams) error
 	UpdateSessionPinned(ctx context.Context, arg store.UpdateSessionPinnedParams) (store.Session, error)
+	SetSessionOrigin(ctx context.Context, arg store.SetSessionOriginParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
 	ListEventsBySession(ctx context.Context, sessionID string) ([]store.SessionEvent, error)

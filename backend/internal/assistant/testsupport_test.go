@@ -106,7 +106,9 @@ func (d *fakeDirectory) CreateSession(_ context.Context, projectID, _ string) (S
 	return d.created, nil
 }
 
-// fakeDispatcher records what was sent.
+// fakeDispatcher records what was sent. It implements [PolicyDispatcher] as
+// well, so a test can see which standing instruction a turn was sent under —
+// the server's real dispatcher puts that on the turn's query origin.
 type fakeDispatcher struct {
 	delivery Delivery
 	err      error
@@ -114,12 +116,18 @@ type fakeDispatcher struct {
 	mu        sync.Mutex
 	prompts   []string
 	reporting []bool
+	policies  []string
 }
 
-func (d *fakeDispatcher) Dispatch(_ context.Context, _, prompt string, withReporting bool) (Delivery, error) {
+func (d *fakeDispatcher) Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (Delivery, error) {
+	return d.DispatchUnderPolicy(ctx, sessionID, prompt, withReporting, "")
+}
+
+func (d *fakeDispatcher) DispatchUnderPolicy(_ context.Context, _, prompt string, withReporting bool, policyID string) (Delivery, error) {
 	d.mu.Lock()
 	d.prompts = append(d.prompts, prompt)
 	d.reporting = append(d.reporting, withReporting)
+	d.policies = append(d.policies, policyID)
 	d.mu.Unlock()
 	if d.err != nil {
 		return "", d.err
@@ -128,6 +136,13 @@ func (d *fakeDispatcher) Dispatch(_ context.Context, _, prompt string, withRepor
 		return DeliveryTurn, nil
 	}
 	return d.delivery, nil
+}
+
+// underPolicies is the policy id each send carried, in order.
+func (d *fakeDispatcher) underPolicies() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.policies...)
 }
 
 func (d *fakeDispatcher) ProjectContext(context.Context, string) string { return "" }
@@ -140,6 +155,51 @@ func (d *fakeDispatcher) sent() []string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return append([]string(nil), d.prompts...)
+}
+
+// fakeTriager is the heartbeat's one model call, without a model: a canned
+// answer, a counter, and a gate a test can hold the tick open with.
+type fakeTriager struct {
+	answer string
+	err    error
+	// hold blocks Triage until it is closed, which is how a test keeps one tick
+	// running while the next one arrives.
+	hold chan struct{}
+
+	mu      sync.Mutex
+	calls   int
+	prompts []string
+}
+
+func (t *fakeTriager) Triage(ctx context.Context, prompt string) (string, error) {
+	t.mu.Lock()
+	t.calls++
+	t.prompts = append(t.prompts, prompt)
+	t.mu.Unlock()
+
+	if t.hold != nil {
+		select {
+		case <-t.hold:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return t.answer, t.err
+}
+
+func (t *fakeTriager) called() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.calls
+}
+
+func (t *fakeTriager) lastPrompt() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.prompts) == 0 {
+		return ""
+	}
+	return t.prompts[len(t.prompts)-1]
 }
 
 // fakeHead is a head that answers with a canned reply and counts its starts.

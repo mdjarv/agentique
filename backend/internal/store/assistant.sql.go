@@ -10,15 +10,72 @@ import (
 	"database/sql"
 )
 
+const countAssistantJournalSince = `-- name: CountAssistantJournalSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE at >= ?1 AND kind != 'heartbeat'
+`
+
+// The heartbeat's gate: has anything happened since the last beat.
+//
+// The assistant's OWN heartbeat entries are excluded, and that exclusion is
+// what makes the gate able to close: a tick journals its verdict and stamps
+// the mark in the same second, so counting its own row would leave every
+// later tick with one entry to triage and a Haiku call to pay for it. The
+// lower boundary is inclusive, as the digest's is, on the same reasoning --
+// triaging one entry twice costs a tick, dropping one loses news.
+func (q *Queries) CountAssistantJournalSince(ctx context.Context, since string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAssistantJournalSince, since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAssistantJournalUnseen = `-- name: CountAssistantJournalUnseen :one
 SELECT COUNT(*) FROM assistant_journal
 WHERE json_extract(seen_by, '$.' || ?1) IS NULL
+  AND kind != 'heartbeat'
 `
 
 // How many entries this surface has never been shown. The rail's notch reads
 // it once per connection; the journal pushes keep it current after that.
+//
+// Same exclusion, and here it is the load-bearing one: a badge is a claim on
+// attention, so a heartbeat that ticks every fifteen minutes would put a
+// permanent notch on the assistant's row and teach the operator to ignore it.
 func (q *Queries) CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countAssistantJournalUnseen, surface)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPolicySessionsCreatedSince = `-- name: CountPolicySessionsCreatedSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= ?1
+  AND json_extract(payload, '$.policyId') = ?2
+`
+
+type CountPolicySessionsCreatedSinceParams struct {
+	Since    string `json:"since"`
+	PolicyID string `json:"policy_id"`
+}
+
+// A policy's day budget: how many sessions this standing instruction has
+// created since a stamp.
+//
+// Counted in SQL rather than by paging the journal into Go, and that is the
+// point rather than an optimisation. The page was 2000 rows over a fourteen-day
+// window and FAILED CLOSED when it filled, so a machine busy enough to journal
+// 143 entries a day would have refused every budgeted verb from then on, with
+// one log line to explain it -- and the day-summary compaction that would have
+// bounded the window is not built. A count has no page to fill.
+//
+// The payload path is '$.policyId', which is `payloadPolicyID` in
+// internal/assistant: the key is spelled in both places, so a rename is two
+// edits or a budget that counts nothing.
+func (q *Queries) CountPolicySessionsCreatedSince(ctx context.Context, arg CountPolicySessionsCreatedSinceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPolicySessionsCreatedSince, arg.Since, arg.PolicyID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -94,6 +151,15 @@ func (q *Queries) DeleteAssistantFollow(ctx context.Context, sessionID string) e
 	return err
 }
 
+const deleteAssistantPolicy = `-- name: DeleteAssistantPolicy :exec
+DELETE FROM assistant_policies WHERE id = ?
+`
+
+func (q *Queries) DeleteAssistantPolicy(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteAssistantPolicy, id)
+	return err
+}
+
 const expireAssistantProposals = `-- name: ExpireAssistantProposals :exec
 UPDATE assistant_proposals
 SET status = 'expired', decided_at = ?1
@@ -140,6 +206,27 @@ func (q *Queries) GetAssistantFollow(ctx context.Context, sessionID string) (Ass
 		&i.Since,
 		&i.Briefed,
 		&i.Source,
+	)
+	return i, err
+}
+
+const getAssistantPolicy = `-- name: GetAssistantPolicy :one
+SELECT id, name, text, enabled, budget_in_flight, budget_per_day, last_fired_at, created_at, updated_at FROM assistant_policies WHERE id = ?
+`
+
+func (q *Queries) GetAssistantPolicy(ctx context.Context, id string) (AssistantPolicy, error) {
+	row := q.db.QueryRowContext(ctx, getAssistantPolicy, id)
+	var i AssistantPolicy
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Text,
+		&i.Enabled,
+		&i.BudgetInFlight,
+		&i.BudgetPerDay,
+		&i.LastFiredAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -478,6 +565,7 @@ func (q *Queries) ListAssistantJournalSince(ctx context.Context, arg ListAssista
 const listAssistantJournalUnseen = `-- name: ListAssistantJournalUnseen :many
 SELECT id, at, kind, session_id, project_id, summary, payload, untrusted, notable, seen_by, created_at FROM assistant_journal
 WHERE json_extract(seen_by, '$.' || ?1) IS NULL
+  AND kind != 'heartbeat'
 ORDER BY at DESC, id DESC
 LIMIT ?2
 `
@@ -487,6 +575,11 @@ type ListAssistantJournalUnseenParams struct {
 	Lim     int64          `json:"lim"`
 }
 
+// What a surface has missed. 'heartbeat' rows are left out, for the same reason
+// the digest and the head's news leave them out: a tick that woke up, looked and
+// decided nothing is the assistant's own bookkeeping, and what it DID has its
+// own entry beside it. They stay in ListAssistantJournalSince, which is the
+// journal page and the audit trail for every model the heartbeat paid for.
 func (q *Queries) ListAssistantJournalUnseen(ctx context.Context, arg ListAssistantJournalUnseenParams) ([]AssistantJournal, error) {
 	rows, err := q.db.QueryContext(ctx, listAssistantJournalUnseen, arg.Surface, arg.Lim)
 	if err != nil {
@@ -616,6 +709,48 @@ func (q *Queries) ListAssistantMessagesSince(ctx context.Context, arg ListAssist
 			&i.MessageType,
 			&i.Metadata,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssistantPolicies = `-- name: ListAssistantPolicies :many
+
+SELECT id, name, text, enabled, budget_in_flight, budget_per_day, last_fired_at, created_at, updated_at FROM assistant_policies ORDER BY name ASC, id ASC
+`
+
+// Standing instructions and the heartbeat's mark (docs/assistant.md, the M4
+// contract, and migration 059).
+// Name order, so the list a person reads and the list the heartbeat reads are
+// in the same order. The id breaks a tie between two policies named the same.
+func (q *Queries) ListAssistantPolicies(ctx context.Context) ([]AssistantPolicy, error) {
+	rows, err := q.db.QueryContext(ctx, listAssistantPolicies)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantPolicy{}
+	for rows.Next() {
+		var i AssistantPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Text,
+			&i.Enabled,
+			&i.BudgetInFlight,
+			&i.BudgetPerDay,
+			&i.LastFiredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -805,6 +940,26 @@ func (q *Queries) SetAssistantFollowBriefed(ctx context.Context, arg SetAssistan
 	return err
 }
 
+const setAssistantHeartbeatAt = `-- name: SetAssistantHeartbeatAt :exec
+INSERT INTO assistant_state (id, last_heartbeat_at, created_at, updated_at)
+VALUES (1, ?1, ?2, ?2)
+ON CONFLICT(id) DO UPDATE SET
+  last_heartbeat_at = excluded.last_heartbeat_at,
+  updated_at = excluded.updated_at
+`
+
+type SetAssistantHeartbeatAtParams struct {
+	LastHeartbeatAt string `json:"last_heartbeat_at"`
+	Now             string `json:"now"`
+}
+
+// The heartbeat's mark: when the last tick measured from. Stamped by every
+// tick, including the ones that ran no model at all.
+func (q *Queries) SetAssistantHeartbeatAt(ctx context.Context, arg SetAssistantHeartbeatAtParams) error {
+	_, err := q.db.ExecContext(ctx, setAssistantHeartbeatAt, arg.LastHeartbeatAt, arg.Now)
+	return err
+}
+
 const setAssistantModel = `-- name: SetAssistantModel :exec
 INSERT INTO assistant_state (id, model, created_at, updated_at)
 VALUES (1, ?1, ?2, ?2)
@@ -850,6 +1005,26 @@ func (q *Queries) SetAssistantSurfaceMark(ctx context.Context, arg SetAssistantS
 	return err
 }
 
+const touchAssistantPolicy = `-- name: TouchAssistantPolicy :exec
+UPDATE assistant_policies
+SET last_fired_at = ?1, updated_at = ?2
+WHERE id = ?3
+`
+
+type TouchAssistantPolicyParams struct {
+	LastFiredAt string `json:"last_fired_at"`
+	Now         string `json:"now"`
+	ID          string `json:"id"`
+}
+
+// When the heartbeat last acted under this policy. Bookkeeping the operator
+// reads, never a budget: what a budget counts is journal entries, which an
+// edit cannot rewrite.
+func (q *Queries) TouchAssistantPolicy(ctx context.Context, arg TouchAssistantPolicyParams) error {
+	_, err := q.db.ExecContext(ctx, touchAssistantPolicy, arg.LastFiredAt, arg.Now, arg.ID)
+	return err
+}
+
 const upsertAssistantFollow = `-- name: UpsertAssistantFollow :exec
 INSERT INTO assistant_follows (session_id, since, briefed, source)
 VALUES (?, ?, 0, ?)
@@ -865,4 +1040,60 @@ type UpsertAssistantFollowParams struct {
 func (q *Queries) UpsertAssistantFollow(ctx context.Context, arg UpsertAssistantFollowParams) error {
 	_, err := q.db.ExecContext(ctx, upsertAssistantFollow, arg.SessionID, arg.Since, arg.Source)
 	return err
+}
+
+const upsertAssistantPolicy = `-- name: UpsertAssistantPolicy :one
+INSERT INTO assistant_policies (
+    id, name, text, enabled, budget_in_flight, budget_per_day, created_at, updated_at
+) VALUES (
+    ?1, ?2, ?3, ?4,
+    ?5, ?6, ?7, ?7
+)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  text = excluded.text,
+  enabled = excluded.enabled,
+  budget_in_flight = excluded.budget_in_flight,
+  budget_per_day = excluded.budget_per_day,
+  updated_at = excluded.updated_at
+RETURNING id, name, text, enabled, budget_in_flight, budget_per_day, last_fired_at, created_at, updated_at
+`
+
+type UpsertAssistantPolicyParams struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Text           string `json:"text"`
+	Enabled        int64  `json:"enabled"`
+	BudgetInFlight int64  `json:"budget_in_flight"`
+	BudgetPerDay   int64  `json:"budget_per_day"`
+	Now            string `json:"now"`
+}
+
+// One statement for a new policy and an edit, because the client sends the
+// whole row either way: a policy is one form with a Save button, and a
+// partial update would need a field-by-field patch nobody asked for.
+// created_at is left alone on an edit, so a row keeps the day it was written.
+func (q *Queries) UpsertAssistantPolicy(ctx context.Context, arg UpsertAssistantPolicyParams) (AssistantPolicy, error) {
+	row := q.db.QueryRowContext(ctx, upsertAssistantPolicy,
+		arg.ID,
+		arg.Name,
+		arg.Text,
+		arg.Enabled,
+		arg.BudgetInFlight,
+		arg.BudgetPerDay,
+		arg.Now,
+	)
+	var i AssistantPolicy
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Text,
+		&i.Enabled,
+		&i.BudgetInFlight,
+		&i.BudgetPerDay,
+		&i.LastFiredAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

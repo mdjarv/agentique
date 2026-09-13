@@ -45,9 +45,70 @@ func (q *Queries) CountActiveSessionsByProject(ctx context.Context, projectID st
 	return count, err
 }
 
+const countLiveSessionsForPolicy = `-- name: CountLiveSessionsForPolicy :one
+SELECT COUNT(*) FROM sessions s
+WHERE s.origin = ?1
+  AND s.archived_at IS NULL
+  AND s.state NOT IN ('done', 'failed')
+  AND EXISTS (
+    SELECT 1 FROM assistant_journal j
+    WHERE j.session_id = s.id
+      AND j.kind = 'session_created'
+      AND j.at >= ?2
+      AND json_extract(j.payload, '$.policyId') = ?3
+  )
+`
+
+type CountLiveSessionsForPolicyParams struct {
+	Origin   string `json:"origin"`
+	Since    string `json:"since"`
+	PolicyID string `json:"policy_id"`
+}
+
+// A policy's in-flight budget: how many of the sessions it created are still
+// unfinished. One count rather than a list intersected in Go, for the reason
+// CountPolicySessionsCreatedSince gives.
+//
+// "Unfinished" is 'not archived, not finished', which is the contract's own
+// wording -- and deliberately NOT the repo's 'active' triple beside this, which
+// also excludes 'stopped'. A stopped session is PARKED (CLAUDE.md): idle
+// eviction and a restart's reap both leave that state, the work is still there,
+// and the next message resumes it. Counting one as finished would hand a policy
+// its slot back after every server restart while the worktree and the branch it
+// was working on were still open. Filing it away (archiving) is what releases
+// the slot, because that is a person saying they are done with it.
+func (q *Queries) CountLiveSessionsForPolicy(ctx context.Context, arg CountLiveSessionsForPolicyParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLiveSessionsForPolicy, arg.Origin, arg.Since, arg.PolicyID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSessionsByOriginSince = `-- name: CountSessionsByOriginSince :one
+SELECT COUNT(*) FROM sessions
+WHERE origin = ?1 AND created_at >= ?2
+`
+
+type CountSessionsByOriginSinceParams struct {
+	Origin string `json:"origin"`
+	Since  string `json:"since"`
+}
+
+// How many sessions of one origin were created since a stamp. The day cap's
+// backstop: the per-policy count comes from the journal, which names the
+// policy, and this is the total the assistant may have created in the window
+// whatever the journal says -- a journal write is logged rather than fatal, so
+// a lost entry must not be able to widen a budget.
+func (q *Queries) CountSessionsByOriginSince(ctx context.Context, arg CountSessionsByOriginSinceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionsByOriginSince, arg.Origin, arg.Since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (id, project_id, name, work_dir, worktree_path, worktree_branch, worktree_base_sha, state, model, permission_mode, auto_approve_mode, effort, max_budget, max_turns, behavior_presets, agent_profile_id, parent_session_id, provider)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin
 `
 
 type CreateSessionParams struct {
@@ -128,6 +189,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
 		&i.ResolvedAt,
+		&i.Origin,
 	)
 	return i, err
 }
@@ -142,7 +204,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getActiveSessionByAgentProfile = `-- name: GetActiveSessionByAgentProfile :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin FROM sessions
 WHERE agent_profile_id = ?
   AND archived_at IS NULL
   AND state NOT IN ('done', 'stopped', 'failed')
@@ -187,12 +249,13 @@ func (q *Queries) GetActiveSessionByAgentProfile(ctx context.Context, agentProfi
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
 		&i.ResolvedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE id = ?
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin FROM sessions WHERE id = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
@@ -233,12 +296,13 @@ func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
 		&i.ResolvedAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const listAllSessions = `-- name: ListAllSessions :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions ORDER BY updated_at DESC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin FROM sessions ORDER BY updated_at DESC
 `
 
 func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
@@ -285,6 +349,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
 			&i.ResolvedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -300,7 +365,7 @@ func (q *Queries) ListAllSessions(ctx context.Context) ([]Session, error) {
 }
 
 const listChildSessions = `-- name: ListChildSessions :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE parent_session_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin FROM sessions WHERE parent_session_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.NullString) ([]Session, error) {
@@ -347,6 +412,7 @@ func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.Nul
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
 			&i.ResolvedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -362,7 +428,7 @@ func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.Nul
 }
 
 const listSessionsByProject = `-- name: ListSessionsByProject :many
-SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at FROM sessions WHERE project_id = ? ORDER BY created_at ASC
+SELECT id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin FROM sessions WHERE project_id = ? ORDER BY created_at ASC
 `
 
 func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) ([]Session, error) {
@@ -409,6 +475,7 @@ func (q *Queries) ListSessionsByProject(ctx context.Context, projectID string) (
 			&i.UnseenCompletedAt,
 			&i.EvictedAt,
 			&i.ResolvedAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -471,6 +538,29 @@ type SetSessionEvictedAtParams struct {
 // compares TEXT lexicographically.
 func (q *Queries) SetSessionEvictedAt(ctx context.Context, arg SetSessionEvictedAtParams) error {
 	_, err := q.db.ExecContext(ctx, setSessionEvictedAt, arg.EvictedAt, arg.ID)
+	return err
+}
+
+const setSessionOrigin = `-- name: SetSessionOrigin :exec
+
+UPDATE sessions SET origin = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE id = ?2
+`
+
+type SetSessionOriginParams struct {
+	Origin string `json:"origin"`
+	ID     string `json:"id"`
+}
+
+// Where a session came from (docs/assistant.md, the M4 contract, and migration
+// 059). ” is a person's, 'assistant' is the assistant's own.
+// The one writer, called from INSIDE CreateSession (from CreateSessionParams.
+// Origin) before the session.created push is built, so a client never draws an
+// assistant's session as a person's and correct it on the next list. Every
+// other creation path leaves the parameter at its zero value, which is ” --
+// a person asked.
+func (q *Queries) SetSessionOrigin(ctx context.Context, arg SetSessionOriginParams) error {
+	_, err := q.db.ExecContext(ctx, setSessionOrigin, arg.Origin, arg.ID)
 	return err
 }
 
@@ -630,7 +720,7 @@ func (q *Queries) UpdateSessionPermissionMode(ctx context.Context, arg UpdateSes
 }
 
 const updateSessionPinned = `-- name: UpdateSessionPinned :one
-UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at
+UPDATE sessions SET pinned = ?, pin_order = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ? RETURNING id, project_id, name, work_dir, worktree_path, worktree_branch, state, created_at, updated_at, claude_session_id, worktree_base_sha, model, worktree_merged, permission_mode, auto_approve, pr_url, effort, max_budget, max_turns, last_query_at, archived_at, behavior_presets, channel_id, channel_role, auto_approve_mode, agent_profile_id, parent_session_id, provider, resolved_model, pinned, pin_order, unseen_completed_at, evicted_at, resolved_at, origin
 `
 
 type UpdateSessionPinnedParams struct {
@@ -677,6 +767,7 @@ func (q *Queries) UpdateSessionPinned(ctx context.Context, arg UpdateSessionPinn
 		&i.UnseenCompletedAt,
 		&i.EvictedAt,
 		&i.ResolvedAt,
+		&i.Origin,
 	)
 	return i, err
 }

@@ -46,11 +46,30 @@ type assistantDispatcher struct {
 // instruction, no tool calls, no overhead — which is the whole reason the
 // handoff asks instead of assuming.
 func (d *assistantDispatcher) Dispatch(ctx context.Context, sessionID, prompt string, withReporting bool) (assistant.Delivery, error) {
+	return d.DispatchUnderPolicy(ctx, sessionID, prompt, withReporting, "")
+}
+
+// DispatchUnderPolicy implements assistant.PolicyDispatcher: the same send, with
+// the standing instruction recorded on the turn.
+//
+// Every send from here is assistant-origin, policy or not — the assistant is
+// what dispatched it, whether the ask came from the thread, from a call, or from
+// the heartbeat — and that origin is what lets a timeline say a turn was not
+// typed. Unlike a schedule's it does NOT suppress the unread-completion mark: a
+// loop fires hourly, where this ran because somebody asked or because a standing
+// instruction they wrote applied, and a completion they never see is what
+// autonomy was supposed to hand them.
+func (d *assistantDispatcher) DispatchUnderPolicy(ctx context.Context, sessionID, prompt string,
+	withReporting bool, policyID string,
+) (assistant.Delivery, error) {
 	if withReporting {
 		prompt += "\n\n" + assistant.ReportingInstructions(mcphttp.AssistantReportToolFullName)
 	}
 
-	delivery, err := d.svc.EnqueueMessage(ctx, sessionID, prompt, nil)
+	delivery, err := d.svc.EnqueueMessageWithOrigin(ctx, sessionID, prompt, nil, session.QueryOrigin{
+		Kind:     session.OriginAssistant,
+		PolicyID: policyID,
+	})
 	if err != nil {
 		return "", err
 	}

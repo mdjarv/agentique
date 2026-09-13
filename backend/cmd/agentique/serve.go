@@ -215,6 +215,23 @@ func warnBrainConfigured(enabled bool, bc config.BrainConfig) {
 		"The markdown store on disk is untouched.")
 }
 
+// warnAssistantConfigured says so when an [assistant] section is sitting in the config
+// with the master switch off. Same shape and same argument as warnBrainConfigured: a
+// heartbeat interval and a digest time are settings somebody chose, and a subsystem
+// silently unbuilt underneath them is what gets re-derived at midnight. It names the fix
+// rather than the fault, and it never refuses to boot.
+func warnAssistantConfigured(enabled bool, ac config.AssistantConfig) {
+	if enabled {
+		return
+	}
+	if ac.HeartbeatInterval == "" && ac.DigestAt == "" && ac.TriageModel == "" {
+		return
+	}
+	slog.Warn("assistant: [assistant] settings are present but the assistant is off; " +
+		"set [experimental] assistant = true (or AGENTIQUE_EXPERIMENTAL_ASSISTANT=1) to build it. " +
+		"Nothing here runs until then — no heartbeat, no digest, no policies.")
+}
+
 // firstNonEmpty returns the first non-empty string, used to layer an env var (preferred)
 // over a config-file value: firstNonEmpty(os.Getenv(...), fileCfg....).
 func firstNonEmpty(vals ...string) string {
@@ -560,6 +577,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ExperimentalVoice:   envBoolOr("AGENTIQUE_EXPERIMENTAL_VOICE", fileCfg.Experimental.Voice),
 		ExperimentalAssistant: envBoolOr("AGENTIQUE_EXPERIMENTAL_ASSISTANT",
 			fileCfg.Experimental.Assistant),
+		// The assistant's autonomy (docs/assistant.md, the M4 contract). Raw
+		// strings: server.New parses them, so a bad value is one warning in one
+		// place rather than a command that refuses to start. Inert with
+		// [experimental] assistant off.
+		Assistant: config.AssistantConfig{
+			HeartbeatInterval: firstNonEmpty(os.Getenv("AGENTIQUE_ASSISTANT_HEARTBEAT"),
+				fileCfg.Assistant.HeartbeatInterval),
+			DigestAt: firstNonEmpty(os.Getenv("AGENTIQUE_ASSISTANT_DIGEST_AT"),
+				fileCfg.Assistant.DigestAt),
+			TriageModel: firstNonEmpty(os.Getenv("AGENTIQUE_ASSISTANT_TRIAGE_MODEL"),
+				fileCfg.Assistant.TriageModel),
+		},
 		Voice: config.VoiceConfig{
 			Backend:      firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_BACKEND"), fileCfg.Voice.Backend),
 			APIKey:       firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_API_KEY"), fileCfg.Voice.APIKey),
@@ -630,6 +659,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg.RPOrigins = fileCfg.AllRPOrigins()
 	warnBrainConfigured(cfg.BrainEnabled, fileCfg.Brain)
 	warnBrainNoopKeys(fileCfg.Brain)
+	warnAssistantConfigured(cfg.ExperimentalAssistant, cfg.Assistant)
 	srv, err := server.New(queries, cfg)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)
@@ -727,6 +757,34 @@ func runServe(cmd *cobra.Command, args []string) error {
 			"db", dbFile, "canonical_db", paths.DBPath())
 	}
 
+	// The assistant's heartbeat (docs/assistant.md, the M4 contract). Here
+	// rather than in server.New for the reason everything else in this area is:
+	// it is a timer that runs a model and starts head turns, and a constructor a
+	// test might call must do neither.
+	//
+	// Gated on owning the data dir as well, which is not about destruction: two
+	// servers on one data dir would both tick over the same journal, spending
+	// two Haiku calls and possibly acting twice on one window. Skipped in test
+	// mode for the same reason it is not a sandbox flag — a mock connector makes
+	// the ticks free, not correct.
+	//
+	// The stop is a named function rather than only a defer, because a defer
+	// runs after srv.Shutdown() and after the orphan backstop: a tick landing in
+	// that window would spend a model call, spawn a CLI child the sweep has
+	// already scanned past, and write a wake-up message whose head turn the
+	// just-closed service refuses — a divider in the conversation with no reply
+	// under it. Every other background loop is stopped inside Server.Shutdown()
+	// (the scheduler, the usage collector, the update checker, brain auto), and
+	// this one is stopped in the same place in the sequence. The defer stays as
+	// the backstop for the paths that leave early.
+	stopHeartbeat := func() {}
+	if a := srv.Assistant(); a != nil && !testMode && ownsDataDir(dbFile) {
+		heartbeatCtx, cancelHeartbeat := context.WithCancel(context.Background())
+		stopHeartbeat = cancelHeartbeat
+		defer stopHeartbeat()
+		go a.RunHeartbeat(heartbeatCtx, srv.AssistantHeartbeat())
+	}
+
 	authStatus := "enabled"
 	if disableAuth {
 		authStatus = "disabled"
@@ -783,6 +841,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		slog.Info("stop requested via service control")
 	}
 	slog.Info("shutting down")
+
+	// First, before anything it depends on is closed: the assistant's heartbeat
+	// starts head turns and pays for a model call, and neither belongs in a
+	// shutdown. Cancelling here also means the CLI a tick's triage might have
+	// spawned is a child the orphan backstop below can still see.
+	stopHeartbeat()
 
 	// Release the port first so a restart doesn't hit EADDRINUSE while
 	// sessions are still draining.

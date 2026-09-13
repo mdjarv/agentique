@@ -153,9 +153,16 @@ type SessionInfo struct {
 	ParentSessionID    string `json:"parentSessionId,omitempty"`
 	Pinned             bool   `json:"pinned"`
 	PinOrder           int64  `json:"pinOrder"`
-	CreatedAt          string `json:"createdAt"`
-	UpdatedAt          string `json:"updatedAt"`
-	LastQueryAt        string `json:"lastQueryAt,omitempty"`
+	// Origin is who started this session: absent or "" for a person, "assistant"
+	// for one the assistant created (docs/assistant.md, the M4 contract). A row
+	// says so in its third line, so the operator can tell work they asked for
+	// from work a standing instruction started. Optional on the wire, as every
+	// field here is: an absent one from an older peer means "not reported",
+	// which reads the same as a person's.
+	Origin      string `json:"origin,omitempty"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+	LastQueryAt string `json:"lastQueryAt,omitempty"`
 }
 
 // MarshalJSON emits the deprecated `completedAt` alias alongside `archivedAt`,
@@ -197,6 +204,18 @@ type CreateSessionParams struct {
 	AgentProfileID  string // optional: bind session to a persistent agent profile
 	ParentSessionID string // optional: lead session that spawned this one (for hierarchy tree)
 	IdempotencyKey  string // optional: if set, duplicate creates return the cached result
+
+	// Origin is who asked for this session: "" for a person at a composer, or
+	// [OriginAssistant] for one the assistant created under a standing
+	// instruction (docs/assistant.md, the M4 contract).
+	//
+	// It is a parameter rather than a stamp the caller applies afterwards
+	// because the `session.created` push carries the whole [SessionInfo]: a row
+	// stamped after CreateSession returned is a row every open client has
+	// already drawn as a person's, and it would stay that way until the next
+	// session.list. The zero value is the honest default for every other
+	// creation path, so none of them has to name it.
+	Origin string
 
 	// Discussion-group field, set only by the discussion orchestrator.
 	// SharedWorkDir binds this persona session's CWD to an already-provisioned
@@ -477,6 +496,16 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 	// Wire spawn-workers callback so the session can delegate to workers.
 	s.wireSpawnWorkersCallback(sess, p.ProjectID)
 
+	// Stamped before the push, so the row every client draws from it already
+	// says where the work came from. A failure is logged rather than returned:
+	// the session exists and works, and unwinding a worktree over a missing
+	// mark would cost more than the mark is worth.
+	if p.Origin != "" {
+		if err := s.SetSessionOrigin(ctx, sess.ID, p.Origin); err != nil {
+			slog.Warn("session origin not stamped", "session_id", sess.ID, "origin", p.Origin, "error", err)
+		}
+	}
+
 	createdAt := ""
 	resolvedModel := ""
 	if dbSess, dbErr := s.queries.GetSession(ctx, sess.ID); dbErr == nil {
@@ -511,6 +540,7 @@ func (s *Service) CreateSession(ctx context.Context, p CreateSessionParams) (Cre
 		AgentProfileName:   profileName,
 		AgentProfileAvatar: profileAvatar,
 		ParentSessionID:    p.ParentSessionID,
+		Origin:             p.Origin,
 		CreatedAt:          createdAt,
 		UpdatedAt:          createdAt,
 	})
@@ -814,6 +844,18 @@ const (
 // message and replay it as a fresh turn at the next idle boundary. Performs lazy
 // resume for dead/stopped sessions (same as QuerySession).
 func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment) (MessageDelivery, error) {
+	return s.EnqueueMessageWithOrigin(ctx, sessionID, prompt, attachments, QueryOrigin{})
+}
+
+// EnqueueMessageWithOrigin is EnqueueMessage with the turn tagged by whoever
+// started it — today, the assistant (docs/assistant.md, the M4 contract).
+//
+// The origin reaches only the FRESH-TURN path, and that is not an omission: a
+// mid-turn injection and a queued message do not open a turn of their own, so
+// there is nothing to tag. A queued one is replayed by the pending flush as an
+// ordinary turn, which is the honest reading — by then the turn it starts is the
+// session's own, and the message that caused it is in the timeline either way.
+func (s *Service) EnqueueMessageWithOrigin(ctx context.Context, sessionID, prompt string, attachments []QueryAttachment, origin QueryOrigin) (MessageDelivery, error) {
 	sess, err := s.ensureLive(ctx, sessionID)
 	if err != nil {
 		return "", err
@@ -846,8 +888,9 @@ func (s *Service) EnqueueMessage(ctx context.Context, sessionID, prompt string, 
 	}
 
 	// Not running — send as a new turn (same path as QuerySession).
-	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt), "attachments", len(attachments))
-	if err := sess.Query(ctx, prompt, attachments); err != nil {
+	slog.Info("session query", "session_id", sessionID, "prompt_len", len(prompt),
+		"attachments", len(attachments), "origin", origin.Kind)
+	if err := sess.QueryWithOrigin(ctx, prompt, attachments, origin); err != nil {
 		return "", fmt.Errorf("query failed: %w", err)
 	}
 
@@ -1123,6 +1166,7 @@ func baseSessionInfo(ss store.Session) SessionInfo {
 		ParentSessionID: nullStr(ss.ParentSessionID),
 		Pinned:          ss.Pinned != 0,
 		PinOrder:        ss.PinOrder,
+		Origin:          ss.Origin,
 		CreatedAt:       ss.CreatedAt,
 		UpdatedAt:       ss.UpdatedAt,
 		LastQueryAt:     nullStr(ss.LastQueryAt),
@@ -1709,6 +1753,30 @@ func (s *Service) RenameSession(ctx context.Context, sessionID, name string) err
 		return fmt.Errorf("rename failed: %w", err)
 	}
 	s.hub.Publish(dbSess.ProjectID, "session.renamed", PushSessionRenamed{SessionID: sessionID, Name: name})
+	return nil
+}
+
+// SetSessionOrigin records who started a session: "" for a person, or
+// [OriginAssistant] for one the assistant created (docs/assistant.md, the M4
+// contract).
+//
+// The one writer, and [CreateSessionParams.Origin] is the one caller: origin is
+// asked for at creation and never changes afterwards, so it is stamped from
+// inside CreateSession, BEFORE the `session.created` push that carries the row.
+// A caller stamping it after CreateSession returned would be too late — the push
+// has gone, every open client has drawn the row as a person's, and it stays that
+// way until the next session.list.
+//
+// It broadcasts nothing of its own for the same reason: the creation push is
+// where the fact rides, and origin never changes again, so there is no later
+// transition for a push to announce.
+func (s *Service) SetSessionOrigin(ctx context.Context, sessionID, origin string) error {
+	if err := s.queries.SetSessionOrigin(ctx, store.SetSessionOriginParams{
+		Origin: origin,
+		ID:     sessionID,
+	}); err != nil {
+		return fmt.Errorf("set session origin: %w", err)
+	}
 	return nil
 }
 

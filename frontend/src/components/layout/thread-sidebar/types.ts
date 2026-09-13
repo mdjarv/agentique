@@ -113,6 +113,16 @@ export interface ThreadRowVM {
    * so a mark there can be scanned down the column without reading.
    */
   parked: boolean;
+  /**
+   * The assistant started this session, not a person (`SessionInfo.origin`).
+   *
+   * A fact about where the work came from, which is why it is a word on the row
+   * and not a colour: hue is filing, and a session the assistant started under a
+   * policy is as much the operator's to deal with as one they started
+   * themselves. It is also the one thing a reader cannot infer — the name, the
+   * project and the state all read identically either way.
+   */
+  originAssistant: boolean;
   timeLabel: string;
   struck: boolean;
   unread: boolean;

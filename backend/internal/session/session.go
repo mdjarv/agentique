@@ -906,7 +906,18 @@ func (s *Session) SubscribeTurn(turnIndex int) <-chan TurnOutcome {
 // Query sends a prompt (with optional images) to the CLI session and starts
 // streaming events.
 func (s *Session) Query(ctx context.Context, prompt string, attachments []QueryAttachment) error {
-	_, _, err := s.queryInternal(ctx, prompt, attachments, false, QueryOrigin{})
+	return s.QueryWithOrigin(ctx, prompt, attachments, QueryOrigin{})
+}
+
+// QueryWithOrigin is Query with the turn tagged by its initiator, for a caller
+// that wants no outcome subscription.
+//
+// QueryWithOutcome already takes an origin, and taking its channel without
+// reading it would leave a one-shot subscription open for the life of the
+// session — so a caller that only needs the tag gets this instead of the one
+// that also promises an outcome.
+func (s *Session) QueryWithOrigin(ctx context.Context, prompt string, attachments []QueryAttachment, origin QueryOrigin) error {
+	_, _, err := s.queryInternal(ctx, prompt, attachments, false, origin)
 	return err
 }
 
@@ -995,7 +1006,7 @@ func (s *Session) validateAndPrepareQuery(origin QueryOrigin) (rt *runtime.Sessi
 	if s.rt == nil {
 		return nil, false, false, ErrNotLive
 	}
-	if origin.Kind == "schedule" && (s.archivedAt != "" || s.git.worktreeMerged) {
+	if origin.Kind == OriginSchedule && (s.archivedAt != "" || s.git.worktreeMerged) {
 		return nil, false, false, fmt.Errorf("session %s: %w", s.ID, ErrSessionFinished)
 	}
 	// Refuse a session claimed by the idle-eviction sweep — it is being torn

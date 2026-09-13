@@ -18,6 +18,22 @@ const (
 	ErrorKindOther      = "other"
 )
 
+// Origin kinds for [QueryOrigin.Kind]. The empty string is a person at a
+// composer and is deliberately not a constant: it is the zero value, and a
+// turn nobody tagged is a turn somebody typed.
+const (
+	// OriginSchedule is a scheduled loop's fire (docs/scheduled-loops.md).
+	OriginSchedule = "schedule"
+	// OriginAssistant is the assistant dispatching (docs/assistant.md): from a
+	// conversation, from a call, or from the heartbeat under a policy.
+	//
+	// Unlike a schedule's, these turns DO set the unread-completion mark. A
+	// schedule fires hourly and must not bold a row every time; the assistant
+	// dispatches because somebody asked or because a standing instruction they
+	// wrote applied, and both are completions they will want to have seen.
+	OriginAssistant = "assistant"
+)
+
 // QueryOrigin identifies a turn's initiator. The zero value means a human
 // (composer) turn. Schedule-origin turns are tagged on the persisted prompt
 // row and the turn-started push so the timeline can render them as scheduled
@@ -25,10 +41,18 @@ const (
 // session would otherwise re-inject the same facts and inflate their `uses`
 // counters with no corresponding outcome signal.
 type QueryOrigin struct {
-	Kind         string `json:"kind"` // "" (user) | "schedule"
+	Kind         string `json:"kind"` // "" (user) | "schedule" | "assistant"
 	ScheduleID   string `json:"scheduleId,omitempty"`
 	RunID        string `json:"runId,omitempty"`
 	ScheduleName string `json:"scheduleName,omitempty"`
+	// PolicyID is the standing instruction an assistant turn was dispatched
+	// under, "" for one the operator asked for (docs/assistant.md, the M4
+	// contract). It is the assistant's own id, not a foreign key anything here
+	// resolves: this package records what it was told and never reads it back.
+	PolicyID string `json:"policyId,omitempty"`
+	// ProposalID is the accepted proposal a turn came out of, where one did.
+	// Same rule: recorded, never resolved.
+	ProposalID string `json:"proposalId,omitempty"`
 }
 
 // TurnOutcome is the completion payload delivered to turn subscribers: the

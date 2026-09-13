@@ -223,6 +223,11 @@ func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model
 		// thing as one started on screen.
 		Worktree:        true,
 		AutoApproveMode: "fullAuto",
+		// Where the work came from, carried INTO creation rather than stamped
+		// after it: the row is pushed to every open client as part of being
+		// created, so a mark applied a moment later would miss the only
+		// announcement the session ever gets.
+		Origin: session.OriginAssistant,
 	})
 	if err != nil {
 		return assistant.SessionRow{}, fmt.Errorf("create session in %q: %w", projectID, err)

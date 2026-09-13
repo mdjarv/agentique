@@ -4,9 +4,10 @@ import {
   applyAssistantDelta,
   applyAssistantJournal,
   applyAssistantMessage,
+  applyAssistantPolicy,
   applyAssistantProposal,
 } from "~/lib/assistant/apply-push";
-import { proposals, unseen } from "~/lib/assistant/rpc";
+import { policies, proposals, unseen } from "~/lib/assistant/rpc";
 import { useAssistantStore } from "~/stores/assistant-store";
 import { useFeatureStore } from "~/stores/feature-store";
 
@@ -17,7 +18,7 @@ import { useFeatureStore } from "~/stores/feature-store";
  * lose the answer — the page renders what this has already collected.
  *
  * Mounted whether or not the feature is on. The server pushes nothing when the
- * assistant is unbuilt, so the cost of subscribing is four map entries, where
+ * assistant is unbuilt, so the cost of subscribing is five map entries, where
  * gating it on `features.assistant` would miss every push that lands before
  * `/api/health` answers.
  */
@@ -43,6 +44,13 @@ export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
       proposals(ws)
         .then((rows) => useAssistantStore.getState().applyProposals(rows))
         .catch((err) => console.warn("[assistant] proposals unavailable", err));
+      // The policies ride the same seed for the same reason the proposals do:
+      // they are read by a page somebody navigates to, and a page that fetches
+      // its own list shows an empty table for a round trip every time it is
+      // opened. The push keeps them current in between.
+      policies(ws)
+        .then((rows) => useAssistantStore.getState().setPolicies(rows))
+        .catch((err) => console.warn("[assistant] policies unavailable", err));
     };
     seed();
     return ws.onConnect(seed);
@@ -53,6 +61,7 @@ export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     const unsubDelta = ws.subscribe("assistant.delta", applyAssistantDelta);
     const unsubJournal = ws.subscribe("assistant.journal", applyAssistantJournal);
     const unsubProposal = ws.subscribe("assistant.proposal", applyAssistantProposal);
+    const unsubPolicy = ws.subscribe("assistant.policy", applyAssistantPolicy);
     // A reconnect drops whatever the head was mid-way through saying: the turn
     // it belonged to was reaped or is finishing into a socket that is gone, and
     // a partial reply left on screen would never be replaced by its stored
@@ -65,6 +74,7 @@ export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
       unsubDelta();
       unsubJournal();
       unsubProposal();
+      unsubPolicy();
       unsubConnect();
     };
   }, [ws]);

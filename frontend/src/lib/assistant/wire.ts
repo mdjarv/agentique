@@ -25,6 +25,8 @@ export {
   AssistantJournalResultSchema,
   AssistantMessageSchema,
   AssistantPageSchema,
+  AssistantPoliciesResultSchema,
+  AssistantPolicySchema,
   AssistantProposalSchema,
   AssistantProposalsResultSchema,
   AssistantUnseenResultSchema,
@@ -35,15 +37,43 @@ export type {
   AssistantJournalResult,
   AssistantMessage,
   AssistantPage,
+  AssistantPoliciesResult,
+  AssistantPolicy,
   AssistantProposal,
   AssistantProposalsResult,
   AssistantUnseenResult,
 } from "~/lib/generated-types";
 
-/** The two roles a conversation has. The store's sender types are a channel's
- *  vocabulary; a reader of the conversation wants these. */
-export const ASSISTANT_ROLES = ["user", "assistant"] as const;
+/** The roles a conversation has. The store's sender types are a channel's
+ *  vocabulary; a reader of the conversation wants these.
+ *
+ *  `system` is the server's own voice, and the conversation has exactly one
+ *  kind of it: the heartbeat's wake-up note (M4). It is not a speaker — nothing
+ *  can reply to it — which is why it renders as a divider rather than a bubble.
+ */
+export const ASSISTANT_ROLES = ["user", "assistant", "system"] as const;
 export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
+
+/**
+ * The one message `kind` the conversation renders differently.
+ *
+ * It arrives on two messages per acting tick — the server's `system` note
+ * carrying the triage verdict, and the head's reply to it — and the pair is
+ * what tells a reader that a turn nobody typed happened here. One constant,
+ * because the divider and the bubble's mark must agree about which turns are
+ * the heartbeat's.
+ */
+export const HEARTBEAT_KIND = "heartbeat";
+
+/** The server's wake-up note: a divider, not a bubble. */
+export function isHeartbeatNotice(message: { role?: string; kind?: string }): boolean {
+  return message.role === "system" && message.kind === HEARTBEAT_KIND;
+}
+
+/** The head's reply to a heartbeat: an ordinary bubble wearing a small mark. */
+export function isHeartbeatReply(message: { role?: string; kind?: string }): boolean {
+  return message.role !== "user" && message.role !== "system" && message.kind === HEARTBEAT_KIND;
+}
 
 /**
  * Journal kinds, the closed set from the M1 contract plus `note` (the
@@ -68,6 +98,9 @@ export const ASSISTANT_JOURNAL_KINDS = [
   "day_summary",
   "proposal_made",
   "proposal_decided",
+  // M4's fourteenth kind: one entry per tick that ran triage, whose summary is
+  // the verdict. A tick the gate turned back journals nothing.
+  "heartbeat",
 ] as const;
 export type AssistantJournalKind = (typeof ASSISTANT_JOURNAL_KINDS)[number];
 

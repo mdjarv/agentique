@@ -41,6 +41,18 @@ type AssistantJournal struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type AssistantPolicy struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Text           string `json:"text"`
+	Enabled        int64  `json:"enabled"`
+	BudgetInFlight int64  `json:"budget_in_flight"`
+	BudgetPerDay   int64  `json:"budget_per_day"`
+	LastFiredAt    string `json:"last_fired_at"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type AssistantProposal struct {
 	ID         string `json:"id"`
 	CreatedAt  string `json:"created_at"`
@@ -291,6 +303,7 @@ type Session struct {
 	UnseenCompletedAt sql.NullString `json:"unseen_completed_at"`
 	EvictedAt         sql.NullString `json:"evicted_at"`
 	ResolvedAt        sql.NullString `json:"resolved_at"`
+	Origin            string         `json:"origin"`
 }
 
 type SessionEvent struct {

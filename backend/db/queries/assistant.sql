@@ -92,17 +92,28 @@ WHERE at >= sqlc.arg(since)
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(lim);
 
+-- What a surface has missed. 'heartbeat' rows are left out, for the same reason
+-- the digest and the head's news leave them out: a tick that woke up, looked and
+-- decided nothing is the assistant's own bookkeeping, and what it DID has its
+-- own entry beside it. They stay in ListAssistantJournalSince, which is the
+-- journal page and the audit trail for every model the heartbeat paid for.
 -- name: ListAssistantJournalUnseen :many
 SELECT * FROM assistant_journal
 WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL
+  AND kind != 'heartbeat'
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(lim);
 
 -- How many entries this surface has never been shown. The rail's notch reads
 -- it once per connection; the journal pushes keep it current after that.
+--
+-- Same exclusion, and here it is the load-bearing one: a badge is a claim on
+-- attention, so a heartbeat that ticks every fifteen minutes would put a
+-- permanent notch on the assistant's row and teach the operator to ignore it.
 -- name: CountAssistantJournalUnseen :one
 SELECT COUNT(*) FROM assistant_journal
-WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL;
+WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL
+  AND kind != 'heartbeat';
 
 -- Stamps everything this surface has now been shown, THROUGH the newest row it
 -- was handed.
@@ -217,3 +228,85 @@ VALUES (1, sqlc.arg(last_digest_at), sqlc.arg(now), sqlc.arg(now))
 ON CONFLICT(id) DO UPDATE SET
   last_digest_at = excluded.last_digest_at,
   updated_at = excluded.updated_at;
+
+-- Standing instructions and the heartbeat's mark (docs/assistant.md, the M4
+-- contract, and migration 059).
+
+-- Name order, so the list a person reads and the list the heartbeat reads are
+-- in the same order. The id breaks a tie between two policies named the same.
+-- name: ListAssistantPolicies :many
+SELECT * FROM assistant_policies ORDER BY name ASC, id ASC;
+
+-- name: GetAssistantPolicy :one
+SELECT * FROM assistant_policies WHERE id = ?;
+
+-- One statement for a new policy and an edit, because the client sends the
+-- whole row either way: a policy is one form with a Save button, and a
+-- partial update would need a field-by-field patch nobody asked for.
+-- created_at is left alone on an edit, so a row keeps the day it was written.
+-- name: UpsertAssistantPolicy :one
+INSERT INTO assistant_policies (
+    id, name, text, enabled, budget_in_flight, budget_per_day, created_at, updated_at
+) VALUES (
+    sqlc.arg(id), sqlc.arg(name), sqlc.arg(text), sqlc.arg(enabled),
+    sqlc.arg(budget_in_flight), sqlc.arg(budget_per_day), sqlc.arg(now), sqlc.arg(now)
+)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  text = excluded.text,
+  enabled = excluded.enabled,
+  budget_in_flight = excluded.budget_in_flight,
+  budget_per_day = excluded.budget_per_day,
+  updated_at = excluded.updated_at
+RETURNING *;
+
+-- name: DeleteAssistantPolicy :exec
+DELETE FROM assistant_policies WHERE id = ?;
+
+-- When the heartbeat last acted under this policy. Bookkeeping the operator
+-- reads, never a budget: what a budget counts is journal entries, which an
+-- edit cannot rewrite.
+-- name: TouchAssistantPolicy :exec
+UPDATE assistant_policies
+SET last_fired_at = sqlc.arg(last_fired_at), updated_at = sqlc.arg(now)
+WHERE id = sqlc.arg(id);
+
+-- The heartbeat's mark: when the last tick measured from. Stamped by every
+-- tick, including the ones that ran no model at all.
+-- name: SetAssistantHeartbeatAt :exec
+INSERT INTO assistant_state (id, last_heartbeat_at, created_at, updated_at)
+VALUES (1, sqlc.arg(last_heartbeat_at), sqlc.arg(now), sqlc.arg(now))
+ON CONFLICT(id) DO UPDATE SET
+  last_heartbeat_at = excluded.last_heartbeat_at,
+  updated_at = excluded.updated_at;
+
+-- The heartbeat's gate: has anything happened since the last beat.
+--
+-- The assistant's OWN heartbeat entries are excluded, and that exclusion is
+-- what makes the gate able to close: a tick journals its verdict and stamps
+-- the mark in the same second, so counting its own row would leave every
+-- later tick with one entry to triage and a Haiku call to pay for it. The
+-- lower boundary is inclusive, as the digest's is, on the same reasoning --
+-- triaging one entry twice costs a tick, dropping one loses news.
+-- name: CountAssistantJournalSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE at >= sqlc.arg(since) AND kind != 'heartbeat';
+
+-- A policy's day budget: how many sessions this standing instruction has
+-- created since a stamp.
+--
+-- Counted in SQL rather than by paging the journal into Go, and that is the
+-- point rather than an optimisation. The page was 2000 rows over a fourteen-day
+-- window and FAILED CLOSED when it filled, so a machine busy enough to journal
+-- 143 entries a day would have refused every budgeted verb from then on, with
+-- one log line to explain it -- and the day-summary compaction that would have
+-- bounded the window is not built. A count has no page to fill.
+--
+-- The payload path is '$.policyId', which is `payloadPolicyID` in
+-- internal/assistant: the key is spelled in both places, so a rename is two
+-- edits or a budget that counts nothing.
+-- name: CountPolicySessionsCreatedSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= sqlc.arg(since)
+  AND json_extract(payload, '$.policyId') = sqlc.arg(policy_id);

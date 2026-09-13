@@ -1,9 +1,9 @@
-import { Phone, Sparkles, User } from "lucide-react";
+import { HeartPulse, Phone, Sparkles, User } from "lucide-react";
 import { memo } from "react";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import type { AssistantMessage } from "~/lib/assistant/wire";
+import { type AssistantMessage, isHeartbeatNotice, isHeartbeatReply } from "~/lib/assistant/wire";
 import { cn } from "~/lib/utils";
 
 /**
@@ -20,7 +20,9 @@ import { cn } from "~/lib/utils";
  *
  * A turn said on a call carries `surface: "voice"` and wears a phone glyph —
  * the drive is in the thread, and where something was said is part of reading
- * it back.
+ * it back. A turn the heartbeat started carries `kind: "heartbeat"`, and the
+ * pair it arrives as renders as two different things: the server's note is a
+ * divider (nobody said it), the head's reply an ordinary bubble with a mark.
  */
 
 interface AssistantConversationProps {
@@ -35,13 +37,83 @@ export const AssistantConversation = memo(function AssistantConversation({
 }: AssistantConversationProps) {
   return (
     <div className="flex flex-col gap-4 px-3 py-4 md:px-6">
-      {messages.map((message, index) => (
-        <MessageRow key={message.id ?? `${message.createdAt ?? ""}-${index}`} message={message} />
-      ))}
+      {messages.map((message, index) => {
+        const key = message.id ?? `${message.createdAt ?? ""}-${index}`;
+        // The heartbeat's own note is not a turn anybody took, so it is not a
+        // bubble. Everything else, the head's reply to it included, is.
+        if (isHeartbeatNotice(message)) return <HeartbeatDivider key={key} message={message} />;
+        return <MessageRow key={key} message={message} />;
+      })}
       {streaming !== null && <StreamingRow text={streaming} />}
     </div>
   );
 });
+
+/**
+ * The heartbeat's wake-up note: one quiet line across the column.
+ *
+ * Not a bubble, because nobody said it — it is the server telling the
+ * conversation that a tick found something worth acting on, and the sentence it
+ * carries is the triage verdict. A bubble would put it in the head's voice, or
+ * invent a third speaker; a rule with the sentence on it reads as what it is, a
+ * seam in the conversation where a turn nobody typed begins.
+ *
+ * **The rule carries the first line and nothing else.** The stored message is
+ * the verdict sentence AND the window the head was woken with — up to sixty
+ * journal lines, which is the turn's own material and the thread's record of
+ * what the assistant was told. Drawn whole, that made a multi-line blob inside a
+ * horizontal rule; drawn as its first line, the divider says what a divider can
+ * say. The rest stays reachable as the line's `title`, and the journal page is
+ * where a window is read properly.
+ *
+ * It carries a clock time and not "3h ago": the whole point of the line is that
+ * this happened while nobody was looking, so when is part of reading it.
+ */
+const HeartbeatDivider = memo(function HeartbeatDivider({
+  message,
+}: {
+  message: AssistantMessage;
+}) {
+  const time = clockTime(message.createdAt);
+  const full = message.text?.trim() ?? "";
+  const verdict = firstLine(full) || "The heartbeat woke the assistant";
+  return (
+    <div className="flex items-center gap-2 py-1 text-muted-foreground-faint">
+      <span aria-hidden className="h-px flex-1 bg-border/60" />
+      <HeartPulse className="size-3 shrink-0" />
+      <span className="min-w-0 truncate text-[11px] leading-snug" title={full || undefined}>
+        {verdict}
+      </span>
+      {time && <span className="shrink-0 font-mono text-[10px] tabular-nums">{time}</span>}
+      <span aria-hidden className="h-px w-4 bg-border/60" />
+    </div>
+  );
+});
+
+/**
+ * The first line of a wake-up note: the verdict sentence.
+ *
+ * The server puts it first for exactly this, and the verdict itself can never be
+ * more than one line — the triage parser refuses a multi-line answer — so the
+ * cut is at the first newline and needs no other rule.
+ */
+function firstLine(text: string): string {
+  const end = text.indexOf("\n");
+  return (end === -1 ? text : text.slice(0, end)).trim();
+}
+
+/**
+ * The local clock time of a wire stamp, or "" when it cannot be read.
+ *
+ * Empty rather than a guess: a divider with no time still says what happened,
+ * where "Invalid Date" says the app is broken.
+ */
+function clockTime(iso?: string): string {
+  if (!iso) return "";
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
 
 const MessageRow = memo(function MessageRow({ message }: { message: AssistantMessage }) {
   const fromUser = message.role === "user";
@@ -63,11 +135,30 @@ const MessageRow = memo(function MessageRow({ message }: { message: AssistantMes
         )}
       >
         {message.surface === "voice" && <VoiceMark callId={message.callId} />}
+        {isHeartbeatReply(message) && <HeartbeatMark />}
         <Markdown content={message.text ?? ""} preserveNewlines={fromUser} />
       </div>
     </div>
   );
 });
+
+/**
+ * Said without being asked. The bubble is ordinary — the head's reply to a
+ * heartbeat is the same voice saying the same kind of thing — and only this small
+ * word says it was not a reply to the operator. The same mark the strip's
+ * `heartbeat` journal entries wear, so one picture means one thing.
+ */
+function HeartbeatMark() {
+  return (
+    <span
+      className="float-right ml-2 flex items-center gap-1 font-mono text-[10px] text-muted-foreground-faint"
+      aria-label="Said by the heartbeat"
+    >
+      <HeartPulse className="size-3" />
+      heartbeat
+    </span>
+  );
+}
 
 /** Said on a call. A mark, not a sentence — it is one bit about one turn. */
 function VoiceMark({ callId }: { callId?: string }) {

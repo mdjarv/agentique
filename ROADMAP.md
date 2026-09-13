@@ -83,6 +83,18 @@ call bound to that session, which converses, reads the draft back, dispatches on
 an explicit yes, follows the run and says what happened. Gated by
 `[experimental] voice`. See [docs/voice.md](docs/voice.md).
 
+**The assistant.** A durable principal with its own thread at `/assistant`: one
+conversation that outlives every session, a fourteen-kind journal of what
+happened while you were away, a digest that groups it by the needs-you ranking,
+and a tiered verb set: the contained verbs it simply performs, and everything
+uncontained becomes a proposal a person accepts or refuses. The brain became its
+long-term memory and stopped injecting into sessions. M4 gave it autonomy: a
+heartbeat whose common tick is a row count, Haiku triage that fails closed,
+standing instructions at `/assistant/policies` with budgets counted from the
+journal, and sessions it starts marked `origin = assistant` on their own rows.
+Behind `[experimental] assistant`. See
+[docs/assistant.md](docs/assistant.md).
+
 **A security audit round.** Inbound credentials stored as digests, passkey
 recovery gated behind a one-time code, the rekey window closed, path-escaping and
 glob record ids rejected, agent-written files never served as active content,
@@ -92,16 +104,19 @@ are in CLAUDE.md.
 
 ## What's next
 
-### The assistant
+### What the assistant is owed next
 
-A durable principal that owns the bigger picture: it remembers what you told
-it and what happened while you were away, keeps you in the loop, and within a
-tiered verb set starts and drives work on its own. The voice switchboard's
-non-voice parts (directory, follow set, reports, notices) move one layer down
-into `internal/assistant`, where the thread, the call and a later messaging
-gateway all attach to the same memory. The brain becomes the assistant's
-long-term memory and stops injecting into sessions, which is why it was
-disabled. Design settled, no code; four milestones. See
+The four milestones shipped; these are the things they named and did not build.
+A **messaging gateway** as another transport, so the thread is reachable from
+outside the app. A **server-to-server subscription** from the primary to each
+paired machine, which is what would make a remote session's facts the
+assistant's own rather than a view the browser feeds it — until it exists,
+create and dispatch on a remote refuse, and the journal carries no
+machine-away entries. The **scheduler absorbing the heartbeat**, once
+`schedules` grows a target kind and stops being session-shaped. And
+**provenance-aware consolidation**, so a day's journal folds into a summary
+that keeps which standing instruction spent what, because the budgets read
+their history out of those rows. See
 [docs/assistant.md](docs/assistant.md).
 
 ### V5c — the CLI update button

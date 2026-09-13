@@ -774,7 +774,10 @@ Web-only discussion personas are sessionless and claude-only. Drive them through
 `runtime.Manager` — a bare connector bypasses the permission pump and tools block
 forever. They post as the third `sender_type: "persona"` (skipped by the legacy
 event mirror) and live in project-less channels whose WS events fan out on the
-global topic.
+global topic. There is a fourth, `system`, and it belongs to the assistant's
+conversation alone — the heartbeat's wake-up note (`role: "system"` on the wire,
+rendered as a divider, never a speaker). It reaches no mirror because the
+assistant writes its own rows rather than going through `ChannelMessageParams`.
 
 ### Scheduled loops — `docs/scheduled-loops.md`
 
@@ -1727,6 +1730,44 @@ stale card narrows what happens and never widens it. Execution goes through
 ops make — so a yes on a card and a click in the UI are one route, and a git
 status of `conflict`, `needs_rebase` or `dirty_worktree` is `failed` with that
 word as the outcome rather than an error.
+
+**The heartbeat's gate is a row count, and the budgets are on the verbs.** One
+ticker in the core (`Service.RunHeartbeat`, started from serve's production
+block, never from `New`), and the common tick costs nothing: no journal entries
+since `last_heartbeat_at` and no timed digest due stamps the mark and returns
+with no model run. An **unknown window is no window**: an unreadable state row
+refuses the tick and leaves the mark alone, and an unset mark is seeded and
+judged nothing — `""` means "the beginning of time" to every query here, so
+believing it hands a triager the newest sixty entries ever written and lets an
+`act` run on last week. The assistant's own `heartbeat` entries are excluded from
+that count, which is what lets the gate close again — and from four other
+readers, all for one reason: a tick is bookkeeping, not news. The digest's
+groups, `newsLine`, the unseen queries and the client's `claimsAttention` all
+leave the kind out, so a heartbeat every fifteen minutes cannot put a permanent
+notch on the assistant's row; the journal page keeps every row, because that is
+the audit trail for every model the heartbeat paid for. When something has
+happened *and* a policy is enabled, one Haiku one-shot answers `none`, `digest`
+or `act`, and `parseVerdict` is **strict and fails closed** — a preamble, a code
+fence, two lines or an empty `act:` all read as `none`, because a lost tick
+costs fifteen minutes where an invented act spends allowance in a repository
+nobody is watching. Only `act` wakes the head, on a turn carrying the "started
+by the heartbeat" section rather than a section in its instruction: the head is
+long-lived, so its preamble was composed before the policy existed. Ticks never
+overlap; one is skipped and logged. A `policy` argument on `create_session` and
+`run_prompt` is a claim to be spending that policy's budget, so a name that is
+not a policy is refused rather than read as none — without a policy the verbs
+are unbudgeted, because the operator asked. The counts come from the
+journal (`session_created` entries name the policy, and an edit to the policy
+row cannot rewrite them), with the sessions table as the ceiling that a lost
+journal write cannot widen — and all three are **counted in SQL**, because
+nothing prunes the journal and a paged read that fails closed when it fills is a
+guard whose ordinary state on a busy machine is "autonomy refuses itself".
+In-flight means *unfinished*, so a **parked** session still holds its slot;
+archiving is what releases one. What reaches a model is budgeted where its
+structure is known, never by clamping the finished prompt: the closed answer
+format is at the end of it, and a triager that cannot see the format answers
+prose, which parses as `none` forever. Tiers never move: everything uncontained
+is still a proposal, and confidence is never a dial.
 
 Where the assistant's *row* lives is a placement question and is settled under
 "Where a destination lives".

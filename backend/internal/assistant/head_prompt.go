@@ -162,6 +162,45 @@ func HeadInstruction(brief HeadBriefing) string {
 	return b.String()
 }
 
+// heartbeatInstruction is the section a heartbeat turn carries.
+//
+// It rides the TURN rather than the head's system instruction, and that is the
+// design rather than an omission: the head is long-lived and its instruction is
+// composed once, at start, so a head that has been up since this morning would
+// never see a section added to it. A turn nobody asked for has to say so in the
+// turn.
+//
+// It names the enabled policies and their budgets because the head is about to
+// choose what to do under one, and the budget is the difference between an
+// instruction it can act on and one it can only report on. And it repeats the
+// proposal rule, because this is the one turn where nobody is reading along: a
+// head that merged something on a standing instruction would have done it with
+// no yes anywhere.
+func heartbeatInstruction(policies []Policy) string {
+	var b strings.Builder
+	b.WriteString("This turn was started by the heartbeat, not by the operator. They are not ")
+	b.WriteString("reading this as you write it, and they did not ask a question.\n\n")
+
+	if len(policies) > 0 {
+		b.WriteString("You are acting under their standing instructions, and only these:\n\n")
+		for _, p := range policies {
+			fmt.Fprintf(&b, "- **%s** (at most %d session at a time, %d a day) — %s\n",
+				p.Name, p.BudgetInFlight, p.BudgetPerDay, strings.TrimSpace(p.Text))
+		}
+		b.WriteString("\nWhen you create a session or send a prompt under one of these, pass the ")
+		b.WriteString("instruction's name as `policy`. That is what spends its budget, and a name ")
+		b.WriteString("you make up is refused rather than treated as free.\n\n")
+	}
+
+	b.WriteString("Nothing here widens what you may do. Anything they would need to see or decide ")
+	b.WriteString("is a proposal, exactly as it is in a conversation — you cannot merge, archive, ")
+	b.WriteString("delete or accept anything, and no standing instruction can give you that. If ")
+	b.WriteString("none of the instructions above plainly applies, do nothing and say nothing: an ")
+	b.WriteString("unprompted message about routine work is the thing that makes this feature ")
+	b.WriteString("worth turning off.\n")
+	return b.String()
+}
+
 // renderMemory is the "What you remember" section.
 //
 // It carries two things and deliberately not a third: the pinned set, with its
@@ -270,8 +309,13 @@ func renderTail(messages []Message) string {
 			continue
 		}
 		who := "They said"
-		if msg.Role == RoleAssistant {
+		switch msg.Role {
+		case RoleAssistant:
 			who = "You said"
+		case RoleSystem:
+			// Nobody said it: it is the server's own line, and the head must not
+			// read a heartbeat's wake-up as something the operator typed.
+			who = "The server noted"
 		}
 		if msg.Surface == SurfaceVoice {
 			who += " (on a voice call)"
@@ -361,6 +405,10 @@ func newsLine(entry JournalEntry) string {
 			return ""
 		}
 		return fmt.Sprintf("%s: %s", entry.At, entry.Summary)
+	case JournalHeartbeat:
+		// The assistant's own bookkeeping. Reading the last triage's verdict
+		// back to the head is how it starts answering its own ticks.
+		return ""
 	default:
 		what = string(entry.Kind)
 	}

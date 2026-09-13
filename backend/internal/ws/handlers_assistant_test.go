@@ -27,6 +27,9 @@ func TestAssistantOpsAnswerWhenTheAssistantIsOff(t *testing.T) {
 		{"assistant.proposals", `{}`},
 		{"assistant.decide", `{"id":"p1","accept":true}`},
 		{"assistant.digest", `{}`},
+		{"assistant.policies", `{}`},
+		{"assistant.policy-save", `{"name":"nightly tests"}`},
+		{"assistant.policy-delete", `{"id":"pol1"}`},
 	} {
 		t.Run(op.name, func(t *testing.T) {
 			c := newDispatchTestConn()
@@ -43,6 +46,32 @@ func TestAssistantOpsAnswerWhenTheAssistantIsOff(t *testing.T) {
 			}
 			if !strings.Contains(resp.Error.Message, "assistant") {
 				t.Errorf("the refusal does not name the switch: %q", resp.Error.Message)
+			}
+		})
+	}
+}
+
+// A policy save with no name names the field rather than reaching the core, and
+// a delete with no id does the same.
+func TestAssistantPolicyWritesValidateTheirFields(t *testing.T) {
+	for _, tt := range []struct {
+		op, payload, want string
+	}{
+		{"assistant.policy-save", `{"text":"when the tests pass, say so"}`, "name"},
+		{"assistant.policy-delete", `{}`, "id"},
+	} {
+		t.Run(tt.op, func(t *testing.T) {
+			c := newDispatchTestConn()
+			defer c.close()
+
+			c.dispatch(ClientMessage{ID: "1", Type: tt.op, Payload: []byte(tt.payload)})
+
+			resp := awaitResponse(c, time.Second)
+			if resp == nil || resp.Error == nil {
+				t.Fatalf("%s answered %+v, want a validation refusal", tt.op, resp)
+			}
+			if !strings.Contains(resp.Error.Message, tt.want) {
+				t.Errorf("the refusal does not name the field: %q", resp.Error.Message)
 			}
 		})
 	}
@@ -87,6 +116,7 @@ func TestAssistantSayRefusesAnEmptyTurn(t *testing.T) {
 func TestAssistantLanes(t *testing.T) {
 	for _, op := range []string{
 		"assistant.history", "assistant.journal", "assistant.unseen", "assistant.proposals",
+		"assistant.policies",
 	} {
 		if !concurrentOps[op] {
 			t.Errorf("%s is on the serial lane; it is a read", op)
@@ -97,8 +127,12 @@ func TestAssistantLanes(t *testing.T) {
 	// handleRequestAsync rather than on the read lane — a merge takes seconds
 	// and a digest resolves a name per line, and a read there would be claiming
 	// it mutates nothing.
+	// The two policy writes are on the serial lane for the ordering reason rather
+	// than a slowness one: two saves of one policy have to land in the order they
+	// were sent, or the row keeps the older edit.
 	for _, op := range []string{
 		"assistant.say", "assistant.mark-seen", "assistant.decide", "assistant.digest",
+		"assistant.policy-save", "assistant.policy-delete",
 	} {
 		if concurrentOps[op] {
 			t.Errorf("%s is on the read lane, and it writes", op)

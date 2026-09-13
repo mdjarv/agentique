@@ -3,6 +3,7 @@ import {
   applyAssistantDelta,
   applyAssistantJournal,
   applyAssistantMessage,
+  applyAssistantPolicy,
   applyAssistantProposal,
 } from "~/lib/assistant/apply-push";
 import { useAssistantStore } from "~/stores/assistant-store";
@@ -97,5 +98,32 @@ describe("assistant push applier", () => {
     expect(useAssistantStore.getState().journal).toHaveLength(0);
     expect(useAssistantStore.getState().proposals).toHaveLength(0);
     expect(warn).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("assistant policy push", () => {
+  beforeEach(() => {
+    useAssistantStore.getState().reset();
+    vi.restoreAllMocks();
+  });
+
+  it("stores a pushed policy", () => {
+    applyAssistantPolicy({ id: "pol-1", name: "green tests", enabled: true, budgetPerDay: 2 });
+    const held = useAssistantStore.getState().policies;
+    expect(held.map((p) => p.id)).toEqual(["pol-1"]);
+    expect(held[0]?.budgetPerDay).toBe(2);
+  });
+
+  it("removes the row a delete push names", () => {
+    applyAssistantPolicy({ id: "pol-1", name: "green tests" });
+    applyAssistantPolicy({ id: "pol-1", deleted: true });
+    expect(useAssistantStore.getState().policies).toHaveLength(0);
+  });
+
+  it("drops an unreadable payload rather than half-applying it", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    applyAssistantPolicy({ id: 7 });
+    expect(warn).toHaveBeenCalled();
+    expect(useAssistantStore.getState().policies).toHaveLength(0);
   });
 });

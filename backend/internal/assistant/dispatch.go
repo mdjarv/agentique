@@ -122,3 +122,20 @@ type Dispatcher interface {
 	// call sounding fine.
 	AutoRunnable(ctx context.Context, sessionID string) (bool, string, error)
 }
+
+// PolicyDispatcher is a [Dispatcher] that can name the standing instruction a
+// turn was sent under, so the turn carries it as its query origin.
+//
+// It is a SECOND interface, type-asserted off the dispatcher, rather than a
+// fifth argument to Dispatch — the InstallInspectable seam's shape, and for the
+// same reason: a call dispatches through the same collaborator and has no policy
+// to name, so widening the one method every caller shares would make every
+// caller say "no policy" to get the behaviour it already had.
+//
+// A dispatcher that does not implement it still works; the turn is then an
+// ordinary assistant-origin one with no policy on it, which is exactly what a
+// dispatch from a conversation is.
+type PolicyDispatcher interface {
+	// DispatchUnderPolicy is Dispatch with the policy's id on the turn.
+	DispatchUnderPolicy(ctx context.Context, sessionID, prompt string, withReporting bool, policyID string) (Delivery, error)
+}

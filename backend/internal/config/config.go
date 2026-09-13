@@ -29,6 +29,7 @@ type Config struct {
 	Claude       ClaudeConfig       `toml:"claude"`
 	Brain        BrainConfig        `toml:"brain"`
 	Voice        VoiceConfig        `toml:"voice"`
+	Assistant    AssistantConfig    `toml:"assistant"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
 	// Models overrides the auto-detected model catalog, keyed by provider
 	// ("claude", "codex"). A non-empty list replaces that provider's generated
@@ -427,6 +428,41 @@ type BrainConfig struct {
 	// left 0 keeps the built-in default. See [brain.graph] in config.toml. Each field has an
 	// AGENTIQUE_BRAIN_GRAPH_* env override that wins when set.
 	Graph BrainGraphConfig `toml:"graph"`
+}
+
+// AssistantConfig tunes the assistant's autonomy (docs/assistant.md, the M4
+// contract). Like [brain] and [voice], every field has an AGENTIQUE_ASSISTANT_*
+// env var which wins when set, and an empty value means "the default".
+//
+// The section is inert without [experimental] assistant, which is the master
+// switch: off means the assistant is never built, so there is no heartbeat to
+// pace. Nothing here ever refuses to boot — an unparsable value is a warning and
+// the default, because a mistyped interval must not cost somebody their server.
+type AssistantConfig struct {
+	// HeartbeatInterval is how often the assistant wakes to see whether anything
+	// needs doing. A duration string ("15m"); "" takes the built-in default, and
+	// "0" disables the heartbeat entirely.
+	//
+	// It can afford to be short because the common tick is a row count: the gate
+	// asks whether anything has happened since the last beat and returns without
+	// running a model. Env: AGENTIQUE_ASSISTANT_HEARTBEAT.
+	HeartbeatInterval string `toml:"heartbeat-interval"`
+	// DigestAt is a LOCAL wall-clock time ("08:30") at which the daily digest
+	// posts itself into the conversation. Empty disables the timed digest; the
+	// digest control and the assistant's own verb still work.
+	//
+	// Local rather than UTC because it is a time of day in somebody's morning.
+	// Env: AGENTIQUE_ASSISTANT_DIGEST_AT.
+	DigestAt string `toml:"digest-at"`
+	// TriageModel is the model FAMILY the heartbeat's triage step runs, resolved
+	// through the catalog ("haiku", "sonnet"). Empty means the Haiku family,
+	// which is what it should be: triage answers one line, and paying for a
+	// bigger model every tick is the thing that makes autonomy not worth having.
+	//
+	// A family name, never a version or an id, on the model-catalog rule: a new
+	// upstream release must not require an agentique release.
+	// Env: AGENTIQUE_ASSISTANT_TRIAGE_MODEL.
+	TriageModel string `toml:"triage-model"`
 }
 
 // VoiceConfig configures the live spoken-dialog mode ("Live"). Like [brain], every

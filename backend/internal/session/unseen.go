@@ -24,7 +24,11 @@ import (
 //     completes is not.
 //   - Schedule-origin turns do not. An hourly loop must not bold a row on every
 //     fire; a run that needs the operator says so through schedule attention,
-//     which is its own channel (docs/scheduled-loops.md).
+//     which is its own channel (docs/scheduled-loops.md). It is the ONLY origin
+//     that is exempt: an assistant-origin turn marks like a person's, because
+//     the assistant dispatched it either because somebody asked or because a
+//     standing instruction they wrote applied, and a completion they never see
+//     is the whole thing autonomy is supposed to hand them.
 //   - Only an explicit read receipt clears it — Service.MarkSessionSeen, from
 //     the session.markSeen RPC. Nothing infers "seen" from a state change: a
 //     session that starts a new turn has not thereby been read.
@@ -77,7 +81,7 @@ func (s *Session) markUnseenCompletion(turnIndex int) {
 	kind := s.turnOrigins[turnIndex]
 	delete(s.turnOrigins, turnIndex)
 	s.mu.Unlock()
-	if kind == "schedule" {
+	if kind == OriginSchedule {
 		return
 	}
 

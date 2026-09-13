@@ -201,6 +201,13 @@ type Config struct {
 	// faded from recall. From AGENTIQUE_BRAIN_ARCHIVE_FLOOR or [brain] archive-confidence-floor;
 	// 0 = brain's default (0.35).
 	BrainArchiveFloor float64
+
+	// Assistant is the [assistant] section, resolved from the config file with
+	// AGENTIQUE_ASSISTANT_* env overrides (docs/assistant.md, the M4 contract).
+	// Raw strings: they are parsed in New, where a bad one is a warning and the
+	// default rather than a server that will not start. Inert unless
+	// ExperimentalAssistant is on.
+	Assistant config.AssistantConfig
 }
 
 // serviceInstalled reports whether a service manager would bring agentique
@@ -253,14 +260,18 @@ type Server struct {
 	// merge and archive entries, released on shutdown so the bus is not left
 	// delivering into a closed server.
 	assistantState *eventbus.Subscription
-	scheduler      *schedule.Scheduler
-	updateChecker  *update.Checker
-	updateApplier  *update.Applier
-	updateCLIs     *update.CLIProbe
-	updateSource   *update.SourceChecker
-	usageCollector *usage.Collector
-	allowedOrigins map[string]bool
-	authEnabled    bool
+	// assistantHeartbeat is how often the assistant wakes on its own, resolved
+	// from [assistant] heartbeat-interval. Zero disables it. Read by serve.go,
+	// which starts the loop — New starts no timers.
+	assistantHeartbeat time.Duration
+	scheduler          *schedule.Scheduler
+	updateChecker      *update.Checker
+	updateApplier      *update.Applier
+	updateCLIs         *update.CLIProbe
+	updateSource       *update.SourceChecker
+	usageCollector     *usage.Collector
+	allowedOrigins     map[string]bool
+	authEnabled        bool
 	// csp is the SPA document policy, computed once from the embedded bundle
 	// (the inline bootstrap script is allowed by hash, not by 'unsafe-inline').
 	csp string
@@ -304,6 +315,17 @@ func installPathOrEmpty() string {
 // sweep and start the tick loop (deliberately not started in New — see the
 // SweepOrphans precedent). Nil when the scheduler is disabled.
 func (s *Server) Scheduler() *schedule.Scheduler { return s.scheduler }
+
+// Assistant exposes the assistant so serve.go can start its heartbeat, on the
+// same precedent as everything else in that block: the loop runs a model and
+// starts head turns, and nothing a constructor a test might call may do either.
+// Nil when [experimental] assistant is off.
+func (s *Server) Assistant() *assistant.Service { return s.assistantSvc }
+
+// AssistantHeartbeat is how often that loop should tick, or 0 for never —
+// resolved once in New from the config, so the parse and its boot warning live
+// in one place rather than in the command.
+func (s *Server) AssistantHeartbeat() time.Duration { return s.assistantHeartbeat }
 
 // New creates a new Server with all routes registered.
 func New(queries *store.Queries, cfg Config) (*Server, error) {
@@ -1079,13 +1101,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// off means UNBUILT, so no conversation, no journal, no head, no assistant.*
 	// WS ops and no assistant MCP tools, and `features.assistant` says so.
 	var (
-		assistantSvc   *assistant.Service
-		assistantState *eventbus.Subscription
-		reportRegistry *assistant.Registry
-		assistantDir   *assistantDirectory
-		assistantDisp  *assistantDispatcher
-		assistantFacts *assistantTurnFacts
-		summarizer     *sessionSummarizer
+		assistantSvc       *assistant.Service
+		assistantState     *eventbus.Subscription
+		assistantHeartbeat time.Duration
+		reportRegistry     *assistant.Registry
+		assistantDir       *assistantDirectory
+		assistantDisp      *assistantDispatcher
+		assistantFacts     *assistantTurnFacts
+		summarizer         *sessionSummarizer
 	)
 	if cfg.ExperimentalVoice || cfg.ExperimentalAssistant {
 		// The summariser keeps a session's transcript on this machine: it runs
@@ -1133,7 +1156,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			assistant.WithActions(newAssistantActions(svc, gitSvc, mgr, queries, catalog)),
 			assistant.WithRegistry(reportRegistry),
 			assistant.WithBroadcaster(bus),
+			// Autonomy (docs/assistant.md, the M4 contract). The triager is a
+			// Haiku one-shot over the same blocking runner the auto-namer uses,
+			// so the core never learns which provider CLI it is — and the
+			// heartbeat's own timer is started from serve, not here.
+			assistant.WithTriager(newAssistantTriager(runner, catalog, cfg.Assistant.TriageModel)),
+			assistant.WithDigestAt(assistantDigestAt(cfg.Assistant.DigestAt)),
 		}
+		assistantHeartbeat = assistantHeartbeatInterval(cfg.Assistant.HeartbeatInterval)
 		// The brain is the assistant's long-term memory and nothing else's, and
 		// it is the one collaborator that is genuinely optional at runtime: the
 		// two switches are independent, and `[brain] enabled` off means there is
@@ -1171,7 +1201,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		}
 		cancelPrime()
 		assistantState = bus.SubscribeAll(&assistantStateObserver{svc: assistantSvc})
-		slog.Info("assistant enabled")
+		slog.Info("assistant enabled", "heartbeat", assistantHeartbeat,
+			"digest_at", cfg.Assistant.DigestAt)
 	}
 
 	wsh := &ws.Handler{Service: svc, GitService: gitSvc, ProjectGitService: projectGitSvc, Queries: queries, Bus: bus, TeamService: teamSvc, PersonaService: personaSvc, BrowserService: browserSvc, ScheduleService: sched, AssistantService: assistantSvc, Catalog: catalog, AllowedOrigins: allowedOrigins, AllowTicketOrigin: cfg.AuthEnabled}
@@ -1289,22 +1320,23 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		mux:            mux,
-		mgr:            mgr,
-		svc:            svc,
-		browserSvc:     browserSvc,
-		brainAuto:      brainAuto,
-		assistantSvc:   assistantSvc,
-		assistantState: assistantState,
-		scheduler:      sched,
-		updateChecker:  updateChecker,
-		updateApplier:  updateApplier,
-		updateCLIs:     updateCLIs,
-		updateSource:   updateSource,
-		usageCollector: usageCollector,
-		allowedOrigins: allowedOrigins,
-		authEnabled:    cfg.AuthEnabled,
-		csp:            spaCSP(frontendSub),
+		mux:                mux,
+		mgr:                mgr,
+		svc:                svc,
+		browserSvc:         browserSvc,
+		brainAuto:          brainAuto,
+		assistantSvc:       assistantSvc,
+		assistantHeartbeat: assistantHeartbeat,
+		assistantState:     assistantState,
+		scheduler:          sched,
+		updateChecker:      updateChecker,
+		updateApplier:      updateApplier,
+		updateCLIs:         updateCLIs,
+		updateSource:       updateSource,
+		usageCollector:     usageCollector,
+		allowedOrigins:     allowedOrigins,
+		authEnabled:        cfg.AuthEnabled,
+		csp:                spaCSP(frontendSub),
 	}
 
 	if cfg.AuthEnabled {

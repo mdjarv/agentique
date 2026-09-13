@@ -97,6 +97,10 @@ func (s *Service) lastDigestAt(ctx context.Context) string {
 // process, what broke, what is owed a decision, then outcomes, then what
 // sessions said. Reports come last of the named groups and are QUOTED, because
 // they are agent-written text about content nobody here authored.
+//
+// One kind is in no group on purpose: [JournalHeartbeat] is the assistant's own
+// bookkeeping, and a digest listing every tick that decided to do nothing is a
+// digest of itself.
 func (s *Service) composeDigest(ctx context.Context, since string, entries []JournalEntry, open []Proposal) string {
 	var b strings.Builder
 	b.WriteString("**Digest**")
@@ -254,7 +258,7 @@ func digestVerb(kind JournalKind) string {
 		return "has a paused loop"
 	case JournalReport:
 		return "reported"
-	case JournalNote, JournalDaySummary, JournalProposalMade, JournalProposalDecided:
+	case JournalNote, JournalDaySummary, JournalProposalMade, JournalProposalDecided, JournalHeartbeat:
 		// The summary is the whole entry; a verb in front of it would be the
 		// sentence twice.
 		return ""

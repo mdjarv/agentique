@@ -33,6 +33,11 @@ import (
 const (
 	senderUser    = "user"
 	senderPersona = "persona"
+	// senderSystem is the server's own voice in the conversation: today, the
+	// message the heartbeat writes to wake the head. Not `persona`, because the
+	// assistant did not say it, and not `user`, because the operator did not
+	// either — a turn nobody asked for has to be visibly nobody's.
+	senderSystem = "system"
 	// personaSenderID and personaSenderName identify the assistant in a
 	// timeline that can also carry sessions and people.
 	personaSenderID   = "assistant"
@@ -67,9 +72,11 @@ func formatMessageTime(t time.Time) string { return t.UTC().Format(messageTimeFo
 const (
 	metadataSurfaceKey = "surface"
 	metadataCallKey    = "callId"
-	// metadataKindKey marks a message that is not a turn in the conversation.
-	// Today that is one thing, the digest: it is composed rather than said, and
-	// a surface renders it as a panel rather than as somebody's reply.
+	// metadataKindKey marks a message that is not an ordinary turn in the
+	// conversation. Two things carry one: the digest, which is composed rather
+	// than said and renders as a panel, and both halves of a heartbeat turn,
+	// which render as a divider and a marked reply (docs/assistant.md, the M4
+	// contract).
 	metadataKindKey = "kind"
 )
 
@@ -78,6 +85,10 @@ const (
 const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
+	// RoleSystem is the server's own: the heartbeat's message saying what woke
+	// the assistant. A surface renders it as a divider rather than a bubble,
+	// because nobody said it.
+	RoleSystem = "system"
 )
 
 // Message is one turn of the conversation on the wire.
@@ -89,9 +100,10 @@ type Message struct {
 	Surface string `json:"surface,omitempty"`
 	// CallID is the voice call a mirrored turn came from.
 	CallID string `json:"callId,omitempty"`
-	// Kind is empty for a turn in the conversation and "digest" for a digest,
-	// which is composed rather than said. A surface that does not know a kind
-	// renders it as an ordinary message, which is what it also reads as.
+	// Kind is empty for a turn in the conversation, "digest" for a digest, which
+	// is composed rather than said, and "heartbeat" for both halves of a turn
+	// the heartbeat started. A surface that does not know a kind renders it as
+	// an ordinary message, which is what it also reads as.
 	Kind string `json:"kind,omitempty"`
 	// CreatedAt is the messages table's own stamp, which is RFC3339 with
 	// fractional seconds — that table predates the seconds rule, and it is
@@ -486,8 +498,11 @@ func messageFrom(row store.Message) Message {
 		CreatedAt: row.CreatedAt,
 		Role:      RoleUser,
 	}
-	if row.SenderType == senderPersona {
+	switch row.SenderType {
+	case senderPersona:
 		msg.Role = RoleAssistant
+	case senderSystem:
+		msg.Role = RoleSystem
 	}
 	if row.Metadata != "" {
 		var metadata map[string]string

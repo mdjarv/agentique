@@ -1,10 +1,9 @@
 /**
- * The thread's header carries two controls, and each is gated on the feature
- * behind it.
+ * The thread's header: the call on the band, everything else behind one ⋯ menu.
  *
- * Memory is the one that bites: the brain is off by default, and off means the
+ * Memory is the entry that bites: the brain is off by default, and off means the
  * server mounts no `/api/brain` routes — an unmounted `/api/` path falls
- * through to the SPA and answers 200 with HTML, so a control drawn without the
+ * through to the SPA and answers 200 with HTML, so an entry drawn without the
  * gate leads somewhere that looks alive and is not.
  */
 import "@testing-library/jest-dom/vitest";
@@ -60,35 +59,63 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+/**
+ * Opens the ⋯ menu and hands back its items.
+ *
+ * Radix opens on `pointerdown` and not on click, which is the one thing a test
+ * of a menu has to know.
+ */
+async function openMenu() {
+  fireEvent.pointerDown(
+    screen.getByLabelText("Assistant menu"),
+    new MouseEvent("pointerdown", { bubbles: true }),
+  );
+  return await screen.findByRole("menu");
+}
+
 describe("AssistantThreadHeader", () => {
-  it("links to memory when the brain is on", () => {
+  it("collapses memory, policies and digest into one menu", async () => {
     features({ brain: true, voice: true });
     render(<AssistantThreadHeader />);
-    const memory = screen.getByLabelText("Memory");
+    // The band carries the call and the trigger, and neither of the pages.
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(screen.getByLabelText(/live call/i)).toBeTruthy();
+
+    await openMenu();
+    const memory = screen.getByRole("menuitem", { name: /memory/i });
     expect(memory).toHaveAttribute("href", "/assistant/memory");
+    expect(screen.getByRole("menuitem", { name: /policies/i })).toHaveAttribute(
+      "href",
+      "/assistant/policies",
+    );
+    expect(screen.getByRole("menuitem", { name: /digest/i })).toBeTruthy();
   });
 
-  it("draws no memory control when the brain is off", () => {
+  it("draws no memory entry when the brain is off", async () => {
     features({ brain: false, voice: true });
     render(<AssistantThreadHeader />);
-    expect(screen.queryByLabelText("Memory")).toBeNull();
-    // The call is a different feature and is unaffected.
+    await openMenu();
+    expect(screen.queryByRole("menuitem", { name: /memory/i })).toBeNull();
+    // Policies is the core's own and is unaffected, as is the call.
+    expect(screen.getByRole("menuitem", { name: /policies/i })).toBeTruthy();
     expect(screen.getByLabelText(/live call/i)).toBeTruthy();
   });
 
-  it("asks for a digest, whatever else is off", () => {
+  it("asks for a digest, whatever else is off", async () => {
     features({ brain: false, voice: false });
     render(<AssistantThreadHeader />);
+    await openMenu();
     // The digest is the core's own, so it is gated on neither the brain nor
-    // voice — it is the one control that is always there.
-    fireEvent.click(screen.getByLabelText("Digest"));
+    // voice — it is the one entry that is always there.
+    fireEvent.click(screen.getByRole("menuitem", { name: /digest/i }));
     expect(digest).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps memory when voice is off", () => {
+  it("keeps the menu when voice is off", async () => {
     features({ brain: true, voice: false });
     render(<AssistantThreadHeader />);
-    expect(screen.getByLabelText("Memory")).toBeTruthy();
+    await openMenu();
+    expect(screen.getByRole("menuitem", { name: /memory/i })).toBeTruthy();
     expect(screen.queryByLabelText(/live call/i)).toBeNull();
   });
 });

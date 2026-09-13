@@ -60,6 +60,17 @@ const (
 	JournalProposalDecided JournalKind = "proposal_decided"
 	// JournalDaySummary — a day's raw rows, folded (M4).
 	JournalDaySummary JournalKind = "day_summary"
+	// JournalHeartbeat — a tick that ran triage, and what it decided. The
+	// fourteenth kind, and the only one about the assistant itself rather than
+	// about the work.
+	//
+	// It is the audit trail for autonomy: every model the heartbeat paid for has
+	// a row, with its verdict as the summary. It is deliberately absent from the
+	// digest and from the head's news — the assistant's own bookkeeping is not
+	// news to the operator and reading it back to the head is how a heartbeat
+	// starts talking to itself — and the gate's count excludes it, which is what
+	// lets the gate ever close again.
+	JournalHeartbeat JournalKind = "heartbeat"
 )
 
 // journalKinds is the closed set, in no particular order. Exported through
@@ -78,6 +89,7 @@ var journalKinds = []JournalKind{
 	JournalProposalMade,
 	JournalProposalDecided,
 	JournalDaySummary,
+	JournalHeartbeat,
 }
 
 // JournalKinds returns the closed kind set.

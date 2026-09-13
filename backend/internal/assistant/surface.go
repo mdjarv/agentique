@@ -16,6 +16,12 @@ const (
 	SurfaceThread = "thread"
 	// SurfaceVoice is a live call: a head, and blind.
 	SurfaceVoice = "voice"
+	// SurfaceHeartbeat is not a surface either — it is where a turn the
+	// heartbeat started was said. A message carries it so the thread can tell a
+	// turn nobody asked for from one the operator typed, and so the head's own
+	// news rendering does not read a heartbeat turn back to it as a
+	// conversation somebody had.
+	SurfaceHeartbeat = "heartbeat"
 	// SurfaceHead is not a surface at all — it is the core's own head reading
 	// the news it has not been told yet. It shares the seen-mark mechanism
 	// because "what has happened since I last looked" is the same question.

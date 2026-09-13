@@ -3,7 +3,9 @@ import {
   type AssistantJournalEntry,
   type AssistantMessage,
   type AssistantPage,
+  type AssistantPolicy,
   type AssistantProposal,
+  HEARTBEAT_KIND,
   isOpenProposal,
 } from "~/lib/assistant/wire";
 
@@ -27,6 +29,21 @@ import {
 export const EMPTY_MESSAGES: AssistantMessage[] = [];
 export const EMPTY_JOURNAL: AssistantJournalEntry[] = [];
 export const EMPTY_PROPOSALS: AssistantProposal[] = [];
+export const EMPTY_POLICIES: AssistantPolicy[] = [];
+
+/**
+ * Whether an entry may raise the rail row's notch.
+ *
+ * Everything does except the assistant's own `heartbeat` bookkeeping, and the
+ * server's `CountAssistantJournalUnseen` leaves the same kind out — one rule,
+ * both sides, or a notch drawn live would disagree with the count the next
+ * connection answers. A tick that woke up, looked and decided nothing is not a
+ * claim on anybody's attention; what it *did* has its own entry beside it, and
+ * every tick stays readable in the strip either way.
+ */
+function claimsAttention(entry: AssistantJournalEntry): boolean {
+  return entry.kind !== HEARTBEAT_KIND;
+}
 
 /** What identifies a journal entry when merging. */
 function journalKey(entry: AssistantJournalEntry): string {
@@ -159,6 +176,66 @@ function mergeProposals(
 }
 
 /**
+ * Policies by name, then id — the order the page is read down, and the only
+ * ordering a standing instruction has: there is no recency to a rule that is
+ * always in force, and sorting by `updatedAt` would move the row under somebody
+ * mid-edit every time they saved a neighbour.
+ */
+function policyOrder(a: AssistantPolicy, b: AssistantPolicy): number {
+  const name = (a.name ?? "").localeCompare(b.name ?? "");
+  if (name !== 0) return name;
+  return (a.id ?? "").localeCompare(b.id ?? "");
+}
+
+/**
+ * Merges policies by id, and REMOVES the ones a push marks deleted.
+ *
+ * `deleted` is a push-only field: the server sends the row it removed so every
+ * surface can drop it, where a list read never carries one. A row with no id is
+ * dropped for the reason an unidentifiable proposal is — the page would draw
+ * Save and Delete on something neither op could name.
+ */
+function mergePolicies(held: AssistantPolicy[], incoming: AssistantPolicy[]): AssistantPolicy[] {
+  if (incoming.length === 0) return held;
+  const byId = new Map<string, AssistantPolicy>();
+  for (const row of held) if (row.id) byId.set(row.id, row);
+  let changed = false;
+  for (const row of incoming) {
+    if (!row.id) continue;
+    if (row.deleted) {
+      changed = byId.delete(row.id) || changed;
+      continue;
+    }
+    const known = byId.get(row.id);
+    if (!known || JSON.stringify(known) !== JSON.stringify(row)) changed = true;
+    byId.set(row.id, row);
+  }
+  // A read that re-delivers what is already held leaves the reference alone.
+  if (!changed) return held;
+  if (byId.size === 0) return EMPTY_POLICIES;
+  return [...byId.values()].sort(policyOrder);
+}
+
+/**
+ * A whole list read REPLACES what is held, unlike a merge.
+ *
+ * A policy that has been deleted from another tab is gone from the answer and
+ * from nowhere else: with no per-row tombstone in a list, merging would keep a
+ * row the server no longer has, and every Save on it would fail.
+ */
+function replacePolicies(held: AssistantPolicy[], rows: AssistantPolicy[]): AssistantPolicy[] {
+  const next = rows.filter((row) => !!row.id && !row.deleted).sort(policyOrder);
+  if (next.length === 0) return held.length === 0 ? held : EMPTY_POLICIES;
+  if (
+    next.length === held.length &&
+    next.every((row, i) => JSON.stringify(row) === JSON.stringify(held[i]))
+  ) {
+    return held;
+  }
+  return next;
+}
+
+/**
  * The open subset, STORED rather than derived in a selector.
  *
  * `.filter()` in a selector mints a new array on every call, which is the rule
@@ -187,6 +264,12 @@ interface AssistantState {
   proposals: AssistantProposal[];
   /** The open ones, kept as their own array so a subscriber can read it. */
   openProposals: AssistantProposal[];
+  /**
+   * The standing instructions the heartbeat may act under, by name. Seeded once
+   * per connection and kept current by the `assistant.policy` push, so the
+   * policies page is right whichever tab was used to change them.
+   */
+  policies: AssistantPolicy[];
   /**
    * The head's reply so far, or null when nothing is in flight. Also the
    * composer's gate: a reply is streaming exactly when this is a string.
@@ -233,6 +316,10 @@ interface AssistantState {
   applyProposals: (rows: AssistantProposal[]) => void;
   /** One row, from the push or from the answer to a decide. Merges by id. */
   applyProposal: (row: AssistantProposal) => void;
+  /** A read of the policies: the answer is the whole set, so it replaces. */
+  setPolicies: (rows: AssistantPolicy[]) => void;
+  /** One row, from a save's answer or the push. `deleted` removes it. */
+  applyPolicy: (row: AssistantPolicy) => void;
   appendMessage: (message: AssistantMessage) => void;
   /**
    * The ask is away and the head owes an answer. Arms the gate before the
@@ -252,6 +339,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   journal: EMPTY_JOURNAL,
   proposals: EMPTY_PROPOSALS,
   openProposals: EMPTY_PROPOSALS,
+  policies: EMPTY_POLICIES,
   streaming: null,
   before: "",
   loaded: false,
@@ -302,6 +390,18 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       return { proposals, openProposals: openOf(proposals, s.openProposals) };
     }),
 
+  setPolicies: (rows) =>
+    set((s) => {
+      const policies = replacePolicies(s.policies, rows);
+      return policies === s.policies ? s : { policies };
+    }),
+
+  applyPolicy: (row) =>
+    set((s) => {
+      const policies = mergePolicies(s.policies, [row]);
+      return policies === s.policies ? s : { policies };
+    }),
+
   appendMessage: (message) =>
     set((s) => ({
       messages: mergeMessages(s.messages, [message]),
@@ -327,7 +427,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       const isNew = journal !== s.journal;
       return {
         journal,
-        unseen: isNew && !s.viewing ? s.unseen + 1 : s.unseen,
+        unseen: isNew && !s.viewing && claimsAttention(entry) ? s.unseen + 1 : s.unseen,
       };
     }),
 
@@ -339,6 +439,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       journal: EMPTY_JOURNAL,
       proposals: EMPTY_PROPOSALS,
       openProposals: EMPTY_PROPOSALS,
+      policies: EMPTY_POLICIES,
       streaming: null,
       before: "",
       loaded: false,
@@ -361,6 +462,8 @@ export const selectAssistantJournal = (s: AssistantState) => s.journal;
 export const selectAssistantProposals = (s: AssistantState) => s.proposals;
 /** The rows still waiting on somebody — the thread's cards and the deck's. */
 export const selectAssistantOpenProposals = (s: AssistantState) => s.openProposals;
+/** The standing instructions — the policies page and nothing else reads it. */
+export const selectAssistantPolicies = (s: AssistantState) => s.policies;
 export const selectAssistantStreaming = (s: AssistantState) => s.streaming;
 /** A reply is in flight exactly while the head has streamed something. */
 export const selectAssistantReplying = (s: AssistantState) => s.streaming !== null;

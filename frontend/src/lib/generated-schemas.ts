@@ -242,6 +242,7 @@ export const SessionInfoSchema = z.object({
   parentSessionId: z.string().optional(),
   pinned: z.boolean(),
   pinOrder: z.number(),
+  origin: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastQueryAt: z.string().optional(),
@@ -279,6 +280,8 @@ export const QueryOriginSchema = z.object({
   scheduleId: z.string().optional(),
   runId: z.string().optional(),
   scheduleName: z.string().optional(),
+  policyId: z.string().optional(),
+  proposalId: z.string().optional(),
 });
 
 export const HistoryTurnSchema = z.object({
@@ -928,6 +931,21 @@ export const AssistantUnseenPayloadSchema = z.object({});
 
 export const AssistantMarkSeenPayloadSchema = z.object({});
 
+export const AssistantPoliciesPayloadSchema = z.object({});
+
+export const AssistantPolicySavePayloadSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  text: z.string().optional(),
+  enabled: z.boolean().optional(),
+  budgetInFlight: z.number().optional(),
+  budgetPerDay: z.number().optional(),
+});
+
+export const AssistantPolicyDeletePayloadSchema = z.object({
+  id: z.string().optional(),
+});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -1220,6 +1238,23 @@ export const AssistantProposalsResultSchema = z.object({
   proposals: z.array(AssistantProposalSchema).optional(),
 });
 
+export const AssistantPolicySchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  text: z.string().optional(),
+  enabled: z.boolean().optional(),
+  budgetInFlight: z.number().optional(),
+  budgetPerDay: z.number().optional(),
+  lastFiredAt: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  deleted: z.boolean().optional(),
+});
+
+export const AssistantPoliciesResultSchema = z.object({
+  policies: z.array(AssistantPolicySchema).optional(),
+});
+
 export const ScheduleInfoSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -1321,6 +1356,7 @@ export const pushSchemaMap = {
   "assistant.delta": AssistantDeltaSchema,
   "assistant.journal": AssistantJournalEntrySchema,
   "assistant.proposal": AssistantProposalSchema,
+  "assistant.policy": AssistantPolicySchema,
   "schedule.updated": ScheduleInfoSchema,
   "schedule.deleted": ScheduleInfoSchema,
   "schedule.run": ScheduleRunInfoSchema,

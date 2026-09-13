@@ -334,6 +334,19 @@ func TestLookClearsTheUnseenCount(t *testing.T) {
 	if v, _ := svc.UnseenCount(ctx, SurfaceVoice); v != 2 {
 		t.Errorf("voice unseen = %d, want 2: a look is per surface", v)
 	}
+	// The heartbeat's own row is in the journal and is not in the notch, on the
+	// same rule the digest and the head's news follow: what a tick decided is
+	// bookkeeping, and a tick every fifteen minutes would make that notch
+	// permanent, which is a badge nobody reads.
+	if _, err := svc.appendJournal(ctx, journalWrite{Kind: JournalHeartbeat, Summary: "none"}); err != nil {
+		t.Fatalf("appendJournal(heartbeat) = %v", err)
+	}
+	if n, _ := svc.UnseenCount(ctx, SurfaceThread); n != 0 {
+		t.Errorf("unseen = %d after a heartbeat tick, want 0: a tick is not news", n)
+	}
+	if rows, err := svc.Journal(ctx, "", 10); err != nil || len(rows) != 3 {
+		t.Errorf("the journal holds %d rows (err %v), want the heartbeat row kept", len(rows), err)
+	}
 	// Surfaces are an open set (a gateway adds one without a migration) and
 	// the guard is the name pattern, because the name is interpolated into a
 	// JSON path: a dot or a quote would address a different key.

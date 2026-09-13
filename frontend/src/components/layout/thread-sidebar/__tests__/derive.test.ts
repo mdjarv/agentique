@@ -5,6 +5,7 @@ import {
   deriveBadge,
   deriveLivePhrase,
   deriveWorkKind,
+  isAssistantOrigin,
   isAwake,
   isAway,
   isHued,
@@ -207,6 +208,18 @@ describe("isHued", () => {
   });
 });
 
+describe("isAssistantOrigin", () => {
+  it("is true only for the assistant's own origin", () => {
+    expect(isAssistantOrigin("assistant")).toBe(true);
+    // A person's session, and a peer that does not speak the field, say the
+    // same thing here: nothing to report.
+    expect(isAssistantOrigin("")).toBe(false);
+    expect(isAssistantOrigin(undefined)).toBe(false);
+    // An origin a later release invents is not the assistant's either.
+    expect(isAssistantOrigin("schedule")).toBe(false);
+  });
+});
+
 function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
   return {
     sessionId: "s-1",
@@ -218,6 +231,7 @@ function makeRow(overrides: Partial<ThreadRowVM> = {}): ThreadRowVM {
     projectLabel: "proj",
     projectInitials: "PR",
     workspace: "linked",
+    originAssistant: false,
     parked: false,
     projectColorBg: "#5e9eff",
     projectColorFg: "#5e9eff",

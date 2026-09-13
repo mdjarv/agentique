@@ -2,15 +2,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type {
   AssistantJournalEntry,
   AssistantMessage,
+  AssistantPolicy,
   AssistantProposal,
 } from "~/lib/assistant/wire";
 import {
   EMPTY_JOURNAL,
   EMPTY_MESSAGES,
+  EMPTY_POLICIES,
   EMPTY_PROPOSALS,
   selectAssistantJournal,
   selectAssistantMessages,
   selectAssistantOpenProposals,
+  selectAssistantPolicies,
   selectAssistantProposals,
   selectAssistantReplying,
   useAssistantStore,
@@ -181,6 +184,18 @@ describe("assistant-store", () => {
       store.addJournalEntry(entry({ id: 1, at: "2026-01-01T00:00:00Z" }));
       expect(useAssistantStore.getState().journal.map((e) => e.id)).toEqual([1, 2]);
     });
+
+    it("raises the notch for news and never for the heartbeat's own row", () => {
+      const store = useAssistantStore.getState();
+      store.addJournalEntry(entry({ id: 1 }));
+      expect(useAssistantStore.getState().unseen).toBe(1);
+      // The assistant's own bookkeeping is readable in the strip and is not a
+      // claim on attention — the server's count leaves the same kind out, so a
+      // notch drawn here would disagree with the next connection's.
+      store.addJournalEntry(entry({ id: 2, kind: "heartbeat", summary: "none" }));
+      expect(useAssistantStore.getState().journal).toHaveLength(2);
+      expect(useAssistantStore.getState().unseen).toBe(1);
+    });
   });
 
   describe("history", () => {
@@ -303,5 +318,74 @@ describe("assistant-store", () => {
       expect(useAssistantStore.getState().proposals).toBe(EMPTY_PROPOSALS);
       expect(useAssistantStore.getState().openProposals).toBe(EMPTY_PROPOSALS);
     });
+  });
+});
+
+describe("assistant store — policies", () => {
+  const policy = (over: Partial<AssistantPolicy> = {}): AssistantPolicy => ({
+    id: "pol-1",
+    name: "keep the tests green",
+    text: "When a session's tests go red, start one to fix them.",
+    enabled: true,
+    budgetInFlight: 1,
+    budgetPerDay: 3,
+    ...over,
+  });
+
+  beforeEach(() => {
+    useAssistantStore.getState().reset();
+  });
+
+  it("merges a saved row by id and keeps the list in name order", () => {
+    const store = useAssistantStore.getState();
+    store.setPolicies([policy({ id: "b", name: "beta" }), policy({ id: "a", name: "alpha" })]);
+    expect(selectAssistantPolicies(useAssistantStore.getState()).map((p) => p.id)).toEqual([
+      "a",
+      "b",
+    ]);
+
+    store.applyPolicy(policy({ id: "b", name: "beta", enabled: false }));
+    const held = selectAssistantPolicies(useAssistantStore.getState());
+    expect(held).toHaveLength(2);
+    expect(held.find((p) => p.id === "b")?.enabled).toBe(false);
+  });
+
+  it("removes a row the push marks deleted", () => {
+    const store = useAssistantStore.getState();
+    store.setPolicies([policy(), policy({ id: "pol-2", name: "zeta" })]);
+    store.applyPolicy({ id: "pol-1", deleted: true });
+    expect(selectAssistantPolicies(useAssistantStore.getState()).map((p) => p.id)).toEqual([
+      "pol-2",
+    ]);
+  });
+
+  it("drops a row with no id rather than drawing controls nothing can name", () => {
+    useAssistantStore.getState().applyPolicy({ name: "nameless" });
+    expect(selectAssistantPolicies(useAssistantStore.getState())).toBe(EMPTY_POLICIES);
+  });
+
+  it("lets a list read drop a row deleted in another tab", () => {
+    const store = useAssistantStore.getState();
+    store.setPolicies([policy(), policy({ id: "pol-2", name: "zeta" })]);
+    store.setPolicies([policy()]);
+    expect(selectAssistantPolicies(useAssistantStore.getState()).map((p) => p.id)).toEqual([
+      "pol-1",
+    ]);
+  });
+
+  it("keeps the reference when a read or a push brings nothing new", () => {
+    expect(selectAssistantPolicies(useAssistantStore.getState())).toBe(EMPTY_POLICIES);
+    useAssistantStore.getState().setPolicies([policy()]);
+    const held = selectAssistantPolicies(useAssistantStore.getState());
+    useAssistantStore.getState().setPolicies([policy()]);
+    expect(selectAssistantPolicies(useAssistantStore.getState())).toBe(held);
+    useAssistantStore.getState().applyPolicy(policy());
+    expect(selectAssistantPolicies(useAssistantStore.getState())).toBe(held);
+  });
+
+  it("is cleared by a reset", () => {
+    useAssistantStore.getState().setPolicies([policy()]);
+    useAssistantStore.getState().reset();
+    expect(useAssistantStore.getState().policies).toBe(EMPTY_POLICIES);
   });
 });

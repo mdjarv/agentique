@@ -160,6 +160,57 @@ func (c *conn) handleAssistantDigest(msg ClientMessage) {
 	})
 }
 
+// handleAssistantPolicies lists the standing instructions, enabled or not.
+//
+// A pure read on the read lane: the policies page renders from it, and the
+// heartbeat reads the same rows for itself rather than through a client.
+func (c *conn) handleAssistantPolicies(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, _ AssistantPoliciesPayload) (AssistantPoliciesResult, error) {
+		if c.assistantSvc == nil {
+			return AssistantPoliciesResult{}, errAssistantDisabled
+		}
+		policies, err := c.assistantSvc.Policies(ctx)
+		if err != nil {
+			return AssistantPoliciesResult{}, err
+		}
+		return AssistantPoliciesResult{Policies: policies}, nil
+	})
+}
+
+// handleAssistantPolicySave writes one, new or edited.
+//
+// On the serial MUTATION lane, and not because it is slow: two saves of the same
+// policy have to land in the order they were sent, or the row ends up holding
+// the older edit. It answers the stored row, so the form renders what was
+// written rather than what it sent — the id of a new one, and the budgets the
+// server defaulted.
+func (c *conn) handleAssistantPolicySave(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p AssistantPolicySavePayload) (assistant.Policy, error) {
+		if c.assistantSvc == nil {
+			return assistant.Policy{}, errAssistantDisabled
+		}
+		return c.assistantSvc.SavePolicy(ctx, assistant.Policy{
+			ID:             p.ID,
+			Name:           p.Name,
+			Text:           p.Text,
+			Enabled:        p.Enabled,
+			BudgetInFlight: p.BudgetInFlight,
+			BudgetPerDay:   p.BudgetPerDay,
+		})
+	})
+}
+
+// handleAssistantPolicyDelete removes one. Also a mutation, and idempotent:
+// deleting one that is already gone is the state the caller asked for.
+func (c *conn) handleAssistantPolicyDelete(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p AssistantPolicyDeletePayload) (struct{}, error) {
+		if c.assistantSvc == nil {
+			return struct{}{}, errAssistantDisabled
+		}
+		return struct{}{}, c.assistantSvc.DeletePolicy(ctx, p.ID)
+	})
+}
+
 // AssistantJournalResult wraps the entries rather than answering a bare array.
 //
 // An object is the shape every other list op answers with, and it is the one a

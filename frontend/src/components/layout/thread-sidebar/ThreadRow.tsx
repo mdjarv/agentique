@@ -209,7 +209,17 @@ function rowAriaLabel(vm: ThreadRowVM): string {
   // difference between a CLI we reclaimed ("evicted") and a machine we cannot
   // see ("away"). Every other badge names something happening right now.
   const spoken = vm.badge && vm.badge !== "off" ? BADGE_ARIA[vm.badge] : vm.restToken;
-  return [name, spoken || "at rest", vm.projectLabel, vm.timeLabel].filter(Boolean).join(", ");
+  return [
+    name,
+    spoken || "at rest",
+    vm.projectLabel,
+    // Where the work came from, in words, because the mark that says it on
+    // screen is two characters and a lowercase word in the row's faintest ink.
+    vm.originAssistant ? "started by the assistant" : "",
+    vm.timeLabel,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
@@ -238,6 +248,22 @@ function RestMark({ token }: { token: Exclude<RestToken, ""> }) {
       ·<Glyph className="size-2.5 shrink-0" />
       {token}
     </span>
+  );
+}
+
+/**
+ * Who started this session, on the state line: "· assistant".
+ *
+ * Words and not a glyph, in the same faint mono the rest tokens use, because
+ * this is the one fact about a row that nothing else can hint at — the name, the
+ * project, the state and the hue all read identically whether a person or the
+ * assistant opened it. It takes the state line's tail rather than the repo
+ * line's, which is already the busiest line on the row and where the marks that
+ * change (rest, crew, clock) live; origin never changes.
+ */
+function OriginMark() {
+  return (
+    <span className="shrink-0 font-mono text-[10px] text-muted-foreground-faint">· assistant</span>
   );
 }
 
@@ -438,6 +464,9 @@ export const ThreadRow = memo(function ThreadRow({
 
   const awake = vm.awake;
   const showTodo = vm.todo && vm.todo.total > 0;
+  // The state line's own content, when there is any. Kept apart from whether the
+  // line is DRAWN, because origin can hold the line open on its own.
+  const statePhrase = awake ? vm.livePhrase : undefined;
 
   return (
     <WorkerBranch vm={vm}>
@@ -504,18 +533,29 @@ export const ThreadRow = memo(function ThreadRow({
           </span>
 
           {/* State line — awake rows only: glyph names the state, words carry
-            the specifics. */}
-          {awake && vm.livePhrase && (
-            <span className={cn("mt-px flex items-center gap-1.5", TONE_CLASS[vm.livePhrase.tone])}>
-              {stateGlyph(vm.badge, vm.workKind)}
-              <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
-                {vm.livePhrase.text}
-              </span>
-              {showTodo && vm.todo && !selected && (
+            the specifics. A session the assistant started keeps this line even
+            at rest, carrying nothing but that: a row whose origin only showed
+            while it was running would hide it at exactly the moment somebody
+            wonders where the session came from. */}
+          {(statePhrase || vm.originAssistant) && (
+            <span
+              className={cn(
+                "mt-px flex items-center gap-1.5",
+                statePhrase ? TONE_CLASS[statePhrase.tone] : "text-muted-foreground-faint",
+              )}
+            >
+              {statePhrase && stateGlyph(vm.badge, vm.workKind)}
+              {statePhrase && (
+                <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[1.4]">
+                  {statePhrase.text}
+                </span>
+              )}
+              {statePhrase && showTodo && vm.todo && !selected && (
                 <span className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-muted-foreground">
                   {vm.todo.done}/{vm.todo.total}
                 </span>
               )}
+              {vm.originAssistant && <OriginMark />}
             </span>
           )}
 

@@ -507,6 +507,26 @@ exclude-dynamic-system-prompt-sections = false  # move cwd/env/git-status out of
                                # the system prompt so the cached prefix is shared
                                # between sessions instead of diverging per worktree.
 
+[assistant]
+# How the assistant paces itself (docs/assistant.md). Inert without
+# [experimental] assistant — that switch is what builds it at all, and a config
+# carrying these with it off says so at startup. Nothing here refuses to boot: a
+# value that cannot be read is a warning and the default.
+#
+# How often it wakes to see whether anything needs doing. "" is the default
+# (15m) and "0" turns the heartbeat off. It can afford to be short because the
+# common tick is a row count: if nothing has happened since the last beat and no
+# digest is due, no model runs at all. The floor is 1m.
+heartbeat-interval = "15m"
+# A LOCAL wall-clock time at which the daily digest posts itself into the
+# conversation. "" disables that clock; the Digest control and the assistant's
+# own digest verb work either way.
+digest-at = ""
+# The model family the heartbeat's triage step runs — a family name, never a
+# version or an id. "" is the Haiku family, which is what it should be: triage
+# answers one line, and only `act` wakes the head on the service's own model.
+triage-model = ""
+
 [brain]
 # The master switch, and it is OFF by default: nothing below applies until you
 # turn it on. Off means the subsystem is never built — no /api/brain routes, no
@@ -627,6 +647,7 @@ equivalent above.
 | `AGENTIQUE_CLAUDE_*` | `_AUTOCOMPACT`, `_FORWARD_SUBAGENT_TEXT`, `_EXCLUDE_DYNAMIC_SYSTEM_PROMPT_SECTIONS`. |
 | `AGENTIQUE_UPDATE_*` | `_DISABLED`, `_INTERVAL`, `_API_URL`, `_ARM_DEADLINE`. `_DISABLED` also silences provider-CLI version detection. |
 | `AGENTIQUE_BRAIN_*` | One per `[brain]` key, plus `AGENTIQUE_BRAIN_GRAPH_*` for `[brain.graph]`. One name does not follow the pattern: `archive-confidence-floor` is `AGENTIQUE_BRAIN_ARCHIVE_FLOOR`. |
+| `AGENTIQUE_ASSISTANT_*` | One per `[assistant]` key: `_HEARTBEAT` (for `heartbeat-interval`), `_DIGEST_AT`, `_TRIAGE_MODEL`. |
 
 Every environment variable above wins over the config file and loses to an
 explicitly-passed flag.

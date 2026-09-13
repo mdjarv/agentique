@@ -13,6 +13,7 @@ function row(sessionId: string, overrides: Partial<ThreadRowVM> = {}): ThreadRow
     projectLabel: "proj",
     projectInitials: "PR",
     workspace: "linked",
+    originAssistant: false,
     projectColorBg: "#73daca",
     projectColorFg: "#73daca",
     badge: null,

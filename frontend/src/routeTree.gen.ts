@@ -20,6 +20,7 @@ import { Route as StorageRouteImport } from "./routes/storage";
 import { Route as TeamsRouteImport } from "./routes/teams";
 import { Route as TemplatesRouteImport } from "./routes/templates";
 import { Route as AssistantMemoryRouteImport } from "./routes/assistant_.memory";
+import { Route as AssistantPoliciesRouteImport } from "./routes/assistant_.policies";
 import { Route as DevAgentsRouteImport } from "./routes/dev.agents";
 import { Route as DevBubblesRouteImport } from "./routes/dev.bubbles";
 import { Route as DevContextBarRouteImport } from "./routes/dev.context-bar";
@@ -100,6 +101,11 @@ const TemplatesRoute = TemplatesRouteImport.update({
 const AssistantMemoryRoute = AssistantMemoryRouteImport.update({
   id: "/assistant_/memory",
   path: "/assistant/memory",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AssistantPoliciesRoute = AssistantPoliciesRouteImport.update({
+  id: "/assistant_/policies",
+  path: "/assistant/policies",
   getParentRoute: () => rootRouteImport,
 } as any);
 const DevAgentsRoute = DevAgentsRouteImport.update({
@@ -249,6 +255,7 @@ export interface FileRoutesByFullPath {
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/assistant/memory": typeof AssistantMemoryRoute;
+  "/assistant/policies": typeof AssistantPoliciesRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -287,6 +294,7 @@ export interface FileRoutesByTo {
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/assistant/memory": typeof AssistantMemoryRoute;
+  "/assistant/policies": typeof AssistantPoliciesRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -326,6 +334,7 @@ export interface FileRoutesById {
   "/teams": typeof TeamsRoute;
   "/templates": typeof TemplatesRoute;
   "/assistant_/memory": typeof AssistantMemoryRoute;
+  "/assistant_/policies": typeof AssistantPoliciesRoute;
   "/dev/agents": typeof DevAgentsRoute;
   "/dev/bubbles": typeof DevBubblesRoute;
   "/dev/context-bar": typeof DevContextBarRoute;
@@ -367,6 +376,7 @@ export interface FileRouteTypes {
     | "/teams"
     | "/templates"
     | "/assistant/memory"
+    | "/assistant/policies"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -405,6 +415,7 @@ export interface FileRouteTypes {
     | "/teams"
     | "/templates"
     | "/assistant/memory"
+    | "/assistant/policies"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -443,6 +454,7 @@ export interface FileRouteTypes {
     | "/teams"
     | "/templates"
     | "/assistant_/memory"
+    | "/assistant_/policies"
     | "/dev/agents"
     | "/dev/bubbles"
     | "/dev/context-bar"
@@ -483,6 +495,7 @@ export interface RootRouteChildren {
   TeamsRoute: typeof TeamsRoute;
   TemplatesRoute: typeof TemplatesRoute;
   AssistantMemoryRoute: typeof AssistantMemoryRoute;
+  AssistantPoliciesRoute: typeof AssistantPoliciesRoute;
   DevAgentsRoute: typeof DevAgentsRoute;
   DevBubblesRoute: typeof DevBubblesRoute;
   DevContextBarRoute: typeof DevContextBarRoute;
@@ -575,6 +588,13 @@ declare module "@tanstack/react-router" {
       path: "/assistant/memory";
       fullPath: "/assistant/memory";
       preLoaderRoute: typeof AssistantMemoryRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/assistant_/policies": {
+      id: "/assistant_/policies";
+      path: "/assistant/policies";
+      fullPath: "/assistant/policies";
+      preLoaderRoute: typeof AssistantPoliciesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/dev/agents": {
@@ -821,6 +841,7 @@ const rootRouteChildren: RootRouteChildren = {
   TeamsRoute: TeamsRoute,
   TemplatesRoute: TemplatesRoute,
   AssistantMemoryRoute: AssistantMemoryRoute,
+  AssistantPoliciesRoute: AssistantPoliciesRoute,
   DevAgentsRoute: DevAgentsRoute,
   DevBubblesRoute: DevBubblesRoute,
   DevContextBarRoute: DevContextBarRoute,

@@ -36,6 +36,28 @@ type Store interface {
 	SetAssistantChannel(ctx context.Context, arg store.SetAssistantChannelParams) error
 	SetAssistantSurfaceMark(ctx context.Context, arg store.SetAssistantSurfaceMarkParams) error
 	SetAssistantDigestAt(ctx context.Context, arg store.SetAssistantDigestAtParams) error
+	SetAssistantHeartbeatAt(ctx context.Context, arg store.SetAssistantHeartbeatAtParams) error
+
+	// Standing instructions, and the heartbeat's gate. The gate is a COUNT
+	// rather than a list on purpose: the common tick asks "has anything
+	// happened" and nothing else, which is what makes a short interval
+	// affordable.
+	ListAssistantPolicies(ctx context.Context) ([]store.AssistantPolicy, error)
+	UpsertAssistantPolicy(ctx context.Context, arg store.UpsertAssistantPolicyParams) (store.AssistantPolicy, error)
+	DeleteAssistantPolicy(ctx context.Context, id string) error
+	TouchAssistantPolicy(ctx context.Context, arg store.TouchAssistantPolicyParams) error
+	CountAssistantJournalSince(ctx context.Context, since string) (int64, error)
+
+	// The three reads behind a policy's budgets, and every one of them is a
+	// COUNT: what the journal says this policy has created today, how many of
+	// what it created is still unfinished, and — as the backstop a lost journal
+	// write cannot widen — how many sessions the assistant has created at all
+	// today. The per-policy attribution is the journal's, because only the
+	// journal records which instruction an action was taken under; counting in
+	// SQL is what keeps a budget check O(1) in a journal nothing prunes.
+	CountPolicySessionsCreatedSince(ctx context.Context, arg store.CountPolicySessionsCreatedSinceParams) (int64, error)
+	CountLiveSessionsForPolicy(ctx context.Context, arg store.CountLiveSessionsForPolicyParams) (int64, error)
+	CountSessionsByOriginSince(ctx context.Context, arg store.CountSessionsByOriginSinceParams) (int64, error)
 
 	// The journal: append-only, plus the one update that stamps seen_by --
 	// through a boundary rather than row by row, so a look means "caught up to

@@ -1,6 +1,10 @@
 package ws
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/mdjarv/agentique/backend/internal/assistant"
+)
 
 // --- Assistant payloads (docs/assistant.md) ---
 //
@@ -84,12 +88,53 @@ type AssistantDecidePayload struct {
 // is the server's mark, not a range a client picks.
 type AssistantDigestPayload struct{}
 
+// AssistantPoliciesPayload asks for the standing instructions. It carries
+// nothing: they are one short list and there is nothing to page or filter.
+type AssistantPoliciesPayload struct{}
+
+// AssistantPolicySavePayload is one standing instruction, whole.
+//
+// The whole row rather than a patch, because the client is one form with a Save
+// button: a field-by-field update would need a way to say "leave this alone",
+// which is a shape nothing here asks for. An empty ID creates one.
+//
+// The budgets are optional and zero means "the server's default", never "none
+// allowed" — a client that omits a field must not silently write a policy that
+// can do nothing.
+type AssistantPolicySavePayload struct {
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Text           string `json:"text,omitempty"`
+	Enabled        bool   `json:"enabled,omitempty"`
+	BudgetInFlight int    `json:"budgetInFlight,omitempty"`
+	BudgetPerDay   int    `json:"budgetPerDay,omitempty"`
+}
+
+// AssistantPolicyDeletePayload removes one standing instruction.
+type AssistantPolicyDeletePayload struct {
+	ID string `json:"id,omitempty"`
+}
+
+// AssistantPoliciesResult wraps the list rather than answering a bare array, on
+// the same argument as every other list op here: an object can grow a field
+// without a wire transition and a top-level array cannot grow at all.
+type AssistantPoliciesResult struct {
+	Policies []assistant.Policy `json:"policies,omitempty"`
+}
+
 // --- Assistant validation ---
 
 var (
 	errAssistantTextRequired = errors.New("text is required")
 	// errAssistantProposalRequired is what a decide with no id answers.
 	errAssistantProposalRequired = errors.New("id is required")
+	// errAssistantPolicyNameRequired is what a save with no name answers. The
+	// core refuses it too — this is the cheap round trip, mirrored the way
+	// lib/composer-constants.ts mirrors the attachment cap: refusing here what
+	// the core would refuse anyway costs nothing and answers sooner.
+	errAssistantPolicyNameRequired = errors.New("name is required")
+	// errAssistantPolicyIDRequired is what a delete with no id answers.
+	errAssistantPolicyIDRequired = errors.New("id is required")
 	// errAssistantDisabled is what every assistant op answers when the feature
 	// is off.
 	//
@@ -105,6 +150,20 @@ var (
 func (p *AssistantDecidePayload) Validate() error {
 	if trimSpace(p.ID) == "" {
 		return errAssistantProposalRequired
+	}
+	return nil
+}
+
+func (p *AssistantPolicySavePayload) Validate() error {
+	if trimSpace(p.Name) == "" {
+		return errAssistantPolicyNameRequired
+	}
+	return nil
+}
+
+func (p *AssistantPolicyDeletePayload) Validate() error {
+	if trimSpace(p.ID) == "" {
+		return errAssistantPolicyIDRequired
 	}
 	return nil
 }

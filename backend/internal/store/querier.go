@@ -26,10 +26,56 @@ type Querier interface {
 	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
 	ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
+	// The heartbeat's gate: has anything happened since the last beat.
+	//
+	// The assistant's OWN heartbeat entries are excluded, and that exclusion is
+	// what makes the gate able to close: a tick journals its verdict and stamps
+	// the mark in the same second, so counting its own row would leave every
+	// later tick with one entry to triage and a Haiku call to pay for it. The
+	// lower boundary is inclusive, as the digest's is, on the same reasoning --
+	// triaging one entry twice costs a tick, dropping one loses news.
+	CountAssistantJournalSince(ctx context.Context, since string) (int64, error)
 	// How many entries this surface has never been shown. The rail's notch reads
 	// it once per connection; the journal pushes keep it current after that.
+	//
+	// Same exclusion, and here it is the load-bearing one: a badge is a claim on
+	// attention, so a heartbeat that ticks every fifteen minutes would put a
+	// permanent notch on the assistant's row and teach the operator to ignore it.
 	CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error)
+	// A policy's in-flight budget: how many of the sessions it created are still
+	// unfinished. One count rather than a list intersected in Go, for the reason
+	// CountPolicySessionsCreatedSince gives.
+	//
+	// "Unfinished" is 'not archived, not finished', which is the contract's own
+	// wording -- and deliberately NOT the repo's 'active' triple beside this, which
+	// also excludes 'stopped'. A stopped session is PARKED (CLAUDE.md): idle
+	// eviction and a restart's reap both leave that state, the work is still there,
+	// and the next message resumes it. Counting one as finished would hand a policy
+	// its slot back after every server restart while the worktree and the branch it
+	// was working on were still open. Filing it away (archiving) is what releases
+	// the slot, because that is a person saying they are done with it.
+	CountLiveSessionsForPolicy(ctx context.Context, arg CountLiveSessionsForPolicyParams) (int64, error)
+	// A policy's day budget: how many sessions this standing instruction has
+	// created since a stamp.
+	//
+	// Counted in SQL rather than by paging the journal into Go, and that is the
+	// point rather than an optimisation. The page was 2000 rows over a fourteen-day
+	// window and FAILED CLOSED when it filled, so a machine busy enough to journal
+	// 143 entries a day would have refused every budgeted verb from then on, with
+	// one log line to explain it -- and the day-summary compaction that would have
+	// bounded the window is not built. A count has no page to fill.
+	//
+	// The payload path is '$.policyId', which is `payloadPolicyID` in
+	// internal/assistant: the key is spelled in both places, so a rename is two
+	// edits or a budget that counts nothing.
+	CountPolicySessionsCreatedSince(ctx context.Context, arg CountPolicySessionsCreatedSinceParams) (int64, error)
 	CountSessionIntroductionsInChannel(ctx context.Context, arg CountSessionIntroductionsInChannelParams) (int64, error)
+	// How many sessions of one origin were created since a stamp. The day cap's
+	// backstop: the per-policy count comes from the journal, which names the
+	// policy, and this is the total the assistant may have created in the window
+	// whatever the journal says -- a journal write is logged rather than fatal, so
+	// a lost entry must not be able to widen a budget.
+	CountSessionsByOriginSince(ctx context.Context, arg CountSessionsByOriginSinceParams) (int64, error)
 	CountTurnsBySession(ctx context.Context, sessionID string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CountWebAuthnCredentials(ctx context.Context) (int64, error)
@@ -62,6 +108,7 @@ type Querier interface {
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
 	DeleteAssistantFollow(ctx context.Context, sessionID string) error
+	DeleteAssistantPolicy(ctx context.Context, id string) error
 	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
 	DeleteBearerAuthSessionByIDAndUser(ctx context.Context, arg DeleteBearerAuthSessionByIDAndUserParams) (int64, error)
@@ -88,6 +135,7 @@ type Querier interface {
 	// one was ever created, the first is the one the history is in.
 	GetAssistantChannel(ctx context.Context) (Channel, error)
 	GetAssistantFollow(ctx context.Context, sessionID string) (AssistantFollow, error)
+	GetAssistantPolicy(ctx context.Context, id string) (AssistantPolicy, error)
 	GetAssistantProposal(ctx context.Context, id string) (AssistantProposal, error)
 	// The assistant's state, journal, follow list and conversation channel.
 	// See docs/assistant.md and migration 056.
@@ -147,6 +195,11 @@ type Querier interface {
 	ListAllSessions(ctx context.Context) ([]Session, error)
 	ListAssistantFollows(ctx context.Context) ([]AssistantFollow, error)
 	ListAssistantJournalSince(ctx context.Context, arg ListAssistantJournalSinceParams) ([]AssistantJournal, error)
+	// What a surface has missed. 'heartbeat' rows are left out, for the same reason
+	// the digest and the head's news leave them out: a tick that woke up, looked and
+	// decided nothing is the assistant's own bookkeeping, and what it DID has its
+	// own entry beside it. They stay in ListAssistantJournalSince, which is the
+	// journal page and the audit trail for every model the heartbeat paid for.
 	ListAssistantJournalUnseen(ctx context.Context, arg ListAssistantJournalUnseenParams) ([]AssistantJournal, error)
 	// One page of the conversation, newest first. An empty `before` starts at the
 	// newest message; otherwise it is a created_at cursor.
@@ -159,6 +212,11 @@ type Querier interface {
 	// What has been said in the conversation since a surface last looked, oldest
 	// first: this is read to be pasted into a preamble or a strip, in order.
 	ListAssistantMessagesSince(ctx context.Context, arg ListAssistantMessagesSinceParams) ([]Message, error)
+	// Standing instructions and the heartbeat's mark (docs/assistant.md, the M4
+	// contract, and migration 059).
+	// Name order, so the list a person reads and the list the heartbeat reads are
+	// in the same order. The id breaks a tie between two policies named the same.
+	ListAssistantPolicies(ctx context.Context) ([]AssistantPolicy, error)
 	// Open first, then whatever was decided, newest first within each half. A
 	// surface renders the open ones as cards and the rest as history, and one read
 	// answers both.
@@ -241,6 +299,9 @@ type Querier interface {
 	// finished. Written only by Digest.
 	SetAssistantDigestAt(ctx context.Context, arg SetAssistantDigestAtParams) error
 	SetAssistantFollowBriefed(ctx context.Context, arg SetAssistantFollowBriefedParams) error
+	// The heartbeat's mark: when the last tick measured from. Stamped by every
+	// tick, including the ones that ran no model at all.
+	SetAssistantHeartbeatAt(ctx context.Context, arg SetAssistantHeartbeatAtParams) error
 	SetAssistantModel(ctx context.Context, arg SetAssistantModelParams) error
 	// Records that a surface has looked. json_set on the existing object rather
 	// than a rewrite, so two surfaces cannot overwrite each other's mark.
@@ -276,6 +337,14 @@ type Querier interface {
 	// ("2006-01-02T15:04:05Z") like every other timestamp here, since SQLite
 	// compares TEXT lexicographically.
 	SetSessionEvictedAt(ctx context.Context, arg SetSessionEvictedAtParams) error
+	// Where a session came from (docs/assistant.md, the M4 contract, and migration
+	// 059). '' is a person's, 'assistant' is the assistant's own.
+	// The one writer, called from INSIDE CreateSession (from CreateSessionParams.
+	// Origin) before the session.created push is built, so a client never draws an
+	// assistant's session as a person's and correct it on the next list. Every
+	// other creation path leaves the parameter at its zero value, which is '' --
+	// a person asked.
+	SetSessionOrigin(ctx context.Context, arg SetSessionOriginParams) error
 	// Stamps "this finished while nobody was reading it". The timestamp is a
 	// parameter rather than strftime('now') because the caller is the turn-end
 	// seam, which already knows when the turn completed; it must be UTC RFC3339
@@ -290,6 +359,10 @@ type Querier interface {
 	// rather than only the one that writes JSONL.
 	// 'now' is local (no 'utc' modifier) so "today" means the operator's day.
 	TodaySpendByProvider(ctx context.Context) ([]TodaySpendByProviderRow, error)
+	// When the heartbeat last acted under this policy. Bookkeeping the operator
+	// reads, never a budget: what a budget counts is journal entries, which an
+	// edit cannot rewrite.
+	TouchAssistantPolicy(ctx context.Context, arg TouchAssistantPolicyParams) error
 	UnsetSessionArchived(ctx context.Context, id string) error
 	UnsetWorktreeMerged(ctx context.Context, id string) error
 	UpdateAgentProfile(ctx context.Context, arg UpdateAgentProfileParams) (AgentProfile, error)
@@ -329,6 +402,11 @@ type Querier interface {
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
 	UpsertAssistantFollow(ctx context.Context, arg UpsertAssistantFollowParams) error
+	// One statement for a new policy and an edit, because the client sends the
+	// whole row either way: a policy is one form with a Save button, and a
+	// partial update would need a field-by-field patch nobody asked for.
+	// created_at is left alone on an edit, so a row keeps the day it was written.
+	UpsertAssistantPolicy(ctx context.Context, arg UpsertAssistantPolicyParams) (AssistantPolicy, error)
 	// platform_os keeps its stored value when the caller sends empty: a client
 	// that predates the field re-upserts rows on re-pair, and blanking a known
 	// platform would strip the glyph until the next fresh pair.

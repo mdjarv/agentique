@@ -11,6 +11,9 @@
  * head's reply arrives as `assistant.delta` pushes and then one
  * `assistant.message`, because a blocking say would hold this connection's
  * whole mutation lane for the length of a turn.
+ *
+ * M4 adds the policies: `assistant.policies` is a read on the concurrent lane,
+ * `assistant.policy-save` and `assistant.policy-delete` are mutations.
  */
 
 import {
@@ -21,6 +24,9 @@ import {
   AssistantMessageSchema,
   type AssistantPage,
   AssistantPageSchema,
+  AssistantPoliciesResultSchema,
+  type AssistantPolicy,
+  AssistantPolicySchema,
   type AssistantProposal,
   AssistantProposalSchema,
   AssistantProposalsResultSchema,
@@ -50,6 +56,71 @@ const decideRpc = define<unknown, { id: string; accept: boolean }>("assistant.de
 // A digest reads a brief for every session it names, which is several hundred
 // queries on a busy machine: a single-generation budget, not a status poll's.
 const digestRpc = define<unknown, Record<string, never>>("assistant.digest", MEDIUM);
+// The standing instructions. The read is one short table on the concurrent
+// lane; the two writes are upserts on the mutation lane, because a save and the
+// push it broadcasts must not overtake each other.
+const policiesRpc = define<unknown, Record<string, never>>("assistant.policies", QUICK);
+const policySaveRpc = define<unknown, AssistantPolicySave>("assistant.policy-save", QUICK);
+const policyDeleteRpc = define<unknown, { id: string }>("assistant.policy-delete", QUICK);
+
+/**
+ * What a save sends: the row's fields, and its `id` only when it already has
+ * one. A blank row omits the id and the server mints it, which is what makes the
+ * page's new row the same op as an edit rather than a second one.
+ */
+export interface AssistantPolicySave {
+  id?: string;
+  name: string;
+  text: string;
+  enabled: boolean;
+  budgetInFlight: number;
+  budgetPerDay: number;
+}
+
+/**
+ * The standing instructions, as the server holds them.
+ *
+ * A pure read. An unreadable answer THROWS rather than resolving empty: an empty
+ * list here would say the assistant is acting under no policy at all, which is
+ * a claim about its autonomy and not a missing count.
+ */
+export async function policies(ws: WsClient): Promise<AssistantPolicy[]> {
+  const raw = await policiesRpc(ws, {});
+  const parsed = AssistantPoliciesResultSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error("assistant.policies answered a shape this build cannot read");
+  }
+  // An object rather than a bare array, so the answer can grow a field without
+  // a wire transition; `policies` absent means none are set.
+  return parsed.data.policies ?? [];
+}
+
+/**
+ * Writes one policy and resolves with the row as the server now holds it.
+ *
+ * The answer is what the page renders, not what it sent: the server mints the
+ * id, caps the text, clamps the budgets and stamps `updatedAt`, so a page that
+ * kept its own copy would show a row nobody could act on. An unreadable answer
+ * throws — a save whose result cannot be read is a save that cannot be
+ * confirmed, and the push carries the row anyway.
+ */
+export async function savePolicy(
+  ws: WsClient,
+  policy: AssistantPolicySave,
+): Promise<AssistantPolicy> {
+  const raw = await policySaveRpc(ws, policy);
+  const parsed = AssistantPolicySchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error("assistant.policy-save answered a shape this build cannot read");
+  }
+  return parsed.data;
+}
+
+/** Removes one policy. The row leaves every surface on the `assistant.policy`
+ *  push that carries `deleted: true`, so nothing is returned here. */
+export async function deletePolicy(ws: WsClient, id: string): Promise<void> {
+  await policyDeleteRpc(ws, { id });
+}
 
 /**
  * How many journal entries the thread has never been shown — the rail row's

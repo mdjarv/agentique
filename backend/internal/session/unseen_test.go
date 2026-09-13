@@ -258,3 +258,60 @@ func TestApplyPostResumeFlagsSeedsUnseen(t *testing.T) {
 		t.Fatalf("unseen mirror = %q, want the persisted stamp", got)
 	}
 }
+
+// An assistant-origin turn marks like a person's. Schedule is the only exempt
+// origin: the assistant dispatched this because somebody asked or because a
+// standing instruction they wrote applied, and a completion they never see is
+// what autonomy was supposed to hand them (docs/assistant.md, the M4 contract).
+func (s *ServiceSuite) TestAssistantOriginTurnMarksUnread() {
+	sessionID, mock := s.createLiveSession()
+	sess := s.mgr.Get(sessionID)
+	s.Require().NotNil(sess)
+
+	_, outcome, err := sess.QueryWithOutcome(context.Background(), "run the tests again", nil,
+		QueryOrigin{Kind: OriginAssistant, PolicyID: "pol-1"})
+	s.Require().NoError(err)
+	s.Require().NoError(mock.Inject(testutil.ResultEvent(0.01)))
+	select {
+	case <-outcome:
+	case <-time.After(2 * time.Second):
+		s.Require().Fail("timeout waiting for the assistant's turn to complete")
+	}
+	waitForState(s.T(), sess, StateIdle)
+
+	s.waitForUnseen(sessionID, true)
+}
+
+// The origin reaches the wire, so a row can say a session was not started by
+// hand, and an untagged one reads as a person's.
+func (s *ServiceSuite) TestSessionOriginIsStampedAndReported() {
+	sessionID, _ := s.createLiveSession()
+
+	info, err := s.svc.GetSessionInfo(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Empty(info.Origin, "a session nobody tagged is a session somebody typed")
+
+	s.Require().NoError(s.svc.SetSessionOrigin(context.Background(), sessionID, OriginAssistant))
+
+	info, err = s.svc.GetSessionInfo(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Equal(OriginAssistant, info.Origin)
+}
+
+// The production path: creation carries the origin, so the row is stamped before
+// the `session.created` push that announces it. A stamp applied after
+// CreateSession returned would miss that push, and the row would read as a
+// person's on every client already open until the next session.list.
+func (s *ServiceSuite) TestCreationCarriesTheOrigin() {
+	result, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID: s.Project.ID,
+		Name:      "born-to-the-assistant",
+		Model:     "opus",
+		Origin:    OriginAssistant,
+	})
+	s.Require().NoError(err)
+
+	info, err := s.svc.GetSessionInfo(context.Background(), result.SessionID)
+	s.Require().NoError(err)
+	s.Equal(OriginAssistant, info.Origin)
+}

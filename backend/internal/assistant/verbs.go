@@ -73,6 +73,22 @@ const (
 	VerbSetSessionMode  = "set_session_mode"
 )
 
+// policyParam is the one argument the two contained session verbs gained with
+// autonomy: which standing instruction this is being done under.
+//
+// Optional, and its absence is not a loophole — it is the ordinary case. Without
+// a policy the verb is UNBUDGETED, because the operator asked for the work in a
+// conversation they can read; with one, both of that policy's budgets are
+// checked and a refusal names the count. So the argument is a claim to be
+// spending a budget, which is why a name that is not a policy is refused rather
+// than treated as none.
+var policyParam = Param{
+	Name: "policy", Type: ParamString,
+	Description: "The name of the standing instruction you are acting under, exactly as it was " +
+		"given to you this turn. Leave it out when they asked for this in the conversation. Never " +
+		"invent one: a name that is not theirs is refused, and nothing happens.",
+}
+
 // reasonKey carries a refusal's machine-readable cause from the verb that
 // raised it to [Service.ToolHandler], which logs it and strips it. It never
 // reaches a model.
@@ -330,6 +346,7 @@ func (s *Service) buildVerbs() []Verb {
 						"files and symbols, and say what done looks like. Leave it out only when " +
 						"they asked for an empty session to use later.",
 				},
+				policyParam,
 			},
 			handler: s.verbCreateSession,
 		},
@@ -348,6 +365,7 @@ func (s *Service) buildVerbs() []Verb {
 					Description: "The full prompt for the coding agent. Written to be read: name " +
 						"files and symbols, and say what done looks like.",
 				},
+				policyParam,
 			},
 			handler: s.verbRunPrompt,
 		},
@@ -640,6 +658,13 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 			"need to start one on screen."), nil
 	}
 
+	// The budget first, before anything exists: a refusal after the session was
+	// made is how a policy spends what it was told it could not.
+	policy, refusal := s.checkPolicyBudget(ctx, stringArg(args, "policy"))
+	if refusal != nil {
+		return refusal, nil
+	}
+
 	project, refusal := s.resolveProject(ctx, args)
 	if refusal != nil {
 		return refusal, nil
@@ -662,15 +687,25 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		return refuse("create-returned-nothing", "That could not be created. Say so plainly."), nil
 	}
 
+	// The entry NAMES THE POLICY, because that entry is what the day and
+	// in-flight budgets count: the policy row can be edited and the session row
+	// only says "assistant", so the journal is the one record of which standing
+	// instruction spent what.
+	payload := map[string]any{"name": row.Name, "project": project.DisplayName(), "model": row.Model}
+	if policy.ID != "" {
+		payload[payloadPolicyID] = policy.ID
+		payload[payloadPolicyName] = policy.Name
+	}
 	if _, err := s.appendJournal(ctx, journalWrite{
 		Kind:      JournalSessionCreated,
 		SessionID: row.ID,
 		ProjectID: project.ID,
 		Summary:   fmt.Sprintf("created %s", DisplayFor(row)),
-		Payload:   map[string]any{"name": row.Name, "project": project.DisplayName(), "model": row.Model},
+		Payload:   payload,
 	}); err != nil {
 		s.log.Warn("assistant creation not journaled", "session", row.ID, "error", err)
 	}
+	s.touchPolicy(ctx, policy.ID)
 
 	out := sessionPayload(row)
 	out["created"] = true
@@ -685,7 +720,7 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		return out, nil
 	}
 
-	sent := s.dispatchPrompt(ctx, row, prompt)
+	sent := s.dispatchPrompt(ctx, row, prompt, policy)
 	if refusal, refused := sent["error"].(string); refused {
 		// The session is real; the work is not. Saying only half of that is how
 		// somebody comes back to an empty session believing it ran.
@@ -718,6 +753,14 @@ func (s *Service) verbRunPrompt(ctx context.Context, args map[string]any) (map[s
 			"was sent."), nil
 	}
 
+	// Under a standing instruction the budgets apply to the send as well, not
+	// only to creating something: a policy that has spent its day is a policy
+	// that has stopped for the day, whichever verb it reaches for.
+	policy, refusal := s.checkPolicyBudget(ctx, stringArg(args, "policy"))
+	if refusal != nil {
+		return refusal, nil
+	}
+
 	row, local := s.dir.SessionBrief(ctx, sessionID)
 	if !local {
 		// The report registry is local, so a remote run would report into
@@ -732,7 +775,7 @@ func (s *Service) verbRunPrompt(ctx context.Context, args map[string]any) (map[s
 			"instead.", DisplayFor(row), machine)), nil
 	}
 
-	return s.dispatchPrompt(ctx, row, prompt), nil
+	return s.dispatchPrompt(ctx, row, prompt, policy), nil
 }
 
 // dispatchPrompt is the one route into the session pipeline.
@@ -741,7 +784,11 @@ func (s *Service) verbRunPrompt(ctx context.Context, args map[string]any) (map[s
 // is followed, and the dispatch is journaled. Following comes with dispatch
 // because the assistant follows everything it starts — that is what makes the
 // reporting instruction worth appending, and what makes the outcome news.
-func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt string) map[string]any {
+//
+// policy is the standing instruction this is being done under, or the zero
+// value for work the operator asked for. Where it is set, the turn carries it,
+// so a turn started by nobody is visibly a turn started by nobody.
+func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt string, policy Policy) map[string]any {
 	if s.disp == nil {
 		return refuse("no-dispatcher", "NOTHING WAS SENT: I cannot start work from here. Tell them "+
 			"to send it from the session's own composer.")
@@ -753,25 +800,31 @@ func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt str
 		s.log.Warn("assistant follow not recorded", "session", row.ID, "error", err)
 	}
 
-	delivery, err := s.disp.Dispatch(ctx, row.ID, prompt, true)
+	delivery, err := s.dispatch(ctx, row.ID, prompt, policy.ID)
 	if err != nil {
 		s.log.Warn("assistant dispatch failed", "session", row.ID, "error", err)
 		return refuse("dispatch-failed", fmt.Sprintf("NOTHING WAS SENT to %s. Say so plainly, and "+
 			"do not send it again without being asked.", DisplayFor(row)))
 	}
 
+	payload := map[string]any{
+		"name":     row.Name,
+		"delivery": string(delivery),
+		"prompt":   prompt,
+	}
+	if policy.ID != "" {
+		payload[payloadPolicyID] = policy.ID
+		payload[payloadPolicyName] = policy.Name
+	}
 	if _, err := s.appendJournal(ctx, journalWrite{
 		Kind:      JournalDispatched,
 		SessionID: row.ID,
 		Summary:   fmt.Sprintf("sent a prompt to %s", DisplayFor(row)),
-		Payload: map[string]any{
-			"name":     row.Name,
-			"delivery": string(delivery),
-			"prompt":   prompt,
-		},
+		Payload:   payload,
 	}); err != nil {
 		s.log.Warn("assistant dispatch not journaled", "session", row.ID, "error", err)
 	}
+	s.touchPolicy(ctx, policy.ID)
 
 	return map[string]any{
 		"session":  DisplayFor(row),
@@ -779,6 +832,22 @@ func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt str
 		"note": fmt.Sprintf("Tell them it has gone to %s and that %s. State it; do not ask.",
 			DisplayFor(row), delivery.Clause()),
 	}
+}
+
+// dispatch is the one send, with the policy on the turn where there is one.
+//
+// The policy rides a SECOND interface asserted off the dispatcher
+// ([PolicyDispatcher]) rather than a fifth argument to the one every caller
+// shares: a voice call dispatches through the same collaborator and has no
+// policy to name. A dispatcher that does not implement it sends the prompt the
+// ordinary way, which is what a dispatch from a conversation is anyway.
+func (s *Service) dispatch(ctx context.Context, sessionID, prompt, policyID string) (Delivery, error) {
+	if policyID != "" {
+		if under, ok := s.disp.(PolicyDispatcher); ok {
+			return under.DispatchUnderPolicy(ctx, sessionID, prompt, true, policyID)
+		}
+	}
+	return s.disp.Dispatch(ctx, sessionID, prompt, true)
 }
 
 func (s *Service) verbFollowSession(ctx context.Context, args map[string]any) (map[string]any, error) {

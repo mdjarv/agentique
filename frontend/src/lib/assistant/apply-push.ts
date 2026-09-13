@@ -1,5 +1,5 @@
 /**
- * The assistant's four global pushes, applied to the store.
+ * The assistant's five global pushes, applied to the store.
  *
  * They arrive on the primary's socket on the global topic (the conversation is
  * a project-less channel, which already fans out there), and there is one
@@ -16,6 +16,7 @@ import {
   AssistantDeltaSchema,
   AssistantJournalEntrySchema,
   AssistantMessageSchema,
+  AssistantPolicySchema,
   AssistantProposalSchema,
 } from "~/lib/assistant/wire";
 import { useAssistantStore } from "~/stores/assistant-store";
@@ -78,4 +79,21 @@ export function applyAssistantProposal(payload: unknown): void {
     return;
   }
   useAssistantStore.getState().applyProposal(parsed.data);
+}
+
+/**
+ * `assistant.policy` — one standing instruction, on save and on delete.
+ *
+ * The same push carries both, because both are the row as it now stands: a save
+ * arrives whole and a delete arrives with `deleted: true`, which the store reads
+ * as "drop this row". A delete is not an empty row — an empty row would be a
+ * policy with no name, which is a thing the page would draw.
+ */
+export function applyAssistantPolicy(payload: unknown): void {
+  const parsed = AssistantPolicySchema.safeParse(payload);
+  if (!parsed.success) {
+    console.warn("[assistant] unreadable assistant.policy", parsed.error.issues);
+    return;
+  }
+  useAssistantStore.getState().applyPolicy(parsed.data);
 }

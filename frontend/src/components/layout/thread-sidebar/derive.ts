@@ -138,6 +138,22 @@ export function isHued(input: HuedInput): boolean {
   return !(input.merged && isTerminalState(input.state));
 }
 
+/**
+ * What `SessionInfo.origin` says when the assistant created the session.
+ *
+ * One string, checked in one predicate: the wire field is a plain optional
+ * string (a peer one release ahead can spell an origin this build has never
+ * heard of), and every other value — a person's session, an absent field from a
+ * peer that does not speak it — means the same thing here, which is "nothing to
+ * report".
+ */
+export const ASSISTANT_ORIGIN = "assistant";
+
+/** The assistant started this session rather than a person. */
+export function isAssistantOrigin(origin?: string): boolean {
+  return origin === ASSISTANT_ORIGIN;
+}
+
 /** Blocked on a human — the two amber states, sorted to the top of Open. */
 export function isBlocked(badge: ThreadBadge): boolean {
   return badge === "attention" || badge === "question";
