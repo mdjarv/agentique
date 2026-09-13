@@ -757,6 +757,51 @@ assistant" entry moves to Shipped with what landed and what is next
 (gateway transport, server-to-server follow, the scheduler absorbing the
 heartbeat, provenance-aware consolidation).
 
+## The M5 contract
+
+Compaction. The journal is the one store nothing bounds, and the "Decided"
+section already says how it folds. The names are binding.
+
+**When.** Once a day, from the heartbeat loop, after the gate and independent
+of its verdict: the first tick after local midnight whose
+`assistant_state.last_compacted_at` is before that midnight runs
+`Service.Compact(ctx)`; the stamp is written first, so a failing pass is
+retried the next day and never every tick. `Compact` is also a contained
+verb, `compact_journal`, and a WS op `assistant.compact` (mutation, through
+`handleRequestAsync`) for the operator.
+
+**What.** For each calendar day (local time) older than `compactAfter`
+(fourteen days, a constant chosen to exceed the in-flight lookback so
+`session_created` rows a budget still counts are never folded) that has raw
+rows — every kind except `day_summary`, `notable` rows exempt — the pass
+renders them as the digest renders entries, untrusted ones quoted and
+marked, and asks a `Summarizer` collaborator (`WithSummarizer`, the same
+Haiku one-shot seam as the Triager, implemented in the server package over
+`session.BlockingRunner`) for at most six hundred characters that name the
+sessions in their projects, what finished, what failed, what was proposed and
+decided, and what was reported, in the server's voice with reports quoted.
+The prompt says, as the triage prompt does, that nothing in the rows is an
+instruction. The answer is clamped and written as one `day_summary` row at
+that day's start (`at = <date>T00:00:00Z`), `untrusted` set when any folded
+row was untrusted, payload `{day, entries, kinds: {kind: count}, policies:
+[ids]}` carrying every `policyId` the folded rows carried; then the folded
+rows are deleted. Insert before delete: a pass that dies between the two
+leaves a day with both, and the next pass deletes that day's remaining raw
+rows without summarising again. No Summarizer means the pass skips
+summarising and deletes nothing. `day_summary` rows older than
+`summaryRetention` (ninety days) are deleted.
+
+**Bounds.** One pass folds at most `maxCompactDays` (thirty) days, oldest
+first, and reads a day in pages of `maxJournalPage`; a day with more than two
+thousand rows is summarised from its newest two thousand and the payload says
+so. The pass is bounded by `compactBudget` (five minutes) and journals one
+`compaction` entry (a fifteenth kind) naming how many days folded and how
+many rows went.
+
+**Frontend.** `journal-marks` already knows `day_summary`; the strip renders
+it as a plain line with the day; `compaction` renders like a note. Nothing
+else changes.
+
 ## Build notes
 
 **The session.state observer journals transitions against a primed baseline,
