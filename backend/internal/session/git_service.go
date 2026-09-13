@@ -560,8 +560,10 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (worktree.DiffR
 	}
 
 	// Local session: diff work dir against HEAD (include untracked files).
+	// A project may be a plain directory, which has no changes to report
+	// rather than a failed diff — the client toasts every error it gets.
 	workDir := dbSess.WorkDir
-	if _, statErr := os.Stat(workDir); statErr != nil {
+	if _, statErr := os.Stat(workDir); statErr != nil || !g.git.IsRepo(workDir) {
 		return noDiff, nil
 	}
 	return g.git.WorktreeDiff(ctx, workDir, "HEAD", true)
@@ -581,7 +583,7 @@ func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (wor
 		dir = wtPath
 	}
 
-	if _, statErr := os.Stat(dir); statErr != nil {
+	if _, statErr := os.Stat(dir); statErr != nil || !g.git.IsRepo(dir) {
 		return noDiff, nil
 	}
 

@@ -420,3 +420,13 @@ func TestUncommittedDiff_Modified(t *testing.T) {
 		t.Errorf("expected diff to mention README, got %q", diff)
 	}
 }
+
+func TestIsRepo(t *testing.T) {
+	if !IsRepo(initGitRepo(t)) {
+		t.Error("IsRepo on a git repo = false, want true")
+	}
+	plain := t.TempDir()
+	if IsRepo(plain) {
+		t.Errorf("IsRepo on plain directory %s = true, want false", plain)
+	}
+}

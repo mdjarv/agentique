@@ -109,6 +109,14 @@ func CurrentBranch(projectDir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// IsRepo reports whether dir is inside a git working tree. A project may be a
+// plain directory, so callers use this to tell "nothing to show" apart from a
+// git command that genuinely failed.
+func IsRepo(dir string) bool {
+	_, err := gitRun(dir, "rev-parse", "--git-dir")
+	return err == nil
+}
+
 // HasUncommittedChanges returns true if the working tree has uncommitted changes.
 func HasUncommittedChanges(dir string) (bool, error) {
 	out, err := gitRun(dir, "status", "--porcelain")

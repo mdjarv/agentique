@@ -29,6 +29,7 @@ type mockSessionGitOps struct {
 	rebaseConflictFiles []string
 	diffResult          worktree.DiffResult
 	diffErr             error
+	notRepo             bool
 	uncommittedFiles    []gitops.FileStatus
 	uncommittedErr      error
 	hasGhCli            bool
@@ -79,6 +80,7 @@ func (m *mockSessionGitOps) PushBranch(string, string) error { return m.pushErr 
 func (m *mockSessionGitOps) CreatePR(string, string, string, string) (string, error) {
 	return m.createPRUrl, m.createPRErr
 }
+func (m *mockSessionGitOps) IsRepo(string) bool { return !m.notRepo }
 func (m *mockSessionGitOps) WorktreeDiff(context.Context, string, string, bool) (worktree.DiffResult, error) {
 	return m.diffResult, m.diffErr
 }
@@ -230,6 +232,22 @@ func (s *GitServiceSuite) TestDiff_MergedSession() {
 	id := s.createWorktreeSession()
 	s.Require().NoError(s.Queries.SetWorktreeMerged(context.Background(), id))
 	result, err := s.gitSvc.Diff(context.Background(), id)
+	s.NoError(err)
+	s.False(result.HasDiff)
+}
+
+// A project can be a plain directory. Its diffs are empty, not errors: the
+// client toasts every failure, and it asks again on each turn's end.
+func (s *GitServiceSuite) TestDiff_NotAGitRepo() {
+	id := s.createLocalSession()
+	s.git.notRepo = true
+	s.git.diffErr = fmt.Errorf("diff --numstat: exit status 129: Not a git repository")
+
+	result, err := s.gitSvc.Diff(context.Background(), id)
+	s.NoError(err)
+	s.False(result.HasDiff)
+
+	result, err = s.gitSvc.UncommittedDiff(context.Background(), id)
 	s.NoError(err)
 	s.False(result.HasDiff)
 }

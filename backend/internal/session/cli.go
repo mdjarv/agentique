@@ -141,6 +141,7 @@ func (realWorktreeOps) DeleteRemoteBranch(dir, branch string) { gitops.DeleteRem
 
 // sessionGitOps abstracts git operations used by session.GitService.
 type sessionGitOps interface {
+	IsRepo(dir string) bool
 	HasUncommittedChanges(dir string) (bool, error)
 	AutoCommitAll(dir, message string) error
 	MergeBranch(dir, branch string) (string, error)
@@ -172,6 +173,8 @@ type sessionGitOps interface {
 func RealSessionGitOps() sessionGitOps { return realSessionGitOps{} }
 
 type realSessionGitOps struct{}
+
+func (realSessionGitOps) IsRepo(dir string) bool { return gitops.IsRepo(dir) }
 
 func (realSessionGitOps) HasUncommittedChanges(dir string) (bool, error) {
 	return gitops.HasUncommittedChanges(dir)
