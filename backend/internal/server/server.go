@@ -1131,6 +1131,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				label, _ := hostPresentation(ctx)
 				return label
 			})
+		// Paired machines' sessions, read as their client with the bearer the
+		// catalog already holds. Without it the assistant knew only this
+		// machine's database, and a session the sidebar showed on zbook did not
+		// exist for list_sessions or find_session. Lazy: nothing is dialled
+		// until an assistant or a call asks.
+		assistantDir.peers = newPeerSessions(queries, machineHTTPClient, cfg.MachineID)
 	}
 	if cfg.ExperimentalAssistant {
 		// Every collaborator below is non-nil by construction: the block above

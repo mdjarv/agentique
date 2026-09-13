@@ -612,3 +612,79 @@ func TestCreateSessionRefusesAnUnknownModel(t *testing.T) {
 		t.Errorf("refusal = %q, want the families that do exist", say)
 	}
 }
+
+// peeredDirectory is the server's real shape: paired machines' rows are in the
+// lists, SessionBrief knows nothing about them, and some machine is asleep.
+type peeredDirectory struct {
+	*fakeDirectory
+	unreachable []string
+}
+
+func (d *peeredDirectory) SessionBrief(ctx context.Context, id string) (SessionRow, bool) {
+	row, local := d.fakeDirectory.SessionBrief(ctx, id)
+	if !local {
+		return SessionRow{}, false
+	}
+	return row, true
+}
+
+func (d *peeredDirectory) UnreachableMachines(context.Context) []string { return d.unreachable }
+
+// A session on a paired machine is findable, and the refusal to act on it
+// names it and the machine — from the list, since the brief is local-only.
+func TestFindSessionReachesAPairedMachine(t *testing.T) {
+	dir := &peeredDirectory{fakeDirectory: &fakeDirectory{sessions: []SessionRow{
+		{ID: "local-1", Name: "Session Parking Feature", ProjectName: "Agentique", MachineID: "local"},
+		{ID: "zb-1", Name: "Plugin Testing", ProjectName: "seisiun", MachineID: "zbook-id", MachineName: "zbook"},
+	}}}
+	disp := &fakeDispatcher{}
+	svc, _, _ := newTestService(t, WithDirectory(dir), WithDispatcher(disp))
+
+	payload, err := svc.Invoke(context.Background(), VerbFindSession, map[string]any{"query": "seisiun"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	candidates, _ := payload["candidates"].([]map[string]any)
+	if len(candidates) == 0 {
+		t.Fatalf("find_session(seisiun) = %+v, want the zbook session", payload)
+	}
+
+	payload, err = svc.Invoke(context.Background(), VerbRunPrompt,
+		map[string]any{"session_id": "zb-1", "prompt": "add a bodhran", "target": "Plugin Testing"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	say, _ := payload["error"].(string)
+	if !strings.Contains(say, "Plugin Testing in seisiun") || !strings.Contains(say, "zbook") {
+		t.Errorf("refusal = %q, want it to name the session and zbook", say)
+	}
+	if len(disp.sent()) != 0 {
+		t.Fatal("a remote session must not be dispatched to")
+	}
+}
+
+// A sleeping machine is named in the answer, so its absence is not read as
+// "there is no such session".
+func TestListSessionsNamesAnUnreachableMachine(t *testing.T) {
+	dir := &peeredDirectory{
+		fakeDirectory: &fakeDirectory{sessions: []SessionRow{{ID: "local-1", Name: "x", MachineID: "local"}}},
+		unreachable:   []string{"zbook"},
+	}
+	svc, _, _ := newTestService(t, WithDirectory(dir))
+
+	payload, err := svc.Invoke(context.Background(), VerbListSessions, map[string]any{"filter": "all"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	if machines, _ := payload["unreachable_machines"].([]string); len(machines) != 1 || machines[0] != "zbook" {
+		t.Errorf("unreachable_machines = %v, want [zbook]", payload["unreachable_machines"])
+	}
+
+	payload, err = svc.Invoke(context.Background(), VerbFindSession, map[string]any{"query": "seisiun"})
+	if err != nil {
+		t.Fatalf("Invoke() = %v", err)
+	}
+	if note, _ := payload["unreachable_note"].(string); !strings.Contains(note, "zbook") {
+		t.Errorf("find_session miss = %+v, want it to say zbook did not answer", payload)
+	}
+}

@@ -251,7 +251,8 @@ func (s *Service) buildVerbs() []Verb {
 			Name: VerbListSessions,
 			Tier: TierRead,
 			Description: "List their sessions for one filter: what needs them, what is running, " +
-				"what was active recently, or everything.",
+				"what was active recently, or everything. Covers this machine and every paired machine " +
+				"that answers; each row says which machine it runs on.",
 			Input: []Param{{
 				Name: "filter", Type: ParamString,
 				Description: "needs_attention: waiting on the user. running: a turn is in flight. " +
@@ -476,7 +477,42 @@ func (s *Service) verbListSessions(ctx context.Context, args map[string]any) (ma
 	if omitted > 0 {
 		out["omitted"] = omitted
 	}
+	s.noteUnreachable(ctx, out)
 	return out, nil
+}
+
+// noteUnreachable adds the paired machines a list could not include, so an
+// answer missing a sleeping machine's sessions says why.
+func (s *Service) noteUnreachable(ctx context.Context, out map[string]any) {
+	reach, ok := s.dir.(PeerReachability)
+	if !ok {
+		return
+	}
+	machines := reach.UnreachableMachines(ctx)
+	if len(machines) == 0 {
+		return
+	}
+	out["unreachable_machines"] = machines
+	out["unreachable_note"] = fmt.Sprintf("%s did not answer, so its sessions are not in this answer. "+
+		"If what they asked about could be there, say so rather than saying it does not exist.",
+		SpokenList(machines))
+}
+
+// describeSession is the best description there is of a session, local or not.
+//
+// Only the first return of SessionBrief is authority; a paired machine's row is
+// here so a refusal can name the session and where it runs, rather than calling
+// it "an unnamed session on another machine" when the list just named it.
+func (s *Service) describeSession(ctx context.Context, sessionID string) (SessionRow, bool) {
+	if row, local := s.dir.SessionBrief(ctx, sessionID); local {
+		return row, true
+	}
+	for _, row := range s.dir.ListSessions(ctx, FilterAll) {
+		if row.ID == sessionID {
+			return row, false
+		}
+	}
+	return SessionRow{ID: sessionID}, false
 }
 
 func (s *Service) verbFindSession(ctx context.Context, args map[string]any) (map[string]any, error) {
@@ -491,17 +527,21 @@ func (s *Service) verbFindSession(ctx context.Context, args map[string]any) (map
 
 	rows := s.dir.ListSessions(ctx, FilterAll)
 	if len(rows) == 0 {
-		return refuse("no-sessions-visible", "There are no sessions on this machine to search."), nil
+		out := refuse("no-sessions-visible", "There are no sessions to search.")
+		s.noteUnreachable(ctx, out)
+		return out, nil
 	}
 
 	candidates, topIsClear := MatchSessions(query, rows)
 	if len(candidates) == 0 {
-		return map[string]any{
+		out := map[string]any{
 			"candidates":   []any{},
 			"top_is_clear": false,
 			"note": fmt.Sprintf("Nothing matches %q. Say so and ask them to describe it another way "+
 				"— the project is usually enough.", query),
-		}, nil
+		}
+		s.noteUnreachable(ctx, out)
+		return out, nil
 	}
 
 	matched := make([]SessionRow, 0, len(candidates))
@@ -535,9 +575,10 @@ func (s *Service) verbSummarizeSession(ctx context.Context, args map[string]any)
 
 	row, local := s.dir.SessionBrief(ctx, sessionID)
 	if !local {
-		return refuse("summary-not-local", fmt.Sprintf("%s runs on another machine, and its "+
+		row, _ = s.describeSession(ctx, sessionID)
+		return refuse("summary-not-local", fmt.Sprintf("%s runs on %s, and its "+
 			"transcript is not here, so it cannot be summarised from this server. Say that.",
-			DisplayFor(row))), nil
+			DisplayFor(row), machineOf(row))), nil
 	}
 
 	// Waited on rather than delivered later, unlike the call's version of this:
@@ -774,15 +815,12 @@ func (s *Service) verbRunPrompt(ctx context.Context, args map[string]any) (map[s
 	row, local := s.dir.SessionBrief(ctx, sessionID)
 	if !local {
 		// The report registry is local, so a remote run would report into
-		// nothing — and the snapshot a remote row comes from is a view, which
-		// can make the assistant say things and never do things.
-		machine := row.MachineName
-		if machine == "" {
-			machine = "another machine"
-		}
+		// nothing — and a paired machine's row is a view, which can make the
+		// assistant say things and never do things.
+		row, _ = s.describeSession(ctx, sessionID)
 		return refuse("dispatch-not-local", fmt.Sprintf("NOTHING WAS SENT: %s runs on %s, and work "+
 			"can only be started on this one. Say which machine it is on, and offer something here "+
-			"instead.", DisplayFor(row), machine)), nil
+			"instead.", DisplayFor(row), machineOf(row))), nil
 	}
 
 	return s.dispatchPrompt(ctx, row, prompt, policy), nil
@@ -869,9 +907,10 @@ func (s *Service) verbFollowSession(ctx context.Context, args map[string]any) (m
 	// following a remote one would be a subscription to a channel nothing
 	// writes to — and the follow row references a session that is not here.
 	if s.dir != nil {
-		if row, local := s.dir.SessionBrief(ctx, sessionID); !local {
-			return refuse("follow-not-local", fmt.Sprintf("%s is not a session on this machine, so "+
-				"there is nothing here to watch. Say which machine it is on.", DisplayFor(row))), nil
+		if _, local := s.dir.SessionBrief(ctx, sessionID); !local {
+			row, _ := s.describeSession(ctx, sessionID)
+			return refuse("follow-not-local", fmt.Sprintf("%s runs on %s, not this machine, so "+
+				"there is nothing here to watch. Say which machine it is on.", DisplayFor(row), machineOf(row))), nil
 		}
 	}
 	if err := s.Follow(ctx, sessionID, "operator"); err != nil {
@@ -1091,4 +1130,12 @@ func intArg(args map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+// machineOf is where a session runs, for a sentence.
+func machineOf(row SessionRow) string {
+	if row.MachineName != "" {
+		return row.MachineName
+	}
+	return "another machine"
 }

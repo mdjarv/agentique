@@ -14,13 +14,6 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
-// maxDirectoryRows bounds what one directory answer carries.
-//
-// Everything here is read aloud or fed to a model, and a list of forty sessions
-// is neither. The rows are sorted before the cut, so what survives is what the
-// operator most likely meant.
-const maxDirectoryRows = 12
-
 // maxOrientationNames bounds how many sessions the orientation paragraph names.
 // Past a few it stops being orientation and becomes a list read aloud.
 const maxOrientationNames = 4
@@ -48,6 +41,10 @@ type assistantDirectory struct {
 	// machineName is read per call rather than captured, so a rename takes
 	// effect without a restart — the same rule the health endpoint follows.
 	machineName func(ctx context.Context) string
+
+	// peers reads the sessions of every paired machine. Nil means this
+	// directory describes this machine alone, which is what a test builds.
+	peers peerSource
 }
 
 func newAssistantDirectory(svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer,
@@ -64,14 +61,21 @@ func newAssistantDirectory(svc *session.Service, queries *store.Queries, summari
 }
 
 // Orientation implements assistant.Directory: one paragraph, spoken material.
+//
+// It covers every machine the operator has paired, because "what is going on"
+// is a question about their work, not about which box answers it.
 func (d *assistantDirectory) Orientation(ctx context.Context) string {
-	rows := d.rows(ctx)
+	rows, unreachable := d.everyRow(ctx)
 	if len(rows) == 0 {
-		return "There are no sessions on this machine yet."
+		return "There are no sessions on this machine yet." + unreachableSentence(unreachable)
 	}
 
 	var waiting, running []assistant.SessionRow
+	remote := 0
 	for _, row := range rows {
+		if row.MachineID != d.machineID {
+			remote++
+		}
 		if row.Attention != "" {
 			waiting = append(waiting, row)
 			continue
@@ -82,44 +86,72 @@ func (d *assistantDirectory) Orientation(ctx context.Context) string {
 	}
 
 	var b strings.Builder
-	if len(rows) == 1 {
+	switch {
+	case len(rows) == 1 && remote == 1:
+		fmt.Fprintf(&b, "There is one session, on %s", rows[0].MachineName)
+	case len(rows) == 1:
 		b.WriteString("There is one session on this machine")
-	} else {
+	case remote == 0:
 		fmt.Fprintf(&b, "There are %d sessions on this machine", len(rows))
+	default:
+		fmt.Fprintf(&b, "There are %d sessions across your machines, %d of them on paired ones", len(rows), remote)
 	}
 	switch {
 	case len(running) == 1:
-		b.WriteString(", one of them running")
+		b.WriteString(", one running")
 	case len(running) > 1:
-		fmt.Fprintf(&b, ", %d of them running", len(running))
+		fmt.Fprintf(&b, ", %d running", len(running))
 	}
 	b.WriteString(".")
 
-	if len(waiting) == 0 {
+	switch len(waiting) {
+	case 0:
 		b.WriteString(" None of them are waiting on the operator.")
-		return b.String()
-	}
-	if len(waiting) == 1 {
+	case 1:
 		fmt.Fprintf(&b, " One is waiting on the operator: %s.", namesWithReason(waiting))
-		return b.String()
+	default:
+		fmt.Fprintf(&b, " %d are waiting on the operator: %s.", len(waiting), namesWithReason(waiting))
 	}
-	fmt.Fprintf(&b, " %d are waiting on the operator: %s.", len(waiting), namesWithReason(waiting))
+	b.WriteString(unreachableSentence(unreachable))
 	return b.String()
 }
 
+// unreachableSentence says which paired machines are missing from an answer,
+// or nothing when none are.
+func unreachableSentence(machines []string) string {
+	if len(machines) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" %s did not answer, so nothing on it is included.", assistant.SpokenList(machines))
+}
+
 // ListSessions implements assistant.Directory.
+//
+// Uncut. Every caller bounds what it says, and every caller also MATCHES over
+// what it is given — find_session, a voice target check — so a cut here made
+// the thirteenth session unfindable rather than merely unlisted.
+//
+// Paired machines' sessions are in it. They are description only:
+// [assistantDirectory.SessionBrief] never answers for one, and that is the test
+// every verb that acts on a session applies.
 func (d *assistantDirectory) ListSessions(ctx context.Context, filter string) []assistant.SessionRow {
-	rows := d.rows(ctx)
+	rows, _ := d.everyRow(ctx)
 	kept := rows[:0]
 	for _, row := range rows {
 		if keepForFilter(row, filter) {
 			kept = append(kept, row)
 		}
 	}
-	if len(kept) > maxDirectoryRows {
-		kept = kept[:maxDirectoryRows]
-	}
 	return kept
+}
+
+// UnreachableMachines implements assistant.PeerReachability: the paired
+// machines whose sessions the lists above could not include.
+func (d *assistantDirectory) UnreachableMachines(ctx context.Context) []string {
+	if d.peers == nil {
+		return nil
+	}
+	return d.peers.View(ctx).Unreachable
 }
 
 // SessionBrief implements assistant.Directory. The false return is what "this
@@ -155,7 +187,8 @@ func (d *assistantDirectory) Summarize(ctx context.Context, id string, deliver f
 }
 
 // ListProjects implements assistant.Directory: this machine's projects, most
-// recently worked in first.
+// recently worked in first, uncut for the reason [assistantDirectory.ListSessions]
+// is — list_projects narrows by name over this list.
 //
 // Local only, and that is the point rather than a limitation. A project row
 // here is somewhere [assistantDirectory.CreateSession] can actually put a session,
@@ -186,9 +219,6 @@ func (d *assistantDirectory) ListProjects(ctx context.Context) []assistant.Proje
 	sort.SliceStable(rows, func(i, j int) bool {
 		return rows[i].LastActivity > rows[j].LastActivity
 	})
-	if len(rows) > maxDirectoryRows {
-		rows = rows[:maxDirectoryRows]
-	}
 	return rows
 }
 
@@ -296,6 +326,48 @@ func (d *assistantDirectory) lastWorkByProject(ctx context.Context) map[string]s
 	return out
 }
 
+// everyRow is this machine's sessions and every paired machine's, most urgent
+// then newest first, with the machines that did not answer.
+//
+// A row is kept once, and this machine's copy wins: its database is the truth
+// about its own sessions, where a peer's answer is a description of its own.
+func (d *assistantDirectory) everyRow(ctx context.Context) ([]assistant.SessionRow, []string) {
+	rows := d.rows(ctx)
+	if d.peers == nil {
+		return rows, nil
+	}
+	view := d.peers.View(ctx)
+	return mergeRows(rows, view.Rows), view.Unreachable
+}
+
+// mergeRows appends the peer rows local does not already hold, and sorts.
+func mergeRows(local, peer []assistant.SessionRow) []assistant.SessionRow {
+	seen := make(map[string]bool, len(local))
+	for _, row := range local {
+		seen[row.ID] = true
+	}
+	for _, row := range peer {
+		if seen[row.ID] {
+			continue
+		}
+		seen[row.ID] = true
+		local = append(local, row)
+	}
+	sortRows(local)
+	return local
+}
+
+// sortRows orders rows the deck's way: attention first, then recency.
+func sortRows(rows []assistant.SessionRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := assistant.AttentionRank(rows[i].Attention), assistant.AttentionRank(rows[j].Attention)
+		if a != b {
+			return a < b
+		}
+		return rows[i].LastActivity > rows[j].LastActivity
+	})
+}
+
 // rows reads every live session on this machine, newest activity first.
 func (d *assistantDirectory) rows(ctx context.Context) []assistant.SessionRow {
 	result, err := d.svc.ListAllSessions(ctx)
@@ -316,13 +388,7 @@ func (d *assistantDirectory) rows(ctx context.Context) []assistant.SessionRow {
 		rows = append(rows, d.toRow(ctx, info, projects))
 	}
 
-	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := assistant.AttentionRank(rows[i].Attention), assistant.AttentionRank(rows[j].Attention)
-		if a != b {
-			return a < b
-		}
-		return rows[i].LastActivity > rows[j].LastActivity
-	})
+	sortRows(rows)
 	return rows
 }
 

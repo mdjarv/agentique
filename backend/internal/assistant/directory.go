@@ -26,6 +26,10 @@ type Directory interface {
 	// [FilterRecent] or [FilterAll] — most recently active first. An unknown
 	// filter is treated as [FilterRecent], because a mis-transcribed word must
 	// not turn into an empty answer.
+	//
+	// It may include sessions on paired machines, marked by MachineID. Those
+	// are description: [Directory.SessionBrief] does not answer for them, and
+	// that is what every verb that acts on a session checks.
 	ListSessions(ctx context.Context, filter string) []SessionRow
 
 	// SessionBrief looks up one session. The second return is false for
@@ -62,6 +66,14 @@ type Directory interface {
 	// the same reason dispatch does: one route into the session pipeline,
 	// whether the gesture was a click or a sentence.
 	CreateSession(ctx context.Context, projectID, model string) (SessionRow, error)
+}
+
+// PeerReachability is implemented by a [Directory] whose session lists include
+// paired machines. It names the ones that did not answer, so a list without
+// them can say so: "nothing matches" and "zbook is asleep" are different
+// answers, and only one of them is true when a machine is off.
+type PeerReachability interface {
+	UnreachableMachines(ctx context.Context) []string
 }
 
 // UnknownModelError is what a spoken model name that is not in the catalog
