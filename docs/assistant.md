@@ -349,17 +349,44 @@ notifier, and the personal-assistant product as a client on top.
 
 ## Multi-machine
 
-One assistant per primary. Remote sessions are listed and followed from the
-browser-fed world snapshot, as the call does today, and the snapshot is a view:
-it can make the assistant say things, never do things. Create and dispatch on
-a remote refuse naming the machine, because dispatch and the report registry
-are local and a remote run would report into nothing.
+One assistant per primary. Remote sessions are **listed and found** from the
+server's own read of each paired machine (`internal/server/peer_sessions.go`):
+it calls that machine's `GET /api/sessions` and `GET /api/projects` as its
+client, with the bearer `machines.token` already holds, after the same signed
+identity proof `RevokeRemoteBearer` makes (`machine.FetchRemoteJSON`). Before
+it, the directory read only this machine's database, so a session the sidebar
+showed on zbook did not exist for `list_sessions` or `find_session` in the
+thread — only a live call had one, through the browser-fed world snapshot, and
+the thread has no browser behind it.
 
-The structural fix is a server-to-server subscription from the primary to each
-paired machine, which the primary is already positioned for: it holds
-`machines.token` and dials remotes for revoke. That is a new subsystem and is
-named here, not built. Until it exists, machine reachability is not a server
-fact, so the journal carries no machine-away entries.
+The read is a view, exactly as the snapshot is: it can make the assistant say
+things, never do things. A peer row carries no `ProjectID`, and
+`Directory.SessionBrief` never answers for it, which is the check every verb
+that acts on a session applies. Create, dispatch, follow and summarise on a
+remote refuse naming the machine, because dispatch and the report registry are
+local and a remote run would report into nothing.
+
+Three rules keep it honest under load and failure:
+
+- **Stale-while-refresh, bounded once.** An answer is used as-is for 20s and
+  served while a refresh runs behind it for five minutes; only a machine this
+  reader has nothing from is waited on, for at most 2.5s. A machine that is
+  asleep costs that wait once — a read while its fetch is out, or after it
+  failed, answers at once.
+- **A machine that did not answer is named, never silently absent.** Its rows
+  are dropped (an old "running" would be said as current) and the verbs carry
+  `unreachable_machines`, so "nothing matches" is not said about a sleeping box.
+- **The project is named the way this host names it** where the repository is
+  checked out here too (matched on `remote_url`), because presentation belongs to
+  the host whose surface is asking.
+
+The directory's lists are **uncut**. Every caller bounds what it says and also
+matches over what it is given, so a cut in the directory made the thirteenth
+session unfindable rather than unlisted.
+
+What is still unbuilt is server-to-server **follow**: pushes from a paired
+machine rather than a pull on demand. Until it exists, machine reachability is
+not a journal fact, so the journal carries no machine-away entries.
 
 ## Security
 
@@ -387,7 +414,8 @@ That residual is stated so nobody widens a tier to save a click.
   the deck's band, spoken acceptance on a call, the digest.
 - **M4, autonomy.** The heartbeat with its journal gate and Haiku triage,
   policies with budgets, `origin` on sessions and turns.
-- **Later.** A gateway transport. Server-to-server follow for remote sessions.
+- **Later.** A gateway transport. Server-to-server follow for remote sessions
+  (listing them already reads each paired machine; see Multi-machine).
   The scheduler absorbing the heartbeat once it has target kinds.
 
 ## Decided

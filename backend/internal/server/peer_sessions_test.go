@@ -303,3 +303,42 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition never held")
 }
+
+// An asleep machine costs one bounded wait. The read after it — while the
+// fetch is still out, or once it has failed — answers at once.
+func TestPeerViewWaitsOnAnAsleepMachineOnce(t *testing.T) {
+	release := make(chan struct{})
+	var calls atomic.Int32
+	peers, clock := newTestPeers([]store.Machine{zbook},
+		func(context.Context, store.Machine) (peerSnapshot, error) {
+			calls.Add(1)
+			<-release
+			return peerSnapshot{}, errors.New("i/o timeout")
+		})
+	peers.coldBudget = 200 * time.Millisecond
+
+	peers.View(context.Background())
+
+	start := time.Now()
+	if view := peers.View(context.Background()); len(view.Unreachable) != 1 {
+		t.Fatalf("view = %+v, want zbook named", view)
+	}
+	if waited := time.Since(start); waited > 100*time.Millisecond {
+		t.Fatalf("second read waited %v on a fetch already out", waited)
+	}
+
+	close(release)
+	waitFor(t, func() bool {
+		peers.mu.Lock()
+		defer peers.mu.Unlock()
+		return peers.entries[zbook.MachineID].err != nil
+	})
+	clock.advance(peerStaleFor + time.Minute)
+
+	start = time.Now()
+	peers.View(context.Background())
+	if waited := time.Since(start); waited > 100*time.Millisecond {
+		t.Fatalf("read after a failure waited %v", waited)
+	}
+	waitFor(t, func() bool { return calls.Load() == 2 })
+}

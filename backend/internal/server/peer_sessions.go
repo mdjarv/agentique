@@ -207,8 +207,13 @@ func (p *peerSessions) awaitCold(ctx context.Context, peers []store.Machine) {
 		if !entry.fetchedAt.IsZero() && age <= peerFreshFor {
 			continue
 		}
+		// Waiting is for a machine this reader has nothing from, once. One
+		// already being refreshed was waited on by the read that started it,
+		// and one whose last answer was a failure is presumed still away: an
+		// asleep machine must cost one bounded wait, not one on every call.
+		wait := entry.inflight == nil && entry.err == nil && (entry.fetchedAt.IsZero() || age > peerStaleFor)
 		done := p.refreshLocked(m, entry)
-		if entry.fetchedAt.IsZero() || age > peerStaleFor {
+		if wait {
 			cold = append(cold, done)
 		}
 	}

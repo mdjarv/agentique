@@ -1587,8 +1587,13 @@ a refusal. Every refusal in the dispatch path is logged, because "an empty
 session and no log line" is the same picture for five different causes.
 
 **The world snapshot is a view, never authority.** The browser sends the merged
-multi-machine session list as `world` frames because that merge exists only
-client-side; the call stores it for listing and name resolution. Dispatch
+multi-machine session list as `world` frames; the call stores it for listing and
+name resolution. It is no longer the only picture of a paired machine: the
+assistant directory reads each one itself (`peer_sessions.go`, identity proof
+before the bearer, `docs/assistant.md` Multi-machine), because the thread has no
+browser behind it and a zbook session did not exist there. Those rows follow
+the same rule — no `ProjectID`, no `SessionBrief` — and a machine that did not
+answer is named in the reply rather than silently absent. Dispatch
 re-checks the local DB every time — a snapshot row can make the assistant *say*
 things, never *do* things. Remote sessions are listed and focusable; `run_prompt`
 on one refuses naming the machine, because the report registry is local and a
