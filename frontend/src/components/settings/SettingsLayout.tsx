@@ -11,6 +11,7 @@ import {
   AudioLines,
   FileText,
   FolderGit2,
+  GitBranch,
   Info,
   type LucideIcon,
   Palette,
@@ -49,6 +50,12 @@ export const SETTINGS_CATEGORIES: Category[] = [
     label: "Templates",
     icon: FileText,
     blurb: "Reusable prompts, with their settings, for any project.",
+  },
+  {
+    to: "/settings/sessions",
+    label: "Sessions",
+    icon: GitBranch,
+    blurb: "Where new sessions start on this device.",
   },
   {
     to: "/settings/appearance",

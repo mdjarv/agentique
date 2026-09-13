@@ -37,6 +37,7 @@ import { Route as SettingsAccountRouteImport } from "./routes/settings.account";
 import { Route as SettingsAppearanceRouteImport } from "./routes/settings.appearance";
 import { Route as SettingsMachinesRouteImport } from "./routes/settings.machines";
 import { Route as SettingsProjectsRouteImport } from "./routes/settings.projects";
+import { Route as SettingsSessionsRouteImport } from "./routes/settings.sessions";
 import { Route as SettingsTemplatesRouteImport } from "./routes/settings.templates";
 import { Route as SettingsVoiceRouteImport } from "./routes/settings.voice";
 import { Route as ProjectProjectSlugIndexRouteImport } from "./routes/project.$projectSlug.index";
@@ -188,6 +189,11 @@ const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
   path: "/projects",
   getParentRoute: () => SettingsRoute,
 } as any);
+const SettingsSessionsRoute = SettingsSessionsRouteImport.update({
+  id: "/sessions",
+  path: "/sessions",
+  getParentRoute: () => SettingsRoute,
+} as any);
 const SettingsTemplatesRoute = SettingsTemplatesRouteImport.update({
   id: "/templates",
   path: "/templates",
@@ -271,6 +277,7 @@ export interface FileRoutesByFullPath {
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
   "/settings/projects": typeof SettingsProjectsRoute;
+  "/settings/sessions": typeof SettingsSessionsRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/settings/voice": typeof SettingsVoiceRoute;
   "/settings/": typeof SettingsIndexRoute;
@@ -309,6 +316,7 @@ export interface FileRoutesByTo {
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
   "/settings/projects": typeof SettingsProjectsRoute;
+  "/settings/sessions": typeof SettingsSessionsRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/settings/voice": typeof SettingsVoiceRoute;
   "/settings": typeof SettingsIndexRoute;
@@ -350,6 +358,7 @@ export interface FileRoutesById {
   "/settings/appearance": typeof SettingsAppearanceRoute;
   "/settings/machines": typeof SettingsMachinesRoute;
   "/settings/projects": typeof SettingsProjectsRoute;
+  "/settings/sessions": typeof SettingsSessionsRoute;
   "/settings/templates": typeof SettingsTemplatesRoute;
   "/settings/voice": typeof SettingsVoiceRoute;
   "/settings/": typeof SettingsIndexRoute;
@@ -392,6 +401,7 @@ export interface FileRouteTypes {
     | "/settings/appearance"
     | "/settings/machines"
     | "/settings/projects"
+    | "/settings/sessions"
     | "/settings/templates"
     | "/settings/voice"
     | "/settings/"
@@ -430,6 +440,7 @@ export interface FileRouteTypes {
     | "/settings/appearance"
     | "/settings/machines"
     | "/settings/projects"
+    | "/settings/sessions"
     | "/settings/templates"
     | "/settings/voice"
     | "/settings"
@@ -470,6 +481,7 @@ export interface FileRouteTypes {
     | "/settings/appearance"
     | "/settings/machines"
     | "/settings/projects"
+    | "/settings/sessions"
     | "/settings/templates"
     | "/settings/voice"
     | "/settings/"
@@ -709,6 +721,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsProjectsRouteImport;
       parentRoute: typeof SettingsRoute;
     };
+    "/settings/sessions": {
+      id: "/settings/sessions";
+      path: "/sessions";
+      fullPath: "/settings/sessions";
+      preLoaderRoute: typeof SettingsSessionsRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     "/settings/templates": {
       id: "/settings/templates";
       path: "/templates";
@@ -788,6 +807,7 @@ interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute;
   SettingsMachinesRoute: typeof SettingsMachinesRoute;
   SettingsProjectsRoute: typeof SettingsProjectsRoute;
+  SettingsSessionsRoute: typeof SettingsSessionsRoute;
   SettingsTemplatesRoute: typeof SettingsTemplatesRoute;
   SettingsVoiceRoute: typeof SettingsVoiceRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
@@ -799,6 +819,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsMachinesRoute: SettingsMachinesRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,
+  SettingsSessionsRoute: SettingsSessionsRoute,
   SettingsTemplatesRoute: SettingsTemplatesRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
   SettingsIndexRoute: SettingsIndexRoute,

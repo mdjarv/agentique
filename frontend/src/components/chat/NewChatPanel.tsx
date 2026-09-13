@@ -106,7 +106,11 @@ export function NewChatPanel({
     if (previous === "" && !composer.getText()) composer.setText(persistedDraft);
   }, [persistedDraft]);
   const [panelMode, setPanelMode] = useState<PanelMode>("session");
-  const [worktree, setWorktree] = useState(initialWorktree ?? DEFAULT_SESSION_DEFAULTS.worktree);
+  // Read once, like model and effort below: the setting is where the toggle
+  // starts, and changing it in another tab must not flip it mid-compose.
+  const [worktree, setWorktree] = useState(
+    () => initialWorktree ?? useUIStore.getState().newSessionWorktree === "linked",
+  );
   const [planMode, setPlanMode] = useState(DEFAULT_SESSION_DEFAULTS.planMode);
   const [autoApproveMode, setAutoApproveMode] = useState<AutoApproveMode>(
     DEFAULT_SESSION_DEFAULTS.autoApproveMode,

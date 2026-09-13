@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { EffortLevel } from "~/lib/composer-constants";
 import type { ModelId } from "~/lib/session/actions";
 import { type DockView, MAX_DOCK_WIDTH, MIN_DOCK_WIDTH } from "~/lib/session/dock";
+import type { WorktreeKind } from "~/lib/session/location";
 import type { AutoApproveMode } from "~/stores/chat-store";
 
 export type Theme = "light" | "dark" | "system";
@@ -120,6 +121,18 @@ interface UIState {
   handsFree: boolean;
   /** Model and effort the last created session used. See LastUsedSettings. */
   lastUsed: LastUsedSettings;
+  /**
+   * Which worktree the New-session panel's toggle starts on (Settings ›
+   * Sessions).
+   *
+   * A setting, not a carry-over like `lastUsed`: whether sessions edit the main
+   * worktree is a working arrangement you choose once, and inferring it from
+   * the last session would let one deliberate main-worktree session quietly
+   * move every later one out of isolation. Device-local like the theme, so a
+   * phone and a desktop may differ. An explicit `?worktree=` link and a
+   * template's own setting still win over it.
+   */
+  newSessionWorktree: WorktreeKind;
   theme: Theme;
 
   setDraft: (sessionId: string, text: string) => void;
@@ -139,6 +152,7 @@ interface UIState {
   setHandsFree: (handsFree: boolean) => void;
   /** Call once a session has been created with these. Never on selection. */
   recordLastUsed: (settings: LastUsedSettings) => void;
+  setNewSessionWorktree: (kind: WorktreeKind) => void;
   setTheme: (theme: Theme) => void;
 }
 
@@ -165,6 +179,7 @@ export const useUIStore = create<UIState>()(
       collapsedLeads: new Set<string>(),
       handsFree: false,
       lastUsed: DEFAULT_LAST_USED,
+      newSessionWorktree: DEFAULT_SESSION_DEFAULTS.worktree ? "linked" : "main",
       theme: "dark" as Theme,
 
       setDraft: (sessionId, text) =>
@@ -260,6 +275,8 @@ export const useUIStore = create<UIState>()(
             : { lastUsed: settings },
         ),
 
+      setNewSessionWorktree: (kind) => set({ newSessionWorktree: kind }),
+
       setTheme: (theme) => set({ theme }),
     }),
     {
@@ -327,6 +344,7 @@ export const useUIStore = create<UIState>()(
         dockMaximized: state.dockMaximized,
         syncDockExpanded: state.syncDockExpanded,
         lastUsed: state.lastUsed,
+        newSessionWorktree: state.newSessionWorktree,
         theme: state.theme,
       }),
       onRehydrateStorage: () => () => {
