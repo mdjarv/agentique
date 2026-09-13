@@ -84,7 +84,7 @@ an explicit yes, follows the run and says what happened. Gated by
 `[experimental] voice`. See [docs/voice.md](docs/voice.md).
 
 **The assistant.** A durable principal with its own thread at `/assistant`: one
-conversation that outlives every session, a fourteen-kind journal of what
+conversation that outlives every session, a fifteen-kind journal of what
 happened while you were away, a digest that groups it by the needs-you ranking,
 and a tiered verb set: the contained verbs it simply performs, and everything
 uncontained becomes a proposal a person accepts or refuses. The brain became its
@@ -92,8 +92,11 @@ long-term memory and stopped injecting into sessions. M4 gave it autonomy: a
 heartbeat whose common tick is a row count, Haiku triage that fails closed,
 standing instructions at `/assistant/policies` with budgets counted from the
 journal, and sessions it starts marked `origin = assistant` on their own rows.
-Behind `[experimental] assistant`. See
-[docs/assistant.md](docs/assistant.md).
+M5 bounded the one table nothing bounded: once a local day, every calendar day
+older than a fortnight folds into one `day_summary` sentence and its raw rows
+go — notable rows exempt, the summary written before the delete, and a machine
+with no summariser folding nothing and deleting nothing. Behind
+`[experimental] assistant`. See [docs/assistant.md](docs/assistant.md).
 
 **A security audit round.** Inbound credentials stored as digests, passkey
 recovery gated behind a one-time code, the rekey window closed, path-escaping and
@@ -106,17 +109,17 @@ are in CLAUDE.md.
 
 ### What the assistant is owed next
 
-The four milestones shipped; these are the things they named and did not build.
+The five milestones shipped; these are the things they named and did not build.
 A **messaging gateway** as another transport, so the thread is reachable from
 outside the app. A **server-to-server subscription** from the primary to each
 paired machine, which is what would make a remote session's facts the
 assistant's own rather than a view the browser feeds it — until it exists,
 create and dispatch on a remote refuse, and the journal carries no
 machine-away entries. The **scheduler absorbing the heartbeat**, once
-`schedules` grows a target kind and stops being session-shaped. And
-**provenance-aware consolidation**, so a day's journal folds into a summary
-that keeps which standing instruction spent what, because the budgets read
-their history out of those rows. See
+`schedules` grows a target kind and stops being session-shaped. And a **budget
+that reads a folded day**: M5's summaries already carry every standing
+instruction the day spent, but nothing reads that payload back, so a lookback
+longer than the fold window would silently stop counting. See
 [docs/assistant.md](docs/assistant.md).
 
 ### V5c — the CLI update button

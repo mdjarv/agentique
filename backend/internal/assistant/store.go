@@ -54,7 +54,8 @@ type Store interface {
 	// write cannot widen — how many sessions the assistant has created at all
 	// today. The per-policy attribution is the journal's, because only the
 	// journal records which instruction an action was taken under; counting in
-	// SQL is what keeps a budget check O(1) in a journal nothing prunes.
+	// SQL is what keeps a budget check O(1) in a journal whose fourteen-day
+	// window compaction deliberately does not reach.
 	CountPolicySessionsCreatedSince(ctx context.Context, arg store.CountPolicySessionsCreatedSinceParams) (int64, error)
 	CountLiveSessionsForPolicy(ctx context.Context, arg store.CountLiveSessionsForPolicyParams) (int64, error)
 	CountSessionsByOriginSince(ctx context.Context, arg store.CountSessionsByOriginSinceParams) (int64, error)
@@ -67,6 +68,26 @@ type Store interface {
 	ListAssistantJournalUnseen(ctx context.Context, arg store.ListAssistantJournalUnseenParams) ([]store.AssistantJournal, error)
 	CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error)
 	MarkAssistantJournalSeenThrough(ctx context.Context, arg store.MarkAssistantJournalSeenThroughParams) error
+
+	// Compaction (M5), and the journal is the only table with a DELETE against
+	// it. The reads all come before the two deletes in every pass: which days
+	// still hold raw rows, one page of one day, the shape of the whole day the
+	// payload keeps, and whether that day already has a summary -- which is what
+	// tells a crashed pass's leftovers from a day nobody has folded. The mark
+	// says whether today's pass has run.
+	//
+	// The two aggregates are over the WHOLE day where the page is bounded: the
+	// prose is written from a day's newest rows and the delete takes all of
+	// them, so anything the payload keeps has to be counted rather than
+	// rendered.
+	ListAssistantJournalRawDaysBefore(ctx context.Context, arg store.ListAssistantJournalRawDaysBeforeParams) ([]store.ListAssistantJournalRawDaysBeforeRow, error)
+	ListAssistantJournalRawForDay(ctx context.Context, arg store.ListAssistantJournalRawForDayParams) ([]store.AssistantJournal, error)
+	CountAssistantJournalRawKindsForDay(ctx context.Context, arg store.CountAssistantJournalRawKindsForDayParams) ([]store.CountAssistantJournalRawKindsForDayRow, error)
+	ListAssistantJournalRawPolicyIDsForDay(ctx context.Context, arg store.ListAssistantJournalRawPolicyIDsForDayParams) ([]string, error)
+	CountAssistantDaySummaries(ctx context.Context, arg store.CountAssistantDaySummariesParams) (int64, error)
+	DeleteAssistantJournalRawForDay(ctx context.Context, arg store.DeleteAssistantJournalRawForDayParams) (int64, error)
+	DeleteAssistantDaySummariesBefore(ctx context.Context, before string) (int64, error)
+	SetAssistantCompactedAt(ctx context.Context, arg store.SetAssistantCompactedAtParams) error
 
 	// The one read of the sessions table this package makes, and it is a read
 	// of two flags: the session.state observer's baseline, so that a snapshot

@@ -59,6 +59,7 @@ const (
 	VerbUnfollowSession = "unfollow_session"
 	VerbNote            = "note"
 	VerbDigest          = "digest"
+	VerbCompactJournal  = "compact_journal"
 	VerbRemember        = "remember"
 	VerbConfirmMemory   = "confirm_memory"
 	VerbFlagMemory      = "flag_memory"
@@ -414,6 +415,15 @@ func (s *Service) buildVerbs() []Verb {
 				"the last one, grouped, plus anything waiting for their yes. Written by the server, " +
 				"not by you.",
 			handler: s.verbDigest,
+		},
+		{
+			Name: VerbCompactJournal,
+			Tier: TierContained,
+			Description: "Fold the journal's older days away: every day more than a fortnight " +
+				"old becomes one summary and its entries are deleted. Contained because it only " +
+				"ever touches entries nothing is working on, and notable ones are left whole. " +
+				"The heartbeat does this once a day by itself; run it when they ask.",
+			handler: s.verbCompactJournal,
 		},
 	}
 

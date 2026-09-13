@@ -163,6 +163,10 @@ type Beat struct {
 	Reason string
 	// Acted says the head took a turn.
 	Acted bool
+	// Compacted says this tick was the first of the local day and ran the
+	// journal's compaction pass. Whether the pass folded anything is its own
+	// report and its own journal entry.
+	Compacted bool
 }
 
 // RunHeartbeat is the loop, and it is started from the serve command's
@@ -219,6 +223,9 @@ func (s *Service) RunHeartbeat(ctx context.Context, interval time.Duration) {
 //  5. A tick that ran triage journals its verdict. Every tick stamps
 //     `last_heartbeat_at`, including the ones that ran nothing — otherwise the
 //     window only grows and the gate can never close again.
+//  6. LAST, and independent of every verdict above it: the daily fold, once a
+//     local day. It is bounded in minutes where steps 1–4 share three, so it
+//     goes after them rather than in front — see the call site.
 //
 // The stamp is the time the tick STARTED, so anything that happens while it
 // runs is still news on the next one.
@@ -276,8 +283,39 @@ func (s *Service) Heartbeat(ctx context.Context) (Beat, error) {
 	// one re-triaging the same window and acting on it twice.
 	s.stampHeartbeat(gateCtx, started)
 
+	beat = s.judgeWindow(ctx, gateCtx, beat, since, digestDue)
+
+	// Compaction, once a local day and INDEPENDENT of the gate's verdict: the
+	// journal has to be folded on a quiet machine as much as on a busy one, and
+	// "nothing has happened lately" is exactly the state where a fortnight-old
+	// day is safest to fold. Nothing it does depends on the entries and nothing
+	// the rest of the tick does depends on it, which is what lets it go LAST —
+	// and last is where it has to be: a pass is bounded by [compactBudget],
+	// which is LONGER than [heartbeatBudget], so a slow fold in the middle of a
+	// tick spends the gate's whole budget and then hands a dead context to the
+	// digest, the policy read and the triage behind it. Each of those only warns
+	// and returns, so the window that was already stamped would be judged by
+	// nobody, once per local day, on exactly the machines whose backlog makes
+	// the fold slow.
+	//
+	// It runs on the CALLER's context for the same reason the verdict write
+	// does: the clock that bounds the judging is not the clock for a five-minute
+	// fold.
+	beat.Compacted = s.compactTick(ctx, started, state.LastCompactedAt)
+	return beat, nil
+}
+
+// judgeWindow is everything a tick does with the window it just stamped: the
+// timed digest, the triage, and whatever the verdict asks for.
+//
+// Split from [Service.Heartbeat] so the daily fold can run after ALL of it
+// rather than in front of it, without the four early returns here having to
+// remember to fold on the way out. gateCtx is [heartbeatBudget] and bounds the
+// judging; ctx is the caller's and carries the head turn an `act` starts and
+// the row that records the verdict.
+func (s *Service) judgeWindow(ctx, gateCtx context.Context, beat Beat, since string, digestDue bool) Beat {
 	if beat.Entries == 0 && !digestDue {
-		return beat, nil
+		return beat
 	}
 
 	if digestDue {
@@ -286,20 +324,20 @@ func (s *Service) Heartbeat(ctx context.Context) (Beat, error) {
 
 	policies := s.enabledPolicies(gateCtx)
 	if beat.Entries == 0 || len(policies) == 0 || s.triager == nil {
-		return beat, nil
+		return beat
 	}
 
 	entries := s.entriesSince(gateCtx, since)
 	if len(entries) == 0 {
 		// The count and the read disagree, which the heartbeat kind's exclusion
 		// from the gate makes possible: nothing to judge is nothing to judge.
-		return beat, nil
+		return beat
 	}
 
 	answer, err := s.triager.Triage(gateCtx, s.triagePrompt(gateCtx, policies, entries))
 	if err != nil {
 		s.log.Warn("assistant: triage did not answer", "error", err)
-		return beat, nil
+		return beat
 	}
 	beat.Verdict, beat.Reason = parseVerdict(answer)
 
@@ -334,7 +372,7 @@ func (s *Service) Heartbeat(ctx context.Context) (Beat, error) {
 	}); err != nil {
 		s.log.Warn("assistant: heartbeat not journaled", "error", err)
 	}
-	return beat, nil
+	return beat
 }
 
 // postDigest posts one and says whether it went out. why is for the log line:

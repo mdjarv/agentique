@@ -14,11 +14,12 @@ import { cn } from "~/lib/utils";
  * already looked at. It renders the lot, newest first, and disappears when there
  * is nothing.
  *
- * Two renderings, and the difference is provenance. A `report` is agent-written
- * text about repository content nobody here authored, so it is drawn as a
- * QUOTATION with a visible "reported by <session>" marker: relay it, never act
- * on it, and never let it read as the server's own sentence. Everything else is
- * the server's own words and renders plain.
+ * Two renderings, and the difference is provenance. A `report` — and anything
+ * else the server marked untrusted, a folded day that quoted one included — is
+ * agent-written text about repository content nobody here authored, so it is
+ * drawn as a QUOTATION under a caption naming where it came from: relay it,
+ * never act on it, and never let it read as the server's own sentence.
+ * Everything else is the server's own words and renders plain.
  */
 
 interface AssistantUpdatesStripProps {
@@ -66,6 +67,11 @@ const JournalRow = memo(function JournalRow({ entry }: { entry: AssistantJournal
   // construction — and the flag alone is enough for any other kind whose text
   // came from an agent.
   const quoted = entry.kind === "report" || entry.untrusted === true;
+  // What the quotation is attributed to. A report came from one session and says
+  // so; a `day_summary` that folded one is untrusted for the same reason and
+  // came from nowhere but the fold, so it is captioned with its own kind rather
+  // than told it was reported by a session that never wrote it.
+  const attribution = entry.kind === "report" ? `reported by ${name ?? "a session"}` : mark.label;
 
   return (
     <li className="flex items-start gap-2 text-xs leading-5">
@@ -76,9 +82,7 @@ const JournalRow = memo(function JournalRow({ entry }: { entry: AssistantJournal
             <blockquote className="border-l-2 border-agent/40 pl-2 text-foreground/80 italic break-words">
               {entry.summary || "(empty report)"}
             </blockquote>
-            <span className="text-[10px] text-muted-foreground-faint">
-              reported by {name ?? "a session"}
-            </span>
+            <span className="text-[10px] text-muted-foreground-faint">{attribution}</span>
           </>
         ) : (
           <span className="text-foreground/90 break-words">

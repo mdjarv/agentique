@@ -27,6 +27,7 @@ func baseVerbTiers() map[string]Tier {
 		VerbUnfollowSession: TierContained,
 		VerbNote:            TierContained,
 		VerbDigest:          TierContained,
+		VerbCompactJournal:  TierContained,
 
 		VerbMergeSession:    TierUncontained,
 		VerbRebaseSession:   TierUncontained,

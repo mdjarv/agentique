@@ -946,6 +946,8 @@ export const AssistantPolicyDeletePayloadSchema = z.object({
   id: z.string().optional(),
 });
 
+export const AssistantCompactPayloadSchema = z.object({});
+
 export const ScreencastMetadataSchema = z.object({
   offsetTop: z.number(),
   pageScaleFactor: z.number(),
@@ -1253,6 +1255,16 @@ export const AssistantPolicySchema = z.object({
 
 export const AssistantPoliciesResultSchema = z.object({
   policies: z.array(AssistantPolicySchema).optional(),
+});
+
+export const AssistantCompactReportSchema = z.object({
+  days: z.number().optional(),
+  rows: z.number().optional(),
+  dropped: z.number().optional(),
+  summaries: z.number().optional(),
+  expired: z.number().optional(),
+  pending: z.number().optional(),
+  note: z.string().optional(),
 });
 
 export const ScheduleInfoSchema = z.object({

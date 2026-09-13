@@ -88,6 +88,14 @@ type AssistantDecidePayload struct {
 // is the server's mark, not a range a client picks.
 type AssistantDigestPayload struct{}
 
+// AssistantCompactPayload asks for the journal's older days to be folded now.
+//
+// It carries nothing, and deliberately no knobs: which days are old enough, how
+// many one pass folds and how long a summary is kept are the server's rules
+// (docs/assistant.md, the M5 contract), not a range a client picks. A client that
+// could name the cutoff could delete this week.
+type AssistantCompactPayload struct{}
+
 // AssistantPoliciesPayload asks for the standing instructions. It carries
 // nothing: they are one short list and there is nothing to page or filter.
 type AssistantPoliciesPayload struct{}

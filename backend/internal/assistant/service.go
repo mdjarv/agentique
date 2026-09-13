@@ -122,10 +122,14 @@ type Service struct {
 	mem     Memory
 	actions Actions
 	triager Triager
-	reg     *Registry
-	bus     eventbus.Broadcaster
-	log     *slog.Logger
-	now     func() time.Time
+	// summarizer folds a day of the journal into one sentence. Nil means the
+	// journal is not folded at all — see [Service.Compact]: deleting rows nothing
+	// can account for is losing them.
+	summarizer Summarizer
+	reg        *Registry
+	bus        eventbus.Broadcaster
+	log        *slog.Logger
+	now        func() time.Time
 
 	// digestAt is the local wall-clock time the timed digest posts, or the zero
 	// value for no timed digest. Configuration rather than a constant, and
@@ -146,6 +150,15 @@ type Service struct {
 	// simultaneous first messages cannot create two conversations.
 	convMu    sync.Mutex
 	channelID string
+
+	// compactMu serialises [Service.Compact], on decideMu's argument and for a
+	// heavier reason: the fold is a check-then-act across a model call, and it
+	// has three ways in (the heartbeat's daily trigger, the `compact_journal`
+	// verb, the `assistant.compact` op). Two passes over one day would both see
+	// an unfolded day, both pay for a summary and leave the day with two. It is
+	// TAKEN rather than waited on — a second caller is told a pass is running
+	// rather than held for five minutes.
+	compactMu sync.Mutex
 
 	// decideMu serialises [Service.Decide]. The status guard in SQL protects
 	// the ROW, not the executing: two accepts arriving together would both read
@@ -185,8 +198,9 @@ func WithDispatcher(d Dispatcher) Option { return func(s *Service) { s.disp = d 
 // WithHeadManager gives it the ability to start its own head.
 func WithHeadManager(m HeadManager) Option { return func(s *Service) { s.heads = m } }
 
-// WithActions is in proposals.go, beside the interface it takes;
-// WithTriager and WithDigestAt are in heartbeat.go, beside theirs.
+// WithActions is in proposals.go, beside the interface it takes; WithTriager and
+// WithDigestAt are in heartbeat.go, and WithSummarizer is in compaction.go,
+// beside theirs.
 
 // WithAllowances lets the `allowances` verb answer.
 func WithAllowances(a Allowances) Option { return func(s *Service) { s.allow = a } }

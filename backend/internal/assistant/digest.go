@@ -137,6 +137,7 @@ func (s *Service) composeDigest(ctx context.Context, since string, entries []Jou
 		{"Also", []JournalKind{
 			JournalDispatched, JournalSessionCreated, JournalNote,
 			JournalProposalMade, JournalProposalDecided, JournalDaySummary,
+			JournalCompaction,
 		}},
 	} {
 		if section := s.digestSection(ctx, group.heading, entries, group.kinds); section != "" {
@@ -258,7 +259,8 @@ func digestVerb(kind JournalKind) string {
 		return "has a paused loop"
 	case JournalReport:
 		return "reported"
-	case JournalNote, JournalDaySummary, JournalProposalMade, JournalProposalDecided, JournalHeartbeat:
+	case JournalNote, JournalDaySummary, JournalProposalMade, JournalProposalDecided,
+		JournalHeartbeat, JournalCompaction:
 		// The summary is the whole entry; a verb in front of it would be the
 		// sentence twice.
 		return ""

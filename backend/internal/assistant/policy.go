@@ -286,11 +286,12 @@ func (s *Service) checkPolicyBudget(ctx context.Context, named string) (Policy, 
 // Three counts, all of them COUNTS: the journal is never paged into Go for this.
 // The page it used to read was 2000 rows over fourteen days and failed closed
 // when it filled, on the sound argument that an undercount is the one error that
-// widens a budget — but nothing bounds the journal. A machine journaling a row
-// per turn per session fills fourteen days with thousands, and the
-// day-summary compaction that would bound it is not built, so the guard's
-// ordinary state on a busy install was "every budgeted verb refuses, forever".
-// A count has no page to fill, and the fail-closed branch goes with it.
+// widens a budget — but a machine journaling a row per turn per session fills
+// fourteen days with thousands, so the guard's ordinary state on a busy install
+// was "every budgeted verb refuses, forever". A count has no page to fill, and
+// the fail-closed branch goes with it. Compaction bounds the table now and
+// changes nothing here: it folds only days older than [policyInFlightWindow],
+// which is exactly the window this reads.
 func (s *Service) policySpend(ctx context.Context, policy Policy) (policySpend, error) {
 	now := s.now()
 	startOfDay := formatTime(startOfLocalDay(now))

@@ -522,9 +522,13 @@ heartbeat-interval = "15m"
 # conversation. "" disables that clock; the Digest control and the assistant's
 # own digest verb work either way.
 digest-at = ""
-# The model family the heartbeat's triage step runs — a family name, never a
+# The model family the assistant's two one-shots run — a family name, never a
 # version or an id. "" is the Haiku family, which is what it should be: triage
 # answers one line, and only `act` wakes the head on the service's own model.
+# One key, not two: the heartbeat's triage step and the compaction step that
+# folds a day of the journal into a sentence are both cheap bookkeeping over
+# the assistant's own rows, and nobody wants a cheap triager and an expensive
+# compactor. Both fall back to Haiku when the family cannot be resolved.
 triage-model = ""
 
 [brain]

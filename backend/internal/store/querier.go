@@ -26,6 +26,24 @@ type Querier interface {
 	ClearSessionUnseenCompletedAt(ctx context.Context, id string) error
 	ConsumePairingToken(ctx context.Context, tokenHash string) (PairingToken, error)
 	CountActiveSessionsByProject(ctx context.Context, projectID string) (int64, error)
+	// Whether this day has already been folded.
+	//
+	// The pass inserts the summary BEFORE it deletes the rows it was written from,
+	// so a pass that dies between the two leaves a day holding both -- and the next
+	// pass has to delete the leftovers without paying for a second summary. This is
+	// what tells the two apart.
+	CountAssistantDaySummaries(ctx context.Context, arg CountAssistantDaySummariesParams) (int64, error)
+	// The shape of a WHOLE day: how many rows of each kind, and whether any of
+	// them was agent-written.
+	//
+	// Read from the day rather than from what was rendered, and that is the point.
+	// A summary's PROSE is written from at most the newest `maxCompactDayRows` of a
+	// day, where the DELETE below takes every raw row -- so a busy day's payload
+	// would otherwise describe two thousand rows and lose the rest of the day's
+	// shape with nothing saying it had. `untrusted` is the same argument in the
+	// safe direction: one untrusted row anywhere in the day makes the summary
+	// untrusted, which is what the contract says ("when any folded row was").
+	CountAssistantJournalRawKindsForDay(ctx context.Context, arg CountAssistantJournalRawKindsForDayParams) ([]CountAssistantJournalRawKindsForDayRow, error)
 	// The heartbeat's gate: has anything happened since the last beat.
 	//
 	// The assistant's OWN heartbeat entries are excluded, and that exclusion is
@@ -38,9 +56,16 @@ type Querier interface {
 	// How many entries this surface has never been shown. The rail's notch reads
 	// it once per connection; the journal pushes keep it current after that.
 	//
-	// Same exclusion, and here it is the load-bearing one: a badge is a claim on
-	// attention, so a heartbeat that ticks every fifteen minutes would put a
+	// Same exclusions, and here they are the load-bearing ones: a badge is a claim
+	// on attention, so a heartbeat that ticks every fifteen minutes would put a
 	// permanent notch on the assistant's row and teach the operator to ignore it.
+	//
+	// `day_summary` is left out for the other half of that rule: it is a row about
+	// a fortnight ago, stamped at the day it is about, so it sorts to the BOTTOM of
+	// every surface that renders the journal newest-first and is never what the
+	// notch led the reader to. A fold of thirty days would claim thirty unread
+	// things with nothing new to look at. The `compaction` row beside it is the one
+	// that is news, and it stays counted (docs/assistant.md, M5 build notes).
 	CountAssistantJournalUnseen(ctx context.Context, surface sql.NullString) (int64, error)
 	// A policy's in-flight budget: how many of the sessions it created are still
 	// unfinished. One count rather than a list intersected in Go, for the reason
@@ -62,8 +87,9 @@ type Querier interface {
 	// point rather than an optimisation. The page was 2000 rows over a fourteen-day
 	// window and FAILED CLOSED when it filled, so a machine busy enough to journal
 	// 143 entries a day would have refused every budgeted verb from then on, with
-	// one log line to explain it -- and the day-summary compaction that would have
-	// bounded the window is not built. A count has no page to fill.
+	// one log line to explain it. A count has no page to fill. Compaction (M5)
+	// bounds the table now, but not this window: it folds only days OLDER than the
+	// lookback, so a busy fortnight is still thousands of rows.
 	//
 	// The payload path is '$.policyId', which is `payloadPolicyID` in
 	// internal/assistant: the key is spelled in both places, so a rename is two
@@ -107,7 +133,20 @@ type Querier interface {
 	DeleteAgentProfile(ctx context.Context, id string) error
 	DeleteAllAuthSessions(ctx context.Context) error
 	DeleteAllWebAuthnCredentials(ctx context.Context) error
+	// Retention: a summary older than the keep window goes too.
+	//
+	// Ninety days, and the raw rows it folded are long gone -- which is why this
+	// runs only on a pass that can also write summaries: deleting the one compact
+	// record of the oldest days on a machine that cannot make any more would lose
+	// them for nothing.
+	DeleteAssistantDaySummariesBefore(ctx context.Context, before string) (int64, error)
 	DeleteAssistantFollow(ctx context.Context, sessionID string) error
+	// The fold itself: the day's raw rows go.
+	//
+	// Answers how many rows it removed, because that number is what the pass
+	// reports and journals -- and it is the only count that is true after the fact,
+	// where the one read before the delete is what the summary could see.
+	DeleteAssistantJournalRawForDay(ctx context.Context, arg DeleteAssistantJournalRawForDayParams) (int64, error)
 	DeleteAssistantPolicy(ctx context.Context, id string) error
 	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
@@ -194,6 +233,48 @@ type Querier interface {
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
 	ListAssistantFollows(ctx context.Context) ([]AssistantFollow, error)
+	// Compaction: folding the journal's older days (docs/assistant.md, the M5
+	// contract, and migration 060).
+	//
+	// Four reads and three writes, and one predicate runs through all of them: a
+	// RAW row is every kind except 'day_summary' with notable = 0. Notable rows are
+	// exempt and stay whole, and a summary is not raw or a second pass would fold
+	// its own output. The predicate is spelled in each statement rather than in a
+	// view, because sqlc generates from the statement and a view would hide which
+	// rows a DELETE reaches.
+	//
+	// A day is `substr(at, 1, 10)`, the UTC date of the row's own stamp: `at` is
+	// UTC RFC3339 seconds, so the first ten characters ARE the day and no date
+	// function is needed. The trigger's "once a day" is a local-midnight question
+	// and lives in Go; this is only which rows belong together.
+	// Which days still have raw rows older than a stamp, oldest first.
+	//
+	// One row per day with its count, so the pass can order the days itself and
+	// knows before it reads a day whether that day is past what one summary may be
+	// written from. GROUP BY over a range rather than a DISTINCT of every row: a
+	// fortnight of a busy machine is thousands of rows and thirty answers.
+	ListAssistantJournalRawDaysBefore(ctx context.Context, arg ListAssistantJournalRawDaysBeforeParams) ([]ListAssistantJournalRawDaysBeforeRow, error)
+	// One page of a day's raw rows, newest first.
+	//
+	// Paged with an (at, id) cursor rather than an offset, as the conversation's
+	// history is: a day's rows are what the summary is written from, and an offset
+	// over a table something else is writing to skips rows. An empty cursor starts
+	// at the newest, which is also the end of the day the summary is written about.
+	//
+	// The cursor is spelled out rather than as the row value `(at, id) < (?, ?)`
+	// the messages query uses, because sqlc cannot type a row value's parameters:
+	// it emitted `interface{}` for the stamp and `string` for an INTEGER id, and an
+	// id compared as text is an id compared by affinity luck.
+	ListAssistantJournalRawForDay(ctx context.Context, arg ListAssistantJournalRawForDayParams) ([]AssistantJournal, error)
+	// Every standing instruction a WHOLE day's raw rows named, in the order they
+	// were first named.
+	//
+	// Same whole-day argument, and here it is the one that costs something: the
+	// `policies` key exists so a longer budget lookback can find a folded day's
+	// spending, and a list built from the newest two thousand rows would be a list
+	// with the oldest ids silently missing. The payload path is '$.policyId',
+	// which is `payloadPolicyID` in internal/assistant.
+	ListAssistantJournalRawPolicyIDsForDay(ctx context.Context, arg ListAssistantJournalRawPolicyIDsForDayParams) ([]string, error)
 	ListAssistantJournalSince(ctx context.Context, arg ListAssistantJournalSinceParams) ([]AssistantJournal, error)
 	// What a surface has missed. 'heartbeat' rows are left out, for the same reason
 	// the digest and the head's news leave them out: a tick that woke up, looked and
@@ -295,6 +376,10 @@ type Querier interface {
 	// result rows.
 	SessionSummariesByProject(ctx context.Context, projectID string) ([]SessionSummariesByProjectRow, error)
 	SetAssistantChannel(ctx context.Context, arg SetAssistantChannelParams) error
+	// When the journal was last folded. Stamped BEFORE the pass runs, so a pass
+	// that fails is retried tomorrow rather than on every tick for the rest of the
+	// day.
+	SetAssistantCompactedAt(ctx context.Context, arg SetAssistantCompactedAtParams) error
 	// Stamps the window the last digest covered, so the next one starts where it
 	// finished. Written only by Digest.
 	SetAssistantDigestAt(ctx context.Context, arg SetAssistantDigestAtParams) error

@@ -160,6 +160,28 @@ func (c *conn) handleAssistantDigest(msg ClientMessage) {
 	})
 }
 
+// handleAssistantCompact folds the journal's older days and answers the report.
+//
+// Through handleRequestAsync, and here the reason is the strongest of the three
+// that use it: a pass is bounded at five minutes and spends a model call per day
+// it folds, so on the dispatch loop it would hold this connection's whole
+// mutation lane — a session stop, an approval answer — behind a background tidy
+// nobody is waiting on. It has no ordering contract worth holding either: what it
+// deletes is a fortnight old, and nothing a client sends next reads it.
+//
+// It answers the report rather than a bare ok, because the two numbers that
+// matter are not guessable from outside: how many days folded, and whether
+// anything was folded at all (a machine with no summariser folds nothing, on
+// purpose, and says so in `note`).
+func (c *conn) handleAssistantCompact(msg ClientMessage) {
+	handleRequestAsync(c, msg, func(ctx context.Context, _ AssistantCompactPayload) (assistant.CompactReport, error) {
+		if c.assistantSvc == nil {
+			return assistant.CompactReport{}, errAssistantDisabled
+		}
+		return c.assistantSvc.Compact(ctx)
+	})
+}
+
 // handleAssistantPolicies lists the standing instructions, enabled or not.
 //
 // A pure read on the read lane: the policies page renders from it, and the

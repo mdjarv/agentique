@@ -195,6 +195,16 @@ describe("assistant-store", () => {
       store.addJournalEntry(entry({ id: 2, kind: "heartbeat", summary: "none" }));
       expect(useAssistantStore.getState().journal).toHaveLength(2);
       expect(useAssistantStore.getState().unseen).toBe(1);
+      // A folded day is stamped at the day it is about, so it sorts below
+      // everything the strip renders: a fold of thirty days would claim thirty
+      // unread things with nothing new to look at. The `compaction` row that
+      // records the fold is the news, and it counts.
+      store.addJournalEntry(entry({ id: 3, kind: "day_summary", at: "2026-08-20T00:00:00Z" }));
+      expect(useAssistantStore.getState().unseen).toBe(1);
+      store.addJournalEntry(
+        entry({ id: 4, kind: "compaction", summary: "the journal was folded" }),
+      );
+      expect(useAssistantStore.getState().unseen).toBe(2);
     });
   });
 

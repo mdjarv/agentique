@@ -1759,15 +1759,42 @@ not a policy is refused rather than read as none — without a policy the verbs
 are unbudgeted, because the operator asked. The counts come from the
 journal (`session_created` entries name the policy, and an edit to the policy
 row cannot rewrite them), with the sessions table as the ceiling that a lost
-journal write cannot widen — and all three are **counted in SQL**, because
-nothing prunes the journal and a paged read that fails closed when it fills is a
+journal write cannot widen — and all three are **counted in SQL**, because a
+fortnight of a busy journal is thousands of rows (compaction folds only days
+older than that window) and a paged read that fails closed when it fills is a
 guard whose ordinary state on a busy machine is "autonomy refuses itself".
 In-flight means *unfinished*, so a **parked** session still holds its slot;
 archiving is what releases one. What reaches a model is budgeted where its
 structure is known, never by clamping the finished prompt: the closed answer
 format is at the end of it, and a triager that cannot see the format answers
 prose, which parses as `none` forever. Tiers never move: everything uncontained
-is still a proposal, and confidence is never a dial.
+is still a proposal, and confidence is never a dial. The same tick folds the
+journal once a local day: a whole day more than fourteen days old becomes one
+`day_summary` row written by a Haiku one-shot and its raw rows go, notable rows
+are exempt, and the summary is inserted *before* the delete, so a pass that dies
+between the two leaves a day holding both rather than neither. **A machine that
+cannot summarise deletes nothing at all** — not the raw rows and not the
+ninety-day retention — and "cannot" means a `Summarizer` that is missing *or*
+one that is failing, because on a real server it is always wired and erroring is
+the only way the ability is actually lost. Expiring the oldest summaries where
+no new one can be written loses those days for nothing. A pass that merely ran
+out of *clock* is not that machine and still sweeps, on a fresh short context —
+a backlogged machine fills its budget on every pass, and gating the sweep on
+that left the keep window unenforced exactly while the table was largest.
+
+The fold is the **last** thing a tick does. It is bounded in minutes where the
+tick's gate is bounded in three, so a pass in front of the judging spends a
+window the tick has already stamped and leaves those entries triaged by nobody.
+It runs **one pass at a time** (`compactMu`, taken rather than waited on, a
+second caller told so) because the fold is a check-then-act across a model call
+with three ways in, two of them on their own goroutine — two passes over one day
+both pay for a summary and leave the day with two. What the `day_summary` row
+*keeps* — the kind counts, the policy ids, the untrusted mark — is counted over
+the **whole day** in SQL rather than derived from the rows the summary was
+written from: the prose stops at the newest two thousand and the delete does not.
+And a day already past the ninety-day window is deleted whole with no model call
+at all, because the sentence would be stamped at that day and expired by the
+same pass that wrote it.
 
 Where the assistant's *row* lives is a placement question and is settled under
 "Where a destination lives".

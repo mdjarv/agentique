@@ -58,7 +58,9 @@ const (
 	// JournalProposalDecided — somebody accepted, declined or was too late, and
 	// the summary says which and what happened.
 	JournalProposalDecided JournalKind = "proposal_decided"
-	// JournalDaySummary — a day's raw rows, folded (M4).
+	// JournalDaySummary — a day's raw rows, folded (M5). Written only by
+	// [Service.Compact], stamped at the day's own start, and untrusted when any
+	// row it folded was: a summary of untrusted text is untrusted text.
 	JournalDaySummary JournalKind = "day_summary"
 	// JournalHeartbeat — a tick that ran triage, and what it decided. The
 	// fourteenth kind, and the only one about the assistant itself rather than
@@ -71,6 +73,16 @@ const (
 	// starts talking to itself — and the gate's count excludes it, which is what
 	// lets the gate ever close again.
 	JournalHeartbeat JournalKind = "heartbeat"
+	// JournalCompaction — a pass folded the journal's older days, and the summary
+	// says how many days and how many rows. The fifteenth kind (M5).
+	//
+	// Unlike [JournalHeartbeat] it is NOT hidden from the digest, the unseen
+	// count or the head's news: a tick that decided nothing is bookkeeping about
+	// bookkeeping, where a fold is the one thing in this design that deletes
+	// something the operator could have read. It happens once a day at most, so
+	// saying so cannot become noise, and the row is the only record afterwards
+	// that a day's entries went on purpose.
+	JournalCompaction JournalKind = "compaction"
 )
 
 // journalKinds is the closed set, in no particular order. Exported through
@@ -90,6 +102,7 @@ var journalKinds = []JournalKind{
 	JournalProposalDecided,
 	JournalDaySummary,
 	JournalHeartbeat,
+	JournalCompaction,
 }
 
 // JournalKinds returns the closed kind set.

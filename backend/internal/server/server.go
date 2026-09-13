@@ -1162,6 +1162,12 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			// heartbeat's own timer is started from serve, not here.
 			assistant.WithTriager(newAssistantTriager(runner, catalog, cfg.Assistant.TriageModel)),
 			assistant.WithDigestAt(assistantDigestAt(cfg.Assistant.DigestAt)),
+			// Compaction (docs/assistant.md, the M5 contract): the same one-shot
+			// seam with a different prompt, and the reason it is wired here
+			// rather than defaulted inside the core — without it the core folds
+			// NOTHING, because deleting journal rows nothing has summarised is
+			// losing them.
+			assistant.WithSummarizer(newAssistantSummarizer(runner, catalog, cfg.Assistant.TriageModel)),
 		}
 		assistantHeartbeat = assistantHeartbeatInterval(cfg.Assistant.HeartbeatInterval)
 		// The brain is the assistant's long-term memory and nothing else's, and

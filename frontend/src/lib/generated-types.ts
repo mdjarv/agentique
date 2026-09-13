@@ -944,6 +944,8 @@ export interface AssistantPolicyDeletePayload {
   id?: string;
 }
 
+export type AssistantCompactPayload = Record<string, never>;
+
 export interface ScreencastMetadata {
   offsetTop: number;
   pageScaleFactor: number;
@@ -1251,6 +1253,16 @@ export interface AssistantPolicy {
 
 export interface AssistantPoliciesResult {
   policies?: AssistantPolicy[];
+}
+
+export interface AssistantCompactReport {
+  days?: number;
+  rows?: number;
+  dropped?: number;
+  summaries?: number;
+  expired?: number;
+  pending?: number;
+  note?: string;
 }
 
 export interface ScheduleInfo {

@@ -399,7 +399,7 @@ func newsLine(entry JournalEntry) string {
 			return ""
 		}
 		return fmt.Sprintf("%s: %s", entry.At, entry.Summary)
-	case JournalNote, JournalDaySummary:
+	case JournalNote, JournalDaySummary, JournalCompaction:
 		// No subject worth naming: the summary is the whole entry.
 		if entry.Summary == "" {
 			return ""

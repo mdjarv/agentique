@@ -12,6 +12,7 @@ import {
   Archive,
   CalendarDays,
   Check,
+  FoldVertical,
   GitMerge,
   Handshake,
   HeartPulse,
@@ -61,6 +62,12 @@ const MARKS: Record<AssistantJournalKind, JournalMark> = {
   // tick decided is in the summary, and what it DID has its own entry beside
   // this one (a dispatch, a proposal, a session created).
   heartbeat: { glyph: HeartPulse, label: "heartbeat", tone: "text-muted-foreground" },
+  // A day folded away. It reads like a note — the server's own sentence, nothing
+  // waiting on anybody — and takes the same quiet tone, because what it reports
+  // is housekeeping on entries a fortnight old. The glyph is the one thing that
+  // is specific: `day_summary` is the day that was kept, and this is the fold
+  // that kept it, so the two must not wear the same mark.
+  compaction: { glyph: FoldVertical, label: "compacted", tone: "text-muted-foreground" },
 };
 
 const UNKNOWN: JournalMark = {

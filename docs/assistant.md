@@ -2552,9 +2552,11 @@ what a client omitting a field meant. `budgetOr` clamps both up to 1 and 3.
 
 **Still open.** `GetAssistantPolicy` is generated and unused: every read here
 wants the whole (short) list, and the name is in the contract. The day-summary
-compaction the M0 design describes is still unbuilt; when it lands, `day_summary`
-rows must keep the `policyId` payload or the budgets lose their history, and the
-two counts that now read those rows in SQL are where that shows up.
+compaction the M0 design describes is unbuilt as of M4; when it lands,
+`day_summary` rows must keep the `policyId` payload or the budgets lose their
+history, and the two counts that now read those rows in SQL are where that shows
+up. (M5 built it, and does: see the M5 build notes for what the payload keeps and
+why the fold boundary is a day older than this window.)
 
 ### M4's frontend: one menu, one word on a row, and a divider
 
@@ -2805,3 +2807,244 @@ discarded design (stamped after creation, by the directory), which sqlc copies
 verbatim into generated code, and the M4 build note above said the same. Both now
 describe `CreateSessionParams.Origin`, with the note pointing at the coherence
 pass that overturned it rather than leaving two paragraphs stating opposite rules.
+
+### M5: the journal folds by day, and a day nothing can summarise is a day that stays
+
+Calls the M5 contract left open, recorded as they were made.
+
+**A day is the UTC date of `at`; the trigger's day is the operator's.** Two
+different questions were both called "a day" and they get two answers. WHICH
+ROWS belong together is `substr(at, 1, 10)` — `at` is UTC RFC3339 seconds by
+construction, so the first ten characters *are* the day, and the whole fold is
+range comparisons on text with no date function and no timezone anywhere near
+the SQL. WHEN a pass runs is `startOfLocalDay`, the same rule `digestDue` and
+the day budget already use: "once a day" is a person's day, and on a UTC+13
+machine a UTC midnight rolls the mark over mid-afternoon. The two never have to
+agree, because the trigger only decides whether to run a pass and the pass only
+decides which rows are old enough — an offset can move a handful of rows from
+one folded day to the next, and both days are a fortnight gone.
+
+**The boundary is a DATE, so only whole days fold.** `compactBoundary` is
+midnight UTC of the date `compactAfter` ago, not the timestamp `compactAfter`
+ago. Folding a partial day would summarise half of it and then delete the other
+half on the next pass through the leftover path — which exists for a crashed
+pass and must not be reachable by design. It also puts the newest foldable row a
+full day outside `policyInFlightWindow` rather than on its edge: the two
+constants are equal today, and a test asserts the boundary is older than the
+lookback rather than asserting they are equal, because the thing that must hold
+is the order, not the numbers.
+
+**No summariser means no deletion, and that covers the ninety-day retention
+too.** The contract puts the `Summarizer` check in front of the fold; the
+retention sweep is behind the same check, which the contract does not say and
+which is the only reading that is not self-defeating. A machine with no
+summariser cannot write new summaries, so expiring its old ones would spend
+ninety days deleting the only compact record it has of its oldest days and
+replacing it with nothing. One guard, one place, and the whole pass is either
+on or off.
+
+**The pass stops at the first day it cannot fold.** A summariser that cannot
+answer for this day cannot answer for the next, so folding thirty days would be
+thirty model calls to fail thirty times. The pass breaks, counts the rest as
+pending, and says which day it stopped on; nothing was deleted for that day,
+because every failure is before the delete. An EMPTY answer is the same
+failure: a blank sentence is not a summary, and deleting a day on the strength
+of one would delete it for nothing.
+
+**`Pending` is counted from a real list.** The day list is read at
+`maxCompactDayList` (366) rather than at `maxCompactDays + 1`: one row per day
+out of a GROUP BY costs nothing, and reading exactly one day past the bound
+would make "how many days are still owed" permanently `1`. A pass that fills
+even the long list says it might have, in `Note`.
+
+**`compaction` is the fifteenth kind and it is NOT hidden.** `heartbeat` is
+excluded from the gate, the digest, the unseen count and the head's news,
+because a tick that decided nothing is bookkeeping about bookkeeping. A fold is
+the one thing in this whole design that DELETES something the operator could
+have read, so the row that records it belongs everywhere a journal row goes: it
+is in the digest's "Also" group, it counts toward the unseen notch, and
+`newsLine` prints it the way it prints a note. It happens at most once a day, so
+it cannot become the permanent claim on attention the heartbeat's exclusion
+exists to prevent — and a pass that folded nothing writes no row at all, so a
+quiet machine stays quiet. The one cost is the obvious one: on the tick after a
+fold, the gate opens for that row and pays for one triage. That is a day's news
+being one line long, not a loop.
+
+**The pass runs on the caller's context, not the tick's.** `compactBudget` is
+five minutes and `heartbeatBudget` is three, so running the fold inside the
+gate's context would cut it off at three — the same split the head turn already
+makes, for the same reason. The mark is stamped on the tick's own context
+first, then `Compact` bounds itself.
+
+**The summariser is the triager's twin and shares its configured family.**
+`assistantSummarizer` is `newAssistantTriager` with a different prompt and a
+different refusal message, reading `[assistant] triage-model`. A second config
+key was the alternative and was declined: both are one-shots over the
+assistant's own bookkeeping, and nobody wants a cheap triager and an expensive
+compactor. Both fall back to Haiku, and both REFUSE an oversized prompt rather
+than cutting one — the answer format is the last thing in each.
+
+**What the window renderer gives, and what it costs.** The day reaches the
+summariser through `renderWindow`, the renderer the triage window and the
+heartbeat's wake-up message already use, so an untrusted line is quoted and
+marked with the same words in all three. Its budget here is
+`maxCompactWindowBytes` (24 KiB) rather than the row cap's two thousand lines,
+and the two bounds are deliberately different sizes: the answer is six hundred
+characters, so the marginal value of the two-thousandth line is nil, and each
+line rendered costs a `SessionBrief` to name its session. When the byte budget
+bites it is the OLDEST lines of the day that go, which is the renderer's own
+rule and the right one here too — a day's summary is mostly about how the day
+ended.
+
+**The payload keeps `policies` even though nothing reads it back today.** A
+folded day is already outside the budgets' lookback, so
+`CountPolicySessionsCreatedSince` can never reach one. The ids are kept anyway,
+because the fold window and the budget window are set independently and the
+failure mode is silent: a longer lookback later must find the history in the
+payload rather than discover it was thrown away. The contract's own "not built
+as of M4" note says exactly this, and this is the build that had to honour it.
+(It is counted over the whole day rather than over the rows the summary was
+written from — see "what the payload describes" below.)
+
+**`assistant.compact` carries no arguments.** Which days are old enough, how
+many one pass folds and how long a summary is kept are the server's rules. A
+client that could name the cutoff could delete this week.
+
+### M5 coherence pass: the retention sweep ran on a machine that could not fold
+
+**"No summariser, no deletion" was a check on a field, and the field is never
+nil.** The build note above makes the argument correctly — expiring the oldest
+summaries on a machine that cannot write new ones spends ninety days deleting the
+only compact record of its oldest days — and then guards it with
+`s.summarizer == nil`. On a real server that is never true: `server.New` always
+wires an `assistantSummarizer`, and the way a machine actually loses the ability
+to fold a day is the summariser ERRORING — an uninstalled CLI, a revoked
+credential, a provider that is down. In that state the old guard let the pass fall
+straight through to `expireDaySummaries`, which deleted every summary past ninety
+days while nothing could write another. The nil case was tested and this one was
+not, which is why it read as covered.
+
+So the sweep is now behind the pass having FOLDED what it set out to fold: a day
+it could not fold skips retention entirely. Nothing is lost, because a summary a
+day past its window goes on the next pass that works, and a test asserts exactly
+that: a failing summariser expires nothing, and the same row goes once the
+summariser answers again. (A budget that ran out was gated the same way at first
+and no longer is — see "the two ways a pass stops short" below.)
+
+The general shape is worth naming, because this design has the same seam in three
+places: a collaborator that is *absent* and a collaborator that is *failing* are
+the same fact to everything downstream, and only the absent one is cheap to
+check. `Triager` gets away with it (a failed triage is a verdict of `none`, and
+the next tick asks again in fifteen minutes); `Summarizer` does not, because what
+sits behind it is a delete.
+
+### M5 coherence pass: the two surfaces the contract did not list
+
+The M5 contract's last section is Frontend, and unlike M4's it names no docs —
+which is right about `CLAUDE.md` (the build wrote its paragraph) and wrong about
+two files that describe this feature to a reader outside the repo. Both were
+saying something that stopped being true the moment M5 landed, and both are the
+kind of staleness nothing compiles against.
+
+**`README.md` describes `triage-model` as the heartbeat's key, and it is now
+two one-shots' key.** Sharing it was the right call (build notes above: nobody
+wants a cheap triager and an expensive compactor) but it is invisible from the
+config file, where the comment named exactly one step. A reader setting that key
+to a bigger family to get better triage was also, silently, choosing what folds
+a day of their journal forever. The comment now names both and says why it is
+one key.
+
+**`ROADMAP.md` said fourteen kinds and four milestones.** Both counts were M4's,
+and the Shipped entry is the only prose in the repo that says what the assistant
+*is* to somebody who has not read `docs/assistant.md`. It gains the one sentence
+M5 is: a day older than a fortnight becomes a sentence, notable rows are exempt,
+the insert precedes the delete, and no summariser means no deletion.
+
+**And the item M5 half-closed.** "Provenance-aware consolidation" was owed
+because a fold that dropped `policyId` would hand every standing instruction its
+spending back — the fold now keeps those ids, so the half that was owed is
+built. What is left is the *reader*: nothing looks at that payload, so a lookback
+set longer than the fold window would stop counting without saying so. The entry
+is rewritten to name that, because an item marked done would lose the trap and an
+item left as it was would claim the fold is still unbuilt.
+
+### M5 review pass: four ways one pass could be wrong about the day it folded
+
+Everything here is the same shape of fault — the fold's *bookkeeping* describing
+something other than what the fold actually did — and each one is silent, which
+is what makes them worth writing down rather than only fixing.
+
+**What the payload describes is the whole day, not the part that was read.** A
+day past `maxCompactDayRows` is summarised from its newest two thousand rows,
+and the DELETE that follows takes every raw row of the day. The payload was
+built from the read, so `kinds` and `policies` described two thousand rows and
+the rest went with nothing recording that they had — defeating the one reason
+`policies` is kept at all, that a later, longer budget lookback must find the
+history here rather than discover it was thrown away. Two aggregates now count
+the day itself (`CountAssistantJournalRawKindsForDay`,
+`ListAssistantJournalRawPolicyIDsForDay`), against the same range and the same
+raw-row predicate the delete uses, and they carry `untrusted` with them: the
+contract says "when any folded row was untrusted", and folded means deleted, not
+rendered. The prose is still the newest rows and now says so in two numbers
+rather than one — `entries` is how big the day was, `summarisedFrom` how much of
+it the sentence was written from, and `truncated` stays as the flag both answer
+to.
+
+**The fold goes last in a tick.** It sat in the middle, after the gate stamped
+its window and before the digest, the policy read and the triage — on the
+caller's context, while everything behind it was still on the tick's three-minute
+`gateCtx`. A pass is bounded at five minutes, so a slow fold spent the gate's
+whole budget and handed a dead context to the rest of the tick, each step of
+which only warns and returns. The window was already stamped, so those entries
+were judged by nobody and no later tick would see them again: once per local
+day, on exactly the machines whose backlog makes a fold slow. `judgeWindow` is
+now everything the tick does with its window, and `Heartbeat` calls the fold
+after it — nothing in the tick depends on the fold and the fold depends on
+nothing in the tick, so last costs nothing. The four early returns inside the
+judging are why it is a function rather than a moved line: each of them used to
+be a way to reach `return` without folding.
+
+**One pass at a time, and a second caller is told so.** `Compact` has three ways
+in — the heartbeat's daily trigger, the `compact_journal` verb and
+`assistant.compact`, the last two on their own goroutine — and the fold is a
+check-then-act across a model call: two passes over one day both read "no
+summary yet", both pay for one, and the day ends up with two sentences that
+nothing afterwards reconciles, because it has no raw rows left to bring it back
+into the day list. `compactMu` is TAKEN rather than waited on (`TryLock`), and a
+refused caller answers a report whose `Note` says a pass is already folding the
+same days: holding the op for five minutes would tell it nothing for five
+minutes.
+
+**A day already past the keep window is deleted whole, with no model call.** The
+day list has no lower bound and the retention sweep runs after the fold, so a
+backlog reaching past ninety days had each of its oldest days summarised — one
+provider one-shot each — and the summaries deleted by the same pass that wrote
+them. `foldDay` now short-circuits any day older than `keepFrom` (the very
+instant the sweep deletes from, spelled once so the two cannot disagree) and
+deletes its rows straight through. That is not a hole in "no summariser, no
+deletion": the whole pass is still behind that check, and what a summary would
+buy here is a row this pass deletes before it returns. `CompactReport.Dropped`
+counts those days separately from `Days` and the `compaction` entry names both,
+because folding a day and dropping one are different events.
+
+**And the two ways a pass stops short are now told apart.** A fold that FAILED
+says the machine cannot write a summary, which is the state the retention sweep
+must not run in. A budget that ran out says only that the clock beat a backlog —
+and a machine working through one takes that branch on *every* pass, so gating
+the sweep on it left the ninety-day window unenforced for as long as the backlog
+lasted, which is when the table is largest. The sweep is one DELETE with no model
+call, so it runs on a fresh short context of its own (`sweepExpired`,
+`retentionSweepBudget`) rather than on the pass's spent one.
+
+**A folded day is not a claim on attention.** `day_summary` is stamped at the day
+it is about, so it sorts to the bottom of every surface that renders the journal
+newest-first — and it was counted by the unseen notch, which meant a pass that
+folded thirty days added thirty unread items with nothing new to look at. It is
+now left out of `CountAssistantJournalUnseen` and `ListAssistantJournalUnseen`
+and out of the client's `claimsAttention`, one rule on both sides, as `heartbeat`
+already is. This does not reopen "`compaction` is NOT hidden": that row is the
+news, it is written at `now`, and it still counts — the two kinds are a pair, one
+saying a fold happened and one recording what a day held. The strip also stopped
+captioning an untrusted `day_summary` "reported by a session"; a quotation still
+needs attribution, so it is captioned with its own kind, which is where it came
+from.

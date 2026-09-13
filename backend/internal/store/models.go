@@ -79,6 +79,7 @@ type AssistantState struct {
 	SurfaceMarks    string `json:"surface_marks"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
+	LastCompactedAt string `json:"last_compacted_at"`
 }
 
 type AuthSession struct {

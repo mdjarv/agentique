@@ -101,19 +101,28 @@ LIMIT sqlc.arg(lim);
 SELECT * FROM assistant_journal
 WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL
   AND kind != 'heartbeat'
+  AND kind != 'day_summary'
 ORDER BY at DESC, id DESC
 LIMIT sqlc.arg(lim);
 
 -- How many entries this surface has never been shown. The rail's notch reads
 -- it once per connection; the journal pushes keep it current after that.
 --
--- Same exclusion, and here it is the load-bearing one: a badge is a claim on
--- attention, so a heartbeat that ticks every fifteen minutes would put a
+-- Same exclusions, and here they are the load-bearing ones: a badge is a claim
+-- on attention, so a heartbeat that ticks every fifteen minutes would put a
 -- permanent notch on the assistant's row and teach the operator to ignore it.
+--
+-- `day_summary` is left out for the other half of that rule: it is a row about
+-- a fortnight ago, stamped at the day it is about, so it sorts to the BOTTOM of
+-- every surface that renders the journal newest-first and is never what the
+-- notch led the reader to. A fold of thirty days would claim thirty unread
+-- things with nothing new to look at. The `compaction` row beside it is the one
+-- that is news, and it stays counted (docs/assistant.md, M5 build notes).
 -- name: CountAssistantJournalUnseen :one
 SELECT COUNT(*) FROM assistant_journal
 WHERE json_extract(seen_by, '$.' || sqlc.arg(surface)) IS NULL
-  AND kind != 'heartbeat';
+  AND kind != 'heartbeat'
+  AND kind != 'day_summary';
 
 -- Stamps everything this surface has now been shown, THROUGH the newest row it
 -- was handed.
@@ -299,8 +308,9 @@ WHERE at >= sqlc.arg(since) AND kind != 'heartbeat';
 -- point rather than an optimisation. The page was 2000 rows over a fourteen-day
 -- window and FAILED CLOSED when it filled, so a machine busy enough to journal
 -- 143 entries a day would have refused every budgeted verb from then on, with
--- one log line to explain it -- and the day-summary compaction that would have
--- bounded the window is not built. A count has no page to fill.
+-- one log line to explain it. A count has no page to fill. Compaction (M5)
+-- bounds the table now, but not this window: it folds only days OLDER than the
+-- lookback, so a busy fortnight is still thousands of rows.
 --
 -- The payload path is '$.policyId', which is `payloadPolicyID` in
 -- internal/assistant: the key is spelled in both places, so a rename is two
@@ -310,3 +320,142 @@ SELECT COUNT(*) FROM assistant_journal
 WHERE kind = 'session_created'
   AND at >= sqlc.arg(since)
   AND json_extract(payload, '$.policyId') = sqlc.arg(policy_id);
+
+-- Compaction: folding the journal's older days (docs/assistant.md, the M5
+-- contract, and migration 060).
+--
+-- Four reads and three writes, and one predicate runs through all of them: a
+-- RAW row is every kind except 'day_summary' with notable = 0. Notable rows are
+-- exempt and stay whole, and a summary is not raw or a second pass would fold
+-- its own output. The predicate is spelled in each statement rather than in a
+-- view, because sqlc generates from the statement and a view would hide which
+-- rows a DELETE reaches.
+--
+-- A day is `substr(at, 1, 10)`, the UTC date of the row's own stamp: `at` is
+-- UTC RFC3339 seconds, so the first ten characters ARE the day and no date
+-- function is needed. The trigger's "once a day" is a local-midnight question
+-- and lives in Go; this is only which rows belong together.
+
+-- Which days still have raw rows older than a stamp, oldest first.
+--
+-- One row per day with its count, so the pass can order the days itself and
+-- knows before it reads a day whether that day is past what one summary may be
+-- written from. GROUP BY over a range rather than a DISTINCT of every row: a
+-- fortnight of a busy machine is thousands of rows and thirty answers.
+-- name: ListAssistantJournalRawDaysBefore :many
+SELECT CAST(substr(at, 1, 10) AS TEXT) AS day,
+       CAST(COUNT(*) AS INTEGER) AS raw_rows
+FROM assistant_journal
+WHERE at < sqlc.arg(before)
+  AND kind != 'day_summary'
+  AND notable = 0
+GROUP BY day
+ORDER BY day ASC
+LIMIT sqlc.arg(lim);
+
+-- One page of a day's raw rows, newest first.
+--
+-- Paged with an (at, id) cursor rather than an offset, as the conversation's
+-- history is: a day's rows are what the summary is written from, and an offset
+-- over a table something else is writing to skips rows. An empty cursor starts
+-- at the newest, which is also the end of the day the summary is written about.
+--
+-- The cursor is spelled out rather than as the row value `(at, id) < (?, ?)`
+-- the messages query uses, because sqlc cannot type a row value's parameters:
+-- it emitted `interface{}` for the stamp and `string` for an INTEGER id, and an
+-- id compared as text is an id compared by affinity luck.
+-- name: ListAssistantJournalRawForDay :many
+SELECT * FROM assistant_journal
+WHERE at >= sqlc.arg(day_start)
+  AND at < sqlc.arg(next_day)
+  AND kind != 'day_summary'
+  AND notable = 0
+  AND (sqlc.arg(before_at) = ''
+       OR at < sqlc.arg(before_at)
+       OR (at = sqlc.arg(before_at) AND id < sqlc.arg(before_id)))
+ORDER BY at DESC, id DESC
+LIMIT sqlc.arg(lim);
+
+-- The shape of a WHOLE day: how many rows of each kind, and whether any of
+-- them was agent-written.
+--
+-- Read from the day rather than from what was rendered, and that is the point.
+-- A summary's PROSE is written from at most the newest `maxCompactDayRows` of a
+-- day, where the DELETE below takes every raw row -- so a busy day's payload
+-- would otherwise describe two thousand rows and lose the rest of the day's
+-- shape with nothing saying it had. `untrusted` is the same argument in the
+-- safe direction: one untrusted row anywhere in the day makes the summary
+-- untrusted, which is what the contract says ("when any folded row was").
+-- name: CountAssistantJournalRawKindsForDay :many
+SELECT CAST(kind AS TEXT) AS kind,
+       CAST(COUNT(*) AS INTEGER) AS entries,
+       CAST(MAX(untrusted) AS INTEGER) AS untrusted
+FROM assistant_journal
+WHERE at >= sqlc.arg(day_start)
+  AND at < sqlc.arg(next_day)
+  AND kind != 'day_summary'
+  AND notable = 0
+GROUP BY kind;
+
+-- Every standing instruction a WHOLE day's raw rows named, in the order they
+-- were first named.
+--
+-- Same whole-day argument, and here it is the one that costs something: the
+-- `policies` key exists so a longer budget lookback can find a folded day's
+-- spending, and a list built from the newest two thousand rows would be a list
+-- with the oldest ids silently missing. The payload path is '$.policyId',
+-- which is `payloadPolicyID` in internal/assistant.
+-- name: ListAssistantJournalRawPolicyIDsForDay :many
+SELECT CAST(json_extract(payload, '$.policyId') AS TEXT) AS policy_id
+FROM assistant_journal
+WHERE at >= sqlc.arg(day_start)
+  AND at < sqlc.arg(next_day)
+  AND kind != 'day_summary'
+  AND notable = 0
+  AND json_extract(payload, '$.policyId') IS NOT NULL
+GROUP BY policy_id
+ORDER BY MIN(at) ASC, policy_id ASC;
+
+-- Whether this day has already been folded.
+--
+-- The pass inserts the summary BEFORE it deletes the rows it was written from,
+-- so a pass that dies between the two leaves a day holding both -- and the next
+-- pass has to delete the leftovers without paying for a second summary. This is
+-- what tells the two apart.
+-- name: CountAssistantDaySummaries :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE kind = 'day_summary'
+  AND at >= sqlc.arg(day_start)
+  AND at < sqlc.arg(next_day);
+
+-- The fold itself: the day's raw rows go.
+--
+-- Answers how many rows it removed, because that number is what the pass
+-- reports and journals -- and it is the only count that is true after the fact,
+-- where the one read before the delete is what the summary could see.
+-- name: DeleteAssistantJournalRawForDay :execrows
+DELETE FROM assistant_journal
+WHERE at >= sqlc.arg(day_start)
+  AND at < sqlc.arg(next_day)
+  AND kind != 'day_summary'
+  AND notable = 0;
+
+-- Retention: a summary older than the keep window goes too.
+--
+-- Ninety days, and the raw rows it folded are long gone -- which is why this
+-- runs only on a pass that can also write summaries: deleting the one compact
+-- record of the oldest days on a machine that cannot make any more would lose
+-- them for nothing.
+-- name: DeleteAssistantDaySummariesBefore :execrows
+DELETE FROM assistant_journal
+WHERE kind = 'day_summary' AND at < sqlc.arg(before);
+
+-- When the journal was last folded. Stamped BEFORE the pass runs, so a pass
+-- that fails is retried tomorrow rather than on every tick for the rest of the
+-- day.
+-- name: SetAssistantCompactedAt :exec
+INSERT INTO assistant_state (id, last_compacted_at, created_at, updated_at)
+VALUES (1, sqlc.arg(last_compacted_at), sqlc.arg(now), sqlc.arg(now))
+ON CONFLICT(id) DO UPDATE SET
+  last_compacted_at = excluded.last_compacted_at,
+  updated_at = excluded.updated_at;

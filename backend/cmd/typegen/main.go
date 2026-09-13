@@ -518,6 +518,7 @@ func main() {
 	g.register(ws.AssistantPoliciesPayload{}, "AssistantPoliciesPayload")
 	g.register(ws.AssistantPolicySavePayload{}, "AssistantPolicySavePayload")
 	g.register(ws.AssistantPolicyDeletePayload{}, "AssistantPolicyDeletePayload")
+	g.register(ws.AssistantCompactPayload{}, "AssistantCompactPayload")
 
 	// ── Push event payload types ──
 
@@ -644,6 +645,10 @@ func main() {
 	// client would have to learn.
 	assistantPolicyRef := g.register(assistant.Policy{}, "AssistantPolicy")
 	g.register(ws.AssistantPoliciesResult{}, "AssistantPoliciesResult")
+	// What one compaction pass did (docs/assistant.md, the M5 contract). The op
+	// answers it verbatim; there is no push, because a fold is not news — the
+	// `compaction` journal entry it writes is, and that rides assistant.journal.
+	g.register(assistant.CompactReport{}, "AssistantCompactReport")
 	// All four ride the GLOBAL topic: the conversation is project-less, so
 	// there is no topic to scope them to and no new routing to add.
 	g.addPushEvent("assistant.message", assistantMessageRef)

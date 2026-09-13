@@ -65,6 +65,18 @@ export type AssistantRole = (typeof ASSISTANT_ROLES)[number];
  */
 export const HEARTBEAT_KIND = "heartbeat";
 
+/**
+ * The journal kind a fold leaves behind: one day, one sentence, stamped at the
+ * day it is about rather than at the moment it was written.
+ *
+ * That stamp is why it has a constant of its own. Every surface renders the
+ * journal newest-first, so a summary of a fortnight ago sorts to the bottom and
+ * is never what a notch led the reader to — it is a record, where the
+ * `compaction` row beside it is the news. The server's
+ * `CountAssistantJournalUnseen` leaves the same kind out.
+ */
+export const DAY_SUMMARY_KIND = "day_summary";
+
 /** The server's wake-up note: a divider, not a bubble. */
 export function isHeartbeatNotice(message: { role?: string; kind?: string }): boolean {
   return message.role === "system" && message.kind === HEARTBEAT_KIND;
@@ -101,6 +113,11 @@ export const ASSISTANT_JOURNAL_KINDS = [
   // M4's fourteenth kind: one entry per tick that ran triage, whose summary is
   // the verdict. A tick the gate turned back journals nothing.
   "heartbeat",
+  // M5's fifteenth: one entry per pass that folded older days away, whose
+  // summary says how many days and how many entries went. At most one a day,
+  // and — unlike `heartbeat` — it is not hidden from anything, because it is the
+  // one row that records entries having been deleted on purpose.
+  "compaction",
 ] as const;
 export type AssistantJournalKind = (typeof ASSISTANT_JOURNAL_KINDS)[number];
 

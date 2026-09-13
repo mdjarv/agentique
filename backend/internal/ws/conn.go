@@ -496,6 +496,12 @@ var handlerRegistry = map[string]handlerFunc{
 	"assistant.policy-save":   (*conn).handleAssistantPolicySave,
 	"assistant.policy-delete": (*conn).handleAssistantPolicyDelete,
 
+	// Folding the journal by day (docs/assistant.md, the M5 contract). A
+	// mutation, and the only op in this table that DELETES journal rows: the
+	// heartbeat runs the same pass once a day by itself, and this is the
+	// operator asking for it now.
+	"assistant.compact": (*conn).handleAssistantCompact,
+
 	// ping
 	"ping": (*conn).handlePing,
 }

@@ -5,6 +5,7 @@ import {
   type AssistantPage,
   type AssistantPolicy,
   type AssistantProposal,
+  DAY_SUMMARY_KIND,
   HEARTBEAT_KIND,
   isOpenProposal,
 } from "~/lib/assistant/wire";
@@ -34,15 +35,21 @@ export const EMPTY_POLICIES: AssistantPolicy[] = [];
 /**
  * Whether an entry may raise the rail row's notch.
  *
- * Everything does except the assistant's own `heartbeat` bookkeeping, and the
- * server's `CountAssistantJournalUnseen` leaves the same kind out — one rule,
- * both sides, or a notch drawn live would disagree with the count the next
- * connection answers. A tick that woke up, looked and decided nothing is not a
- * claim on anybody's attention; what it *did* has its own entry beside it, and
- * every tick stays readable in the strip either way.
+ * Everything does except two kinds, and the server's
+ * `CountAssistantJournalUnseen` leaves the same two out — one rule, both sides,
+ * or a notch drawn live would disagree with the count the next connection
+ * answers.
+ *
+ * A tick that woke up, looked and decided nothing (`heartbeat`) is not a claim
+ * on anybody's attention; what it *did* has its own entry beside it. A folded
+ * day (`day_summary`) is not one either, for the opposite reason: it is stamped
+ * at the day it is about, so it sorts below everything the strip renders and a
+ * fold of thirty days would claim thirty unread things with nothing new to look
+ * at. The `compaction` row that records the fold is the news, and it counts.
+ * Both stay readable in the strip and on the journal page either way.
  */
 function claimsAttention(entry: AssistantJournalEntry): boolean {
-  return entry.kind !== HEARTBEAT_KIND;
+  return entry.kind !== HEARTBEAT_KIND && entry.kind !== DAY_SUMMARY_KIND;
 }
 
 /** What identifies a journal entry when merging. */
