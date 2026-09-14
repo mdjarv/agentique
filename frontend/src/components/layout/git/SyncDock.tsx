@@ -20,7 +20,7 @@
  * checked yet" rather than presenting a stale count as fact.
  */
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { Check, ChevronRight, CircleDashed, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useNow } from "~/hooks/useNow";
@@ -155,39 +155,33 @@ function Chip({ chip, stacked }: { chip: SyncChip; stacked: boolean }) {
 }
 
 /**
- * The drift meter — and the dock's status light, since it replaced the amber
- * dot. Proportional by commits, three-tone (ahead / behind / diverged), and it
- * still says something when there is nothing docked: a dim green track for
- * clear, a grey one when no fetch has happened and the claim would be a guess.
+ * The drift meter — proportional by commits, three-tone (ahead / behind /
+ * diverged). It is drawn only when something has drifted: a bar is a quantity,
+ * and a full-width track with nothing to measure reads as a progress bar and
+ * asks for attention the all-clear has not earned. The empty states get
+ * {@link ClearMark} instead.
  */
-function SyncMeter({
-  segments,
-  clear,
-  stale,
-}: {
-  segments: SyncSegments;
-  clear: boolean;
-  stale: boolean;
-}) {
+function SyncMeter({ segments }: { segments: SyncSegments }) {
   const pct = (n: number) => (segments.total > 0 ? `${(n / segments.total) * 100}%` : "0%");
   return (
     <span
       aria-hidden
       className="flex h-[5px] w-[46px] shrink-0 overflow-hidden rounded-full bg-border/55"
     >
-      {clear || segments.total === 0 ? (
-        <span
-          className={cn("h-full w-full", stale ? "bg-muted-foreground-faint/60" : "bg-success/45")}
-        />
-      ) : (
-        <>
-          <span className="h-full bg-success" style={{ width: pct(segments.ahead) }} />
-          <span className="h-full bg-primary" style={{ width: pct(segments.behind) }} />
-          <span className="h-full bg-warning" style={{ width: pct(segments.diverged) }} />
-        </>
-      )}
+      <span className="h-full bg-success" style={{ width: pct(segments.ahead) }} />
+      <span className="h-full bg-primary" style={{ width: pct(segments.behind) }} />
+      <span className="h-full bg-warning" style={{ width: pct(segments.diverged) }} />
     </span>
   );
+}
+
+/**
+ * Nothing docked: a small glyph in faint ink, never colour. A check when a
+ * fetch backs the claim, a dashed circle when it would be a guess.
+ */
+function ClearMark({ stale }: { stale: boolean }) {
+  const Icon = stale ? CircleDashed : Check;
+  return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground-faint" />;
 }
 
 const BULK_CLASS: Record<BulkAction, string> = {
@@ -381,9 +375,9 @@ export function SyncDock() {
           "transition-colors hover:bg-sidebar-accent/60 max-md:min-h-9",
         )}
       >
-        {/* The meter is also the status light — it replaced the amber dot, so
-            it has to hold the empty states too. */}
-        <SyncMeter segments={segments} clear={clear} stale={stale} />
+        {/* The meter is the status light while there is drift; at rest a
+            quiet glyph holds the slot, so the all-clear never looks like work. */}
+        {clear ? <ClearMark stale={stale} /> : <SyncMeter segments={segments} />}
 
         {/* Staleness only silences the *claim*, never the findings: drift we
             already know about is real work whether or not it was just
@@ -393,7 +387,7 @@ export function SyncDock() {
             docked and nothing fetched, where "everything pushed" might simply
             be ignorance. */}
         {clear ? (
-          <span className="truncate text-[11.5px] text-muted-foreground">
+          <span className="truncate text-[11.5px] text-muted-foreground-faint">
             {stale ? "Not checked yet" : "Everything pushed"}
           </span>
         ) : (
