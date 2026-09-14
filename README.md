@@ -16,9 +16,8 @@ VPS behave like one control surface.
 - SQLite (pure Go, no cgo), WebAuthn passkeys, systemd/launchd/Scheduled Task
   service integration
 
-**Want an agent to set it up with you?** See
-[Install with an agent](#install-with-an-agent): it surveys the machine, asks
-what you want, and handles the service, Tailscale and extras.
+**Easiest install:** let Claude Code do it with you, see
+[With Claude Code](#with-claude-code-recommended).
 
 **Automating an install?** Skip to [Scripted install](#scripted-install), which
 is written for an agent doing an unattended setup and names the two steps a human
@@ -32,7 +31,7 @@ re-paired.
 
 | Dependency | Required | Notes |
 |---|---|---|
-| `claude` >= 2.0.0 | yes | The default provider. `npm install -g @anthropic-ai/claude-code`, then `claude auth login`. |
+| `claude` >= 2.0.0 | yes | The default provider. `curl -fsSL https://claude.ai/install.sh \| bash`, then `claude auth login`. |
 | `git` | yes | Worktrees, branches, diffs. |
 | `codex` | no | Only for sessions created with `provider: "codex"`. |
 | `gh` | no | PR creation from the UI. Needs `gh auth login`. |
@@ -59,7 +58,39 @@ graduates when someone has actually run agentique on it, not when it compiles.
 
 ## Install
 
-### Linux and macOS
+### With Claude Code (recommended)
+
+Claude surveys the machine, asks what you want, and walks you through it:
+install or upgrade, missing dependencies, the background service, access over
+Tailscale, pairing with another machine, and extras like `gh` and Codex.
+
+**1. Install Claude Code** and sign in when it asks. Skip this if `claude` already
+runs.
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+**2. Start Claude with the install brief:**
+
+```bash
+claude "$(curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md)"
+```
+
+Windows (PowerShell), for both steps:
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+irm https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md -OutFile install-with-claude.md; claude "Follow install-with-claude.md"
+```
+
+Claude changes nothing until you have picked what you want. It asks before
+anything that needs root or restarts a running server, and hands you the steps
+only a person can do: browser logins, the Tailscale admin console, and
+registering a passkey. The brief itself is
+[docs/install-with-claude.md](docs/install-with-claude.md).
+
+### Manually: Linux and macOS
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/install.sh | bash
@@ -77,7 +108,7 @@ says you use, re-writes the systemd unit if one is already enabled, and runs
 `agentique doctor`. If the install directory is not on `PATH` it prints the line
 to add.
 
-### Windows
+### Manually: Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/mdjarv/agentique/master/install.ps1 | iex
@@ -89,26 +120,6 @@ Installs `agentique.exe` to `%LOCALAPPDATA%\Programs\agentique` (override with
 Completions and the background service come from `agentique setup` and
 `agentique service install`. The service is a per-user Scheduled Task, so no
 admin elevation.
-
-### Install with an agent
-
-Give Claude Code (or any coding agent with a shell) this prompt on the machine
-you are setting up:
-
-```text
-Run `curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md` and follow the instructions it prints.
-```
-
-The brief, [docs/install-with-claude.md](docs/install-with-claude.md), has the
-agent survey what is already installed and configured without changing anything,
-then ask what you want: install or upgrade, missing dependencies, the background
-service, access over Tailscale, pairing with another machine, or extras such as
-`gh` and Codex. It asks before anything that needs root or restarts a running
-server, and hands you the steps only a person can do: browser logins, the
-Tailscale admin console, and registering a passkey.
-
-It is fetched with `curl` rather than a web-fetch tool so the agent reads the
-whole file instead of a summary.
 
 ### Upgrading
 
