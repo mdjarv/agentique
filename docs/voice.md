@@ -721,6 +721,69 @@ the background, and a progress line for work nobody requested is
 indistinguishable from a bug, so warming is invisible — though it holds the line
 exactly like the ask does.
 
+## Dictation
+
+The composer's mic is not the call. It turns speech into composer text and does
+nothing else, and it has two routes (`hooks/useDictation.ts`):
+
+- **Browser** — the Web Speech API (`useSpeechRecognition`). Word by word,
+  nothing of ours in the path. Always tried first where it can work.
+- **Server** — `GET /api/voice/dictation` (`voice/dictation.go`), a Gemini Live
+  session through the same `[voice]` credentials. Used where the browser route
+  cannot work: Firefox has no recognizer, Brave ships Chromium's but blocks the
+  service behind it (every session ends in `network`), and Safari refuses with
+  `service-not-allowed` while macOS Dictation is off.
+
+**Faults are named, not retried into silence.** `lib/speech/dictation-fault.ts`
+is the closed set. Two are knowable before a press — Brave (`navigator.brave`)
+and a denied microphone (Permissions API) — and the rest come from the error
+the first attempt ends in. `network` is a fault only before anything was heard;
+after that it is the transient kind Android throws. A fault about the *service*
+routes to the server when it is mounted, on the same press, and is remembered
+for the page's lifetime; a fault about the *microphone* applies to both routes
+and is reported.
+
+**Dictation is mounted on credentials, not on the experiment.** It needs a
+backend with a real key or project and is absent otherwise (`features.dictation`
+in `/api/health`), so the client never offers a fallback that would answer with
+an echo. It is not gated on `[experimental] voice`: nothing is spoken, dispatched
+or decided.
+
+**The client decides where utterances end, because the service cannot.** Probed
+against the real API (`TestDictationProbeLive`, three runs): with automatic
+activity detection off, a Live session transcribes nothing until an utterance is
+closed and then returns the whole of it about 0.3s later; with detection on, the
+second sentence of a dictation sometimes never came back. So the session runs
+with detection off, and `UtteranceGate` opens an utterance when the microphone
+level rises over the room's noise floor and closes it after an 800ms pause.
+Audio leaves only inside an utterance, plus a ~320ms pre-roll so the gate's
+reaction time does not clip the first syllable. The thresholds are a first
+reading and want a listen on real microphones before they are pinned.
+
+Text therefore arrives **a sentence at a time**, and the client reports phases —
+connecting, listening, hearing, writing — because there is a real wait between
+speaking and seeing words. The server marks the first chunk after each closed
+utterance (`newUtterance`), which is where the client puts a space; later chunks
+of the same utterance keep the service's own spacing, since a chunk boundary can
+fall inside a word.
+
+**The model answers anyway, and is ignored.** No instruction stops a Live model
+replying to a closed turn. The transcriber drops everything but input
+transcription, and the next utterance's start interrupts the reply.
+
+**No resumption.** A Live connection ends at about ten minutes; the dictation
+reports that as its time limit rather than carrying reconnect machinery for a
+case a person answers by pressing the mic again. The idle guard is two minutes
+without an utterance mark and never fires inside an open utterance. A stop
+closes the open utterance and waits up to 1.5s for its words.
+
+Driving it end to end without a person: run the probe with
+`AGENTIQUE_DICTATION_PROBE_WAV=<path>` to write its speech as a WAV, then launch
+Chromium with `--use-fake-device-for-media-stream
+--use-file-for-fake-audio-capture=<path>` against an isolated server. Headless
+Chromium's own recognizer cannot use the fake device (it reports
+`audio-capture`), so stub `navigator.brave` to exercise the fallback.
+
 ## Backends
 
 `[voice] backend` selects the speech transport:
