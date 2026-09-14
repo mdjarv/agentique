@@ -3,8 +3,9 @@
  *
  * A project is a registration, not a place work accumulates: a path, a name, a
  * colour, a slug, and which machines hold a checkout. That is the same kind of
- * fact as a machine's name, which is why this sits beside Machines rather than
- * in the sidebar's tools menu.
+ * fact as a machine's name, which is why this sits beside Machines. The
+ * checkout itself — branch, uncommitted files — is a different subject and
+ * lives at /projects, in the sidebar's tools menu.
  *
  * Rows are LOGICAL projects (multi-machine): one repo, one row, with a line per
  * machine that holds a checkout. The row's identity comes from the

@@ -1,12 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { ProjectsPage } from "~/components/projects/ProjectsPage";
 
 /**
- * The repo inventory moved into Settings, where a registration belongs. The
- * old path stays as a redirect: it is in bookmarks, and it is the URL every
- * deep link agentique has ever minted for the project list points at.
+ * Every checkout's state on disk. The registration list is Settings ›
+ * Projects; see the header of `ProjectsPage` for why both exist.
  */
 export const Route = createFileRoute("/projects")({
-  beforeLoad: () => {
-    throw redirect({ to: "/settings/projects" });
-  },
+  component: ProjectsPage,
 });

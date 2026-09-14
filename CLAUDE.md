@@ -304,8 +304,15 @@ reading that answers nothing when tapped differs from the gauge only in the
 respect you cannot see. It is also the target that works on touch, where the
 compact gauge is 24px wide. Allowance sections stay inert.
 
-A moved route keeps its old path as a `redirect`: `/projects` and `/templates`
-are in bookmarks and in deep links this app minted.
+A project is two things with two homes. Its **registration** (path, name,
+colour, machines) is Settings › Projects; its **checkout** is `/projects`, in
+the ⋯ menu, because a working tree reports on its own — branches move, files go
+uncommitted. Each checkout line there opens `/project/$slug/`, that checkout's
+branch, uncommitted files and remote, outside any session's worktree.
+
+A moved route keeps its old path as a `redirect`: `/templates` is in bookmarks
+and in deep links this app minted. `/projects` was one too, and now names the
+checkout list, which is still what a link to "the projects" wants.
 
 **Navigating dismisses the mobile sidebar, and that rule lives at the router.**
 On mobile the sidebar is a Sheet over the whole viewport, so it *is* the

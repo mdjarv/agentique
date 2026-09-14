@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
@@ -83,15 +84,25 @@ function BranchContextCard({ gitStatus }: { gitStatus: ProjectGitStatus }) {
 
 // --- Uncommitted files card ---
 
+/** The directory holding a repo-relative path; "" at the root. */
+function parentDir(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i < 0 ? "" : path.slice(0, i);
+}
+
 function UncommittedFilesCard({
   gitStatus,
   projectId,
+  projectSlug,
 }: {
   gitStatus: ProjectGitStatus;
   projectId: string;
+  /** When given, each file opens in the project's file browser. */
+  projectSlug?: string;
 }) {
   const ws = useWebSocket();
-  const [expanded, setExpanded] = useState(false);
+  // Open by default: the list is what someone opening a checkout came to see.
+  const [expanded, setExpanded] = useState(true);
   const [files, setFiles] = useState<FileStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -177,7 +188,18 @@ function UncommittedFilesCard({
             files.map((f) => (
               <li key={f.path} className="flex items-center gap-1.5 text-muted-foreground">
                 <UncommittedFileIcon status={f.status} />
-                <span className="font-mono truncate min-w-0 text-[11px]">{f.path}</span>
+                {projectSlug && f.status !== "deleted" ? (
+                  <Link
+                    to="/project/$projectSlug/files"
+                    params={{ projectSlug }}
+                    search={{ path: parentDir(f.path), file: f.path }}
+                    className="font-mono truncate min-w-0 text-[11px] hover:text-foreground hover:underline"
+                  >
+                    {f.path}
+                  </Link>
+                ) : (
+                  <span className="font-mono truncate min-w-0 text-[11px]">{f.path}</span>
+                )}
               </li>
             ))
           )}
@@ -321,9 +343,11 @@ function DiscardCard({ projectId }: { projectId: string }) {
 
 export function ProjectGitPanel({
   projectId,
+  projectSlug,
   gitStatus,
 }: {
   projectId: string;
+  projectSlug?: string;
   gitStatus: ProjectGitStatus;
 }) {
   const actions = useProjectGitActions(projectId);
@@ -332,7 +356,20 @@ export function ProjectGitPanel({
   return (
     <div className="max-w-lg space-y-3">
       <BranchContextCard gitStatus={gitStatus} />
-      <UncommittedFilesCard gitStatus={gitStatus} projectId={projectId} />
+      {hasUncommitted ? (
+        <UncommittedFilesCard
+          gitStatus={gitStatus}
+          projectId={projectId}
+          projectSlug={projectSlug}
+        />
+      ) : (
+        <div
+          className={cn(CARD, "flex items-center gap-1.5 px-3 py-2 text-muted-foreground-faint")}
+        >
+          <CheckCircle2 className="h-3 w-3 shrink-0" />
+          Working tree clean
+        </div>
+      )}
       <RemoteSyncCard gitStatus={gitStatus} actions={actions} />
       {hasUncommitted && <DiscardCard projectId={projectId} />}
     </div>

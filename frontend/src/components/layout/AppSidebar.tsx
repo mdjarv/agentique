@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Brain, Clock, Cpu, Ellipsis, FolderPlus, Hash } from "lucide-react";
+import { Brain, Clock, Cpu, Ellipsis, FolderGit2, FolderPlus, Hash } from "lucide-react";
 import { useState } from "react";
 
 import { SyncDock } from "~/components/layout/git/SyncDock";
@@ -73,9 +73,12 @@ function SidebarHeader() {
           {/*
             The menu lists PLACES WHERE WORK LIVES, and nothing else.
 
-            What a thing *is* decides where it goes. Projects and Templates are
-            registrations — a path, a name, a saved prompt, nothing that changes
-            on its own — so they are in Settings beside Machines. Storage and
+            What a thing *is* decides where it goes. A project's registration
+            and Templates are registrations — a path, a name, a saved prompt,
+            nothing that changes on its own — so they are in Settings beside
+            Machines. The project's *checkout* is not: branches move and files
+            go uncommitted on their own, so /projects (every checkout's state)
+            is listed here. Storage and
             Settings are the machine's own housekeeping and already sit in the
             footer, behind the account button and the disk meter; a third way in
             was only length. Discussions is an action taken on a set of personas,
@@ -108,6 +111,13 @@ function SidebarHeader() {
               <span className="ml-auto text-muted-foreground-faint">add a repo</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
+              <Link to="/projects">
+                <FolderGit2 className="size-3.5" />
+                Projects
+                <span className="ml-auto text-muted-foreground-faint">checkouts</span>
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/teams">
                 <Hash className="size-3.5" />
