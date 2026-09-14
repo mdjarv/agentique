@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/paths"
 )
@@ -155,4 +156,26 @@ func planBackupTrim(files []BackupFile, keep int) []BackupFile {
 		return nil
 	}
 	return periodic[keep:]
+}
+
+// NewestPeriodicBackup is when the newest timed backup in dir was taken, from
+// its UTC filename stamp. The second return is false when there is none.
+// Pre-migration snapshots do not count: they are taken on purpose, not on a
+// timer, and one sitting there says nothing about whether the timer runs.
+func NewestPeriodicBackup(dir string) (time.Time, bool, error) {
+	files, err := listBackups(dir)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	for _, f := range files {
+		if f.Snapshot {
+			continue
+		}
+		at, err := time.Parse("20060102-150405", f.Stamp)
+		if err != nil {
+			continue
+		}
+		return at.UTC(), true, nil
+	}
+	return time.Time{}, false, nil
 }

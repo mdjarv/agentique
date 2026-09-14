@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"sync"
@@ -252,3 +253,31 @@ func TestEventsRouteScopesByCredential(t *testing.T) {
 		}
 	}
 }
+
+// A machine-wide event goes to every paired server holding a peer credential,
+// followed session or not.
+func TestOutboxPublishReachesEveryPeerCredential(t *testing.T) {
+	o, _ := newTestOutbox(t, nil)
+	ctx := context.Background()
+	q := o.store.(*store.Queries)
+	for _, id := range []string{"cred-a", "cred-b"} {
+		if _, err := q.CreateUser(ctx, store.CreateUserParams{ID: "u-" + id, DisplayName: id, IsAdmin: 1}); err != nil {
+			t.Fatal(err)
+		}
+		if err := q.CreateAuthSession(ctx, store.CreateAuthSessionParams{TokenHash: "h-" + id,
+			ID: sqlNull(id), UserID: "u-" + id, ExpiresAt: "2999-01-01T00:00:00Z", Kind: "peer"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := o.Publish(ctx, EventFinding, map[string]any{"kind": "disk-low", "opened": true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"cred-a", "cred-b"} {
+		got, _ := o.Events(ctx, id, 0, 0)
+		if len(got.Events) != 1 || got.Events[0].Kind != EventFinding {
+			t.Errorf("%s events = %+v", id, got)
+		}
+	}
+}
+
+func sqlNull(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }

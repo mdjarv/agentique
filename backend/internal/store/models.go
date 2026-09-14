@@ -344,6 +344,17 @@ type SessionEvent struct {
 	MessageID sql.NullString `json:"message_id"`
 }
 
+type StewardFinding struct {
+	ID         int64  `json:"id"`
+	Kind       string `json:"kind"`
+	Subject    string `json:"subject"`
+	Severity   string `json:"severity"`
+	Remedy     string `json:"remedy"`
+	Facts      string `json:"facts"`
+	OpenedAt   string `json:"opened_at"`
+	ResolvedAt string `json:"resolved_at"`
+}
+
 type Team struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`

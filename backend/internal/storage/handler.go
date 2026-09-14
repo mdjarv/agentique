@@ -79,6 +79,10 @@ func (h *Handler) HandleUsage(w http.ResponseWriter, r *http.Request) {
 	httperror.JSON(w, http.StatusOK, usage)
 }
 
+// Usage is the storage breakdown, from the same short cache the page reads, so
+// a caller outside HTTP (the steward) never walks the tree twice in a minute.
+func (h *Handler) Usage(ctx context.Context) (*StorageUsage, error) { return h.usage(ctx, false) }
+
 func (h *Handler) usage(ctx context.Context, refresh bool) (*StorageUsage, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

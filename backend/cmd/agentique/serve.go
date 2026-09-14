@@ -761,6 +761,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 			"db", dbFile, "canonical_db", paths.DBPath())
 	}
 
+	// This machine's steward (docs/peers.md): model-free health findings for
+	// its own footer, its assistant, and every paired server. Here because its
+	// passes write and publish.
+	{
+		backup := server.StewardBackup{}
+		if !testMode && !disableBackup {
+			if interval, err := time.ParseDuration(backupInterval); err == nil {
+				backup = server.StewardBackup{Dir: filepath.Join(filepath.Dir(dbFile), "backups"), Interval: interval}
+			}
+		}
+		go srv.RunSteward(context.Background(), backup)
+	}
+
 	// Paired machines' news for this server's assistant or live call
 	// (docs/peers.md). Here rather than in server.New because it dials other
 	// machines. Not gated on owning the data dir: it only reads, and its one

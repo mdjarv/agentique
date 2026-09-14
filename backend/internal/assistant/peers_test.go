@@ -119,3 +119,35 @@ func TestInFlightBudgetCountsPairedMachines(t *testing.T) {
 		t.Fatalf("with the remote session finished: %v", fourth)
 	}
 }
+
+func TestFindingsAreJournaledInWords(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	svc.IngestFinding(ctx, Finding{Kind: "cli-signed-out", Subject: "claude", Severity: "warning", Remedy: "hand",
+		Facts: map[string]any{"agent": "Claude", "help": "Run `claude auth login` to restore usage."}, Opened: true, Machine: "zbook"})
+	svc.IngestFinding(ctx, Finding{Kind: "disk-low", Severity: "warning", Remedy: "reclaim",
+		Facts: map[string]any{"freeBytes": float64(1 << 30), "reclaimableBytes": float64(11 << 30)}, Opened: true})
+	svc.IngestFinding(ctx, Finding{Kind: "a-future-kind", Opened: false, Machine: "zbook"})
+
+	entries, _ := svc.Journal(ctx, "", 10)
+	var got []string
+	for _, e := range entries {
+		if e.Kind != JournalFinding || e.Untrusted {
+			t.Fatalf("entry = %+v, want a trusted finding", e)
+		}
+		got = append(got, e.Summary)
+	}
+	want := []string{
+		"zbook: a-future-kind resolved",
+		"this machine: only 1.0 GB free on the data disk; 11.0 GB could be reclaimed from finished sessions",
+		"zbook: Claude is signed out, so nothing can run on it there. Run `claude auth login` to restore usage.",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("summaries = %q", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("summary %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

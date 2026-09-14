@@ -329,6 +329,10 @@ type Querier interface {
 	ListMachines(ctx context.Context) ([]Machine, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]Message, error)
 	ListModelResolutions(ctx context.Context) ([]ModelResolution, error)
+	ListOpenStewardFindings(ctx context.Context) ([]ListOpenStewardFindingsRow, error)
+	// The public ids of every peer credential this server has minted: who a
+	// machine-wide event, a finding, is published to.
+	ListPeerCredentialIDs(ctx context.Context) ([]sql.NullString, error)
 	ListPeerFollowers(ctx context.Context, sessionID string) ([]string, error)
 	ListPeerOutboxSince(ctx context.Context, arg ListPeerOutboxSinceParams) ([]ListPeerOutboxSinceRow, error)
 	// A policy's sessions created on PAIRED machines in a window: the half of its
@@ -380,15 +384,19 @@ type Querier interface {
 	MarkScheduleRunFired(ctx context.Context, arg MarkScheduleRunFiredParams) error
 	MarkScheduleViewed(ctx context.Context, arg MarkScheduleViewedParams) error
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
+	OpenStewardFinding(ctx context.Context, arg OpenStewardFindingParams) error
 	PrunePeerOutbox(ctx context.Context, at string) (int64, error)
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
+	PruneStewardFindings(ctx context.Context, resolvedAt string) (int64, error)
 	RecoverStaleSessions(ctx context.Context) error
+	RefreshStewardFinding(ctx context.Context, arg RefreshStewardFindingParams) error
 	RemoveChannelMember(ctx context.Context, arg RemoveChannelMemberParams) error
 	RemoveSessionFromAllChannels(ctx context.Context, sessionID string) error
 	RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberParams) error
 	ReorderPromptTemplates(ctx context.Context, arg ReorderPromptTemplatesParams) error
 	RequeueScheduleRun(ctx context.Context, arg RequeueScheduleRunParams) error
 	ResolveScheduleRun(ctx context.Context, arg ResolveScheduleRunParams) (int64, error)
+	ResolveStewardFinding(ctx context.Context, arg ResolveStewardFindingParams) error
 	// Two correlated subqueries rather than a join: the join read every event
 	// row of every session in the project (117ms for one project on a live
 	// database) where the turn count needs only the index and the cost only the

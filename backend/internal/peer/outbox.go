@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,9 @@ const (
 	// EventTurnEnd is a followed session's turn ending: finished, failed, or
 	// stopped on something only a person can answer.
 	EventTurnEnd = "turn_end"
+	// EventFinding is the machine's steward opening or resolving a finding.
+	// Machine-wide: it goes to every paired server, followed session or not.
+	EventFinding = "finding"
 )
 
 const (
@@ -47,6 +51,7 @@ type Store interface {
 	ListPeerOutboxSince(ctx context.Context, arg store.ListPeerOutboxSinceParams) ([]store.ListPeerOutboxSinceRow, error)
 	LatestPeerOutboxSeq(ctx context.Context, credentialID string) (int64, error)
 	PrunePeerOutbox(ctx context.Context, at string) (int64, error)
+	ListPeerCredentialIDs(ctx context.Context) ([]sql.NullString, error)
 }
 
 // Event is one row of a follower's outbox as it goes on the wire. Payload is
@@ -137,6 +142,26 @@ func (o *Outbox) Report(ctx context.Context, sessionID string, report assistant.
 		"untrusted": true,
 	}
 	return true, o.record(ctx, followers, EventReport, sessionID, payload)
+}
+
+// Publish records a machine-wide event for every paired server holding a peer
+// credential here — a steward finding is news to all of them, whichever
+// sessions they follow.
+func (o *Outbox) Publish(ctx context.Context, kind string, payload map[string]any) error {
+	ids, err := o.store.ListPeerCredentialIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list peer credentials: %w", err)
+	}
+	credentials := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id.Valid && id.String != "" {
+			credentials = append(credentials, id.String)
+		}
+	}
+	if len(credentials) == 0 {
+		return nil
+	}
+	return o.record(ctx, credentials, kind, "", payload)
 }
 
 // OnTurnEnd is the turn-end listener, wired to Manager.AddTurnEndListener. It

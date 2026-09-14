@@ -52,6 +52,7 @@ var peerRouteMatrix = []struct{ method, path string }{
 	{"DELETE", "/api/storage/worktrees"},
 	{"DELETE", "/api/storage/scratchpads"},
 	{"GET", "/api/usage"},
+	{"GET", "/api/steward/findings"},
 	{"GET", "/api/update/status"},
 	{"POST", "/api/update/apply"},
 	{"GET", "/api/claude-account"},

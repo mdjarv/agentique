@@ -266,6 +266,10 @@ type Server struct {
 	// peerPoller reads paired machines' news for this server's assistant or
 	// live call (docs/peers.md). Nil when neither is on. Started by serve.go.
 	peerPoller *peerPoller
+	// stewardDeps is what this machine's steward reads (docs/peers.md). The
+	// steward itself is built and started by serve.go, which knows where the
+	// backups go.
+	stewardDeps stewardDeps
 	// assistantState is the session.state subscription behind the journal's
 	// merge and archive entries, released on shutdown so the bus is not left
 	// delivering into a closed server.
@@ -336,6 +340,13 @@ func (s *Server) Assistant() *assistant.Service { return s.assistantSvc }
 // it dials other machines, which no constructor a test calls may do. Nil when
 // neither the assistant nor voice is on.
 func (s *Server) PeerPoller() *peerPoller { return s.peerPoller }
+
+// RunSteward starts this machine's steward and blocks until ctx ends. From
+// serve's production block, never a constructor: its passes write the findings
+// table and publish to paired servers.
+func (s *Server) RunSteward(ctx context.Context, backup StewardBackup) {
+	newSteward(s.stewardDeps, backup).Run(ctx, stewardInterval)
+}
 
 // AssistantHeartbeat is how often that loop should tick, or 0 for never —
 // resolved once in New from the config, so the parse and its boot warning live
@@ -1419,7 +1430,13 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		}
 	}
 
+	mux.HandleFunc("GET /api/steward/findings", handleFindings(queries))
+
 	s := &Server{
+		stewardDeps: stewardDeps{
+			queries: queries, svc: svc, usage: usageCollector, updates: updateChecker,
+			storage: sth, outbox: peerOutbox, assist: assistantSvc,
+		},
 		peerPoller:         poller,
 		mux:                mux,
 		mgr:                mgr,

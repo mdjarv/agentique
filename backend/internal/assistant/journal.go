@@ -83,6 +83,14 @@ const (
 	// saying so cannot become noise, and the row is the only record afterwards
 	// that a day's entries went on purpose.
 	JournalCompaction JournalKind = "compaction"
+	// JournalFinding — a machine's steward opened or resolved a finding
+	// (docs/peers.md): the CLI signed out, the disk is low, a loop paused, a
+	// session has waited on a person too long, an update or a backup. The
+	// sixteenth kind, and the only one about a machine rather than a session.
+	//
+	// Written from the steward's own facts, so it is trusted: the summary is
+	// this server's sentence about what a sensor read, never agent text.
+	JournalFinding JournalKind = "finding"
 )
 
 // journalKinds is the closed set, in no particular order. Exported through
@@ -95,6 +103,7 @@ var journalKinds = []JournalKind{
 	JournalSessionArchived,
 	JournalLoopPaused,
 	JournalReport,
+	JournalFinding,
 	JournalDispatched,
 	JournalSessionCreated,
 	JournalNote,

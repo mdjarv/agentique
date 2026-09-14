@@ -96,6 +96,12 @@ func (s *pollSink) PeerReport(_ context.Context, machine, sessionID string, r as
 	s.reports = append(s.reports, machine+"/"+sessionID+"/"+r.Headline)
 }
 
+func (s *pollSink) PeerFinding(_ context.Context, f assistant.Finding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.notices = append(s.notices, "finding/"+f.Machine+"/"+f.Kind)
+}
+
 func (s *pollSink) PeerTurnEnd(_ context.Context, machine, sessionID, name string, n assistant.Notice) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -144,7 +150,7 @@ func TestPollerAppliesInOrderAndAdvances(t *testing.T) {
 	events.log = []peer.Event{
 		event(2, peer.EventReport, "s1", map[string]any{"kind": "surprise", "headline": "already applied"}),
 		event(3, peer.EventReport, "s1", map[string]any{"kind": "surprise", "headline": "tests were already failing"}),
-		event(4, "finding", "", map[string]any{"kind": "disk-low"}), // a newer owner's kind
+		event(4, "a-kind-from-the-future", "", map[string]any{"kind": "x"}),
 		event(5, peer.EventTurnEnd, "s1", map[string]any{"kind": "finished", "headline": "done", "name": "Plugin Testing"}),
 		event(6, peer.EventTurnEnd, "s1", map[string]any{"kind": "exploded"}),
 		event(7, peer.EventReport, "s1", map[string]any{"kind": "not-a-kind", "headline": "x"}),
@@ -242,5 +248,21 @@ func TestPollerBacksOffTransientFailures(t *testing.T) {
 	p.follow(context.Background(), "zbook-id")
 	if len(slept) != 4 || slept[0] != p.backoff || slept[1] != 2*p.backoff || slept[2] != 4*p.backoff {
 		t.Fatalf("slept = %v", slept)
+	}
+}
+
+func TestPollerRelaysFindings(t *testing.T) {
+	zb := store.Machine{MachineID: "zbook-id", Label: "zbook", PeerCursor: 0}
+	p, _, events, sink := newTestPoller(zb)
+	events.log = []peer.Event{
+		event(1, peer.EventFinding, "", map[string]any{"kind": "disk-low", "severity": "warning", "remedy": "hand",
+			"facts": map[string]any{"freeBytes": 1024, "path": "/data", "nested": map[string]any{"x": 1}}, "opened": true}),
+		event(2, peer.EventFinding, "", map[string]any{"severity": "warning"}), // no kind: skipped
+	}
+	if err := p.pollOnce(context.Background(), "zbook-id"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.notices) != 1 || sink.notices[0] != "finding/zbook/disk-low" {
+		t.Fatalf("notices = %v", sink.notices)
 	}
 }

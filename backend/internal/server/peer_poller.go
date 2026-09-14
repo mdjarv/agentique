@@ -40,6 +40,7 @@ type peerEventReader interface {
 type peerEventSink interface {
 	PeerReport(ctx context.Context, machineName, sessionID string, report assistant.Report)
 	PeerTurnEnd(ctx context.Context, machineName, sessionID, name string, notice assistant.Notice)
+	PeerFinding(ctx context.Context, finding assistant.Finding)
 }
 
 // peerPollerCatalog is the machine rows the poller reads and the cursor it
@@ -215,6 +216,23 @@ func (p *peerPoller) apply(ctx context.Context, machineID, machineName string, e
 			return
 		}
 		p.sink.PeerReport(ctx, machineName, sessionID, report)
+	case peer.EventFinding:
+		var finding struct {
+			Kind     string         `json:"kind"`
+			Subject  string         `json:"subject"`
+			Severity string         `json:"severity"`
+			Remedy   string         `json:"remedy"`
+			Facts    map[string]any `json:"facts"`
+			Opened   bool           `json:"opened"`
+		}
+		if err := json.Unmarshal(ev.Payload, &finding); err != nil || finding.Kind == "" {
+			return
+		}
+		p.sink.PeerFinding(ctx, assistant.Finding{
+			Kind: clampPeerField(finding.Kind), Subject: clampPeerField(finding.Subject),
+			Severity: clampPeerField(finding.Severity), Remedy: clampPeerField(finding.Remedy),
+			Facts: clampFacts(finding.Facts), Opened: finding.Opened, Machine: machineName,
+		})
 	case peer.EventTurnEnd:
 		kind := assistant.NoticeKind(payload.Kind)
 		switch kind {
@@ -233,6 +251,24 @@ func (p *peerPoller) apply(ctx context.Context, machineID, machineName string, e
 func (p *peerPoller) setCursor(ctx context.Context, machineID string, seq int64) error {
 	_, err := p.catalog.SetMachinePeerCursor(ctx, store.SetMachinePeerCursorParams{PeerCursor: seq, MachineID: machineID})
 	return err
+}
+
+// clampFacts keeps a finding's facts to short scalars: they are another
+// machine's values on their way into a journal row and a sentence.
+func clampFacts(facts map[string]any) map[string]any {
+	out := make(map[string]any, len(facts))
+	for k, v := range facts {
+		if len(out) >= 12 {
+			break
+		}
+		switch t := v.(type) {
+		case string:
+			out[clampPeerField(k)] = clampPeerField(t)
+		case float64, bool:
+			out[clampPeerField(k)] = t
+		}
+	}
+	return out
 }
 
 func clampHeadline(s string) string {
@@ -260,6 +296,10 @@ func (s assistantPeerSink) PeerReport(ctx context.Context, machineName, sessionI
 	s.svc.IngestPeerReport(ctx, machineName, sessionID, report)
 }
 
+func (s assistantPeerSink) PeerFinding(ctx context.Context, finding assistant.Finding) {
+	s.svc.IngestFinding(ctx, finding)
+}
+
 func (s assistantPeerSink) PeerTurnEnd(ctx context.Context, machineName, sessionID, name string, notice assistant.Notice) {
 	s.svc.IngestPeerTurnEnd(ctx, machineName, sessionID, name, notice)
 }
@@ -276,6 +316,11 @@ func (s registryPeerSink) PeerReport(_ context.Context, _, sessionID string, rep
 		slog.Warn("peer poller: report not delivered to the call", "session", sessionID, "error", err)
 	}
 }
+
+// PeerFinding is not a live call's business: a call follows sessions, and a
+// finding is about a machine. It reaches the assistant's journal when there is
+// one.
+func (s registryPeerSink) PeerFinding(context.Context, assistant.Finding) {}
 
 func (s registryPeerSink) PeerTurnEnd(_ context.Context, _, sessionID, _ string, notice assistant.Notice) {
 	s.reg.Notice(sessionID, notice)

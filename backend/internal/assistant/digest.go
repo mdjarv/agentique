@@ -115,6 +115,7 @@ func (s *Service) composeDigest(ctx context.Context, since string, entries []Jou
 	}{
 		{"Waiting on you", []JournalKind{JournalSessionBlocked}},
 		{"Failed", []JournalKind{JournalSessionFailed, JournalLoopPaused}},
+		{"Machines", []JournalKind{JournalFinding}},
 	}
 	wrote := false
 	for _, group := range groups {
@@ -260,7 +261,7 @@ func digestVerb(kind JournalKind) string {
 	case JournalReport:
 		return "reported"
 	case JournalNote, JournalDaySummary, JournalProposalMade, JournalProposalDecided,
-		JournalHeartbeat, JournalCompaction:
+		JournalHeartbeat, JournalCompaction, JournalFinding:
 		// The summary is the whole entry; a verb in front of it would be the
 		// sentence twice.
 		return ""
