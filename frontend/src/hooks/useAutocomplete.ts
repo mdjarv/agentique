@@ -1,5 +1,7 @@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type FileEntry, listProjectFiles } from "~/lib/api";
+import { dirCompletions, splitDirQuery } from "~/lib/dir-complete";
 import {
   type CommandFile,
   type CommandsResult,
@@ -7,6 +9,7 @@ import {
   getTrackedFiles,
   type TrackedFilesResult,
 } from "~/lib/project-actions";
+import { useIsFolderProject } from "~/lib/project-kind";
 import { useWebSocket } from "./useWebSocket";
 
 export interface AutocompleteItem {
@@ -15,6 +18,8 @@ export interface AutocompleteItem {
   category: "file" | "command";
   source?: "project" | "user";
   description?: string;
+  /** A directory: accepting it continues completion inside it. */
+  isDir?: boolean;
 }
 
 interface AutocompleteState {
@@ -48,8 +53,16 @@ export function useAutocomplete({
   onTextChange,
 }: UseAutocompleteOptions) {
   const ws = useWebSocket();
+  // A plain folder has no tracked-file list; it completes one directory at a
+  // time from the file browser's listing instead (`lib/dir-complete.ts`).
+  const folder = useIsFolderProject(projectId);
   const [state, setState] = useState<AutocompleteState>(CLOSED);
   const [cachedFiles, setCachedFiles] = useState<string[] | null>(null);
+  const [dirListings, setDirListings] = useState<Record<string, FileEntry[]>>({});
+  const dirFetchRef = useRef<{ inFlight: Set<string>; at: Map<string, number> }>({
+    inFlight: new Set(),
+    at: new Map(),
+  });
   const [cachedCommands, setCachedCommands] = useState<CommandFile[] | null>(null);
   const fetchingRef = useRef({ files: false, commands: false });
   const cacheTimesRef = useRef({ filesAt: 0, commandsAt: 0 });
@@ -60,6 +73,8 @@ export function useAutocomplete({
     prevProjectRef.current = projectId;
     setCachedFiles(null);
     setCachedCommands(null);
+    setDirListings({});
+    dirFetchRef.current = { inFlight: new Set(), at: new Map() };
     cacheTimesRef.current = { filesAt: 0, commandsAt: 0 };
   }
 
@@ -76,7 +91,10 @@ export function useAutocomplete({
 
       const before = text.slice(0, trigger.start);
       const after = text.slice(cursor);
-      const insertion = trigger.type === "@" ? `@${item.value} ` : `/${item.value} `;
+      // A directory ends the insertion at its slash, so completion carries on
+      // into it rather than closing on a path nobody meant to stop at.
+      const insertion =
+        trigger.type === "@" ? `@${item.value}${item.isDir ? "" : " "}` : `/${item.value} `;
       const newText = before + insertion + after;
       onTextChange(newText);
 
@@ -105,6 +123,27 @@ export function useAutocomplete({
       fetchingRef.current.files = false;
     }
   }, [ws, projectId]);
+
+  const fetchDir = useCallback(
+    async (dir: string) => {
+      const f = dirFetchRef.current;
+      if (f.inFlight.has(dir)) return;
+      if (Date.now() - (f.at.get(dir) ?? 0) < CACHE_TTL) return;
+      f.inFlight.add(dir);
+      let entries: FileEntry[] = [];
+      try {
+        entries = (await listProjectFiles(projectId, dir)).entries;
+      } catch {
+        // A directory that does not exist completes to nothing, and is not
+        // asked for again until the cache expires.
+      } finally {
+        f.inFlight.delete(dir);
+        f.at.set(dir, Date.now());
+      }
+      setDirListings((prev) => ({ ...prev, [dir]: entries }));
+    },
+    [projectId],
+  );
 
   const fetchCommands = useCallback(async () => {
     if (fetchingRef.current.commands) return;
@@ -136,7 +175,30 @@ export function useAutocomplete({
 
     const query = trigger.query;
 
-    if (trigger.type === "@") {
+    if (trigger.type === "@" && folder) {
+      const dq = splitDirQuery(query);
+      const listing = dirListings[dq.dir];
+      if (listing === undefined) {
+        fetchDir(dq.dir);
+        return;
+      }
+      const items = dirCompletions(listing, dq, MAX_RESULTS)
+        .map(
+          (c): AutocompleteItem => ({
+            label: c.value,
+            value: c.value,
+            category: "file",
+            isDir: c.isDir,
+          }),
+        )
+        .reverse();
+      setState({
+        isOpen: items.length > 0,
+        items,
+        selectedIndex: items.length - 1,
+        triggerType: "@",
+      });
+    } else if (trigger.type === "@") {
       if (cachedFiles === null) {
         fetchFiles();
         return;
@@ -161,7 +223,17 @@ export function useAutocomplete({
         triggerType: "/",
       });
     }
-  }, [text, cachedFiles, cachedCommands, textareaRef, fetchFiles, fetchCommands]);
+  }, [
+    text,
+    folder,
+    dirListings,
+    cachedFiles,
+    cachedCommands,
+    textareaRef,
+    fetchDir,
+    fetchFiles,
+    fetchCommands,
+  ]);
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

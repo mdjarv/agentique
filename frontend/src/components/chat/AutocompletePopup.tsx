@@ -31,6 +31,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  Folder,
   Terminal,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -64,7 +65,11 @@ export function AutocompletePopup({
               icon: Icon,
               color,
               isSi,
-            } = triggerType === "@" ? fileIconStyle(item.value) : COMMAND_STYLE;
+            } = triggerType === "@"
+              ? item.isDir
+                ? DIR_STYLE
+                : fileIconStyle(item.value)
+              : COMMAND_STYLE;
             return (
               <button
                 key={`${item.category}-${item.value}`}
@@ -227,6 +232,7 @@ const EXT_STYLES: Record<string, IconStyle> = {
 };
 
 const DEFAULT_STYLE: IconStyle = lucide(File, TN.muted);
+const DIR_STYLE: IconStyle = lucide(Folder, TN.blue);
 
 function fileIconStyle(path: string): IconStyle {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
