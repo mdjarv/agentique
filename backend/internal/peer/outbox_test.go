@@ -4,14 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 type outboxClock struct {
@@ -46,14 +45,7 @@ func (f fakeFacts) TurnOutcome(context.Context, string) (assistant.TurnOutcome, 
 // follows table's foreign key is exercised rather than assumed.
 func newOutboxDB(t *testing.T) *store.Queries {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "peer.db"))
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	ctx := context.Background()
 	if _, err := db.ExecContext(ctx, `INSERT INTO projects (id, name, path, slug) VALUES ('p1', 'seisiun', '/tmp/p1', 'seisiun')`); err != nil {
 		t.Fatalf("seed project: %v", err)
