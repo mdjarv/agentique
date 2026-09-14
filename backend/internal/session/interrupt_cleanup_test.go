@@ -12,6 +12,7 @@ import (
 // Close and Interrupt: every pending synthetic approval is signalled deny,
 // removed from the map, and its ID returned for broadcast purposes.
 func TestDrainSyntheticApprovals_DeniesAndClears(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("manual", "default")
 	defer sess.cancelCtx()
 
@@ -50,6 +51,7 @@ func TestDrainSyntheticApprovals_DeniesAndClears(t *testing.T) {
 
 // TestDrainSyntheticApprovals_Empty is a no-op when nothing is pending.
 func TestDrainSyntheticApprovals_Empty(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("manual", "default")
 	defer sess.cancelCtx()
 
@@ -63,6 +65,7 @@ func TestDrainSyntheticApprovals_Empty(t *testing.T) {
 // approval whose channel buffer is full (no receiver ready) is still cleared
 // — Interrupt must not hang on it.
 func TestDrainSyntheticApprovals_NonBlocking_NoReceiver(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("manual", "default")
 	defer sess.cancelCtx()
 

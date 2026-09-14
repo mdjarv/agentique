@@ -5,6 +5,7 @@ import (
 )
 
 func TestCoalescePending(t *testing.T) {
+	t.Parallel()
 	t.Run("single message returns unchanged", func(t *testing.T) {
 		atts := []QueryAttachment{{Name: "a.png"}}
 		prompt, got := coalescePending([]pendingMessage{{prompt: "hello", attachments: atts}})
@@ -34,6 +35,7 @@ func TestCoalescePending(t *testing.T) {
 }
 
 func TestQueuePendingMessage_GatesOnRunning(t *testing.T) {
+	t.Parallel()
 	t.Run("running enqueues and echoes a queued user_message", func(t *testing.T) {
 		var events []any
 		sess := &Session{
@@ -98,6 +100,7 @@ func TestQueuePendingMessage_GatesOnRunning(t *testing.T) {
 }
 
 func TestFlushPendingMessages_NoopWhenNotDrainable(t *testing.T) {
+	t.Parallel()
 	t.Run("empty queue is a no-op", func(t *testing.T) {
 		// rt is nil — if flush tried to Query it would panic/ErrNotLive, so
 		// reaching the end without touching Query proves the empty-queue guard.

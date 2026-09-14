@@ -13,6 +13,7 @@ import (
 // scheduler's waitForOutcome has no timeout, and before this a scheduled run
 // whose turn died on a fatal API error stayed `running` forever.
 func TestPipeline_FatalErrorDeliversAbortedOutcome(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var aborted []TurnOutcome
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -51,6 +52,7 @@ func TestPipeline_FatalErrorDeliversAbortedOutcome(t *testing.T) {
 // second outcome: the completion was delivered, and the abort path is
 // idempotent against it.
 func TestPipeline_FatalErrorAfterCompletionDoesNotAbort(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	abortCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -69,6 +71,7 @@ func TestPipeline_FatalErrorAfterCompletionDoesNotAbort(t *testing.T) {
 // A non-fatal error accumulates into the turn's error kind but must not
 // close the turn or deliver anything.
 func TestPipeline_NonFatalErrorDoesNotAbort(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	abortCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -91,6 +94,7 @@ func TestPipeline_NonFatalErrorDoesNotAbort(t *testing.T) {
 // the pipeline path ever closed the turn: the next turn start burned
 // WaitTurnClosed's full timeout and turn subscribers waited forever.
 func TestWatchdogFatalAbortsPipelineTurn(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	turn := p.AdvanceTurn()
@@ -124,6 +128,7 @@ func TestWatchdogFatalAbortsPipelineTurn(t *testing.T) {
 
 // A non-fatal watchdog warning leaves the turn alone.
 func TestWatchdogWarningDoesNotAbortTurn(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	turn := p.AdvanceTurn()

@@ -76,6 +76,7 @@ func newTestPipeline(sink *testSink, opts ...func(*PipelineConfig)) *EventPipeli
 // gap (spurious resync) or a stale drop (a non-persisted transient lost). Run
 // with -race to exercise the interleaving aggressively.
 func TestEmitSessionEventOrdering(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
@@ -115,6 +116,7 @@ func TestEmitSessionEventOrdering(t *testing.T) {
 }
 
 func TestPipeline_TransientEventsSkipDB(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
@@ -130,6 +132,7 @@ func TestPipeline_TransientEventsSkipDB(t *testing.T) {
 }
 
 func TestPipeline_PersistentEventsGetBoth(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	// Advance turn so seq numbering works as expected.
@@ -156,6 +159,7 @@ func TestPipeline_PersistentEventsGetBoth(t *testing.T) {
 }
 
 func TestPipeline_SequenceNumbering(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -178,6 +182,7 @@ func TestPipeline_SequenceNumbering(t *testing.T) {
 }
 
 func TestPipeline_AdvanceTurnResetsSeq(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
@@ -203,6 +208,7 @@ func TestPipeline_AdvanceTurnResetsSeq(t *testing.T) {
 }
 
 func TestPipeline_AllocSeq(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -219,6 +225,7 @@ func TestPipeline_AllocSeq(t *testing.T) {
 }
 
 func TestPipeline_InitCapture(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var capturedID string
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -240,6 +247,7 @@ func TestPipeline_InitCapture(t *testing.T) {
 }
 
 func TestPipeline_InitCapture_ResolvedModel(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
@@ -257,6 +265,7 @@ func TestPipeline_InitCapture_ResolvedModel(t *testing.T) {
 }
 
 func TestPipeline_InitCapture_OnlyFirst(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	callCount := 0
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -275,6 +284,7 @@ func TestPipeline_InitCapture_OnlyFirst(t *testing.T) {
 }
 
 func TestPipeline_ResultTriggersTurnComplete(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	turnCompleted := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -290,6 +300,7 @@ func TestPipeline_ResultTriggersTurnComplete(t *testing.T) {
 }
 
 func TestPipeline_WorkflowPendingResultDoesNotCompleteTurn(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	turnCompleted := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -324,6 +335,7 @@ func TestPipeline_WorkflowPendingResultDoesNotCompleteTurn(t *testing.T) {
 }
 
 func TestPipeline_FatalErrorTriggersCallback(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var fatalErr error
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -342,6 +354,7 @@ func TestPipeline_FatalErrorTriggersCallback(t *testing.T) {
 }
 
 func TestPipeline_NonFatalErrorNoCallback(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	fatalCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -364,6 +377,7 @@ func TestPipeline_NonFatalErrorNoCallback(t *testing.T) {
 }
 
 func TestPipeline_ToolCategoryTracking_GitRefresh(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -384,6 +398,7 @@ func TestPipeline_ToolCategoryTracking_GitRefresh(t *testing.T) {
 }
 
 func TestPipeline_ToolCategoryTracking_ReadNoRefresh(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -404,6 +419,7 @@ func TestPipeline_ToolCategoryTracking_ReadNoRefresh(t *testing.T) {
 }
 
 func TestPipeline_ToolCategoryTracking_BashRefresh(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -423,6 +439,7 @@ func TestPipeline_ToolCategoryTracking_BashRefresh(t *testing.T) {
 }
 
 func TestPipeline_PlanModeTransitions(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var transitions []string
 	var exitInput json.RawMessage
@@ -450,6 +467,7 @@ func TestPipeline_PlanModeTransitions(t *testing.T) {
 }
 
 func TestPipeline_ExitPlanModeFallback(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var transitions []string
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -466,6 +484,7 @@ func TestPipeline_ExitPlanModeFallback(t *testing.T) {
 }
 
 func TestPipeline_ResultClearsToolCategories(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	turnCompleted := false
@@ -497,6 +516,7 @@ func TestPipeline_ResultClearsToolCategories(t *testing.T) {
 }
 
 func TestTruncateToolResult_Small(t *testing.T) {
+	t.Parallel()
 	tr := WireToolResultEvent{
 		Type:   "tool_result",
 		ToolID: "t1",
@@ -511,6 +531,7 @@ func TestTruncateToolResult_Small(t *testing.T) {
 }
 
 func TestTruncateToolResult_Large(t *testing.T) {
+	t.Parallel()
 	largeText := strings.Repeat("x", maxToolResultDBSize+1000)
 	tr := WireToolResultEvent{
 		Type:   "tool_result",
@@ -529,6 +550,7 @@ func TestTruncateToolResult_Large(t *testing.T) {
 }
 
 func TestTruncateToolResult_PreservesImages(t *testing.T) {
+	t.Parallel()
 	tr := WireToolResultEvent{
 		Type:   "tool_result",
 		ToolID: "t1",
@@ -547,6 +569,7 @@ func TestTruncateToolResult_PreservesImages(t *testing.T) {
 }
 
 func TestIsTransient(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		event     any
@@ -571,6 +594,7 @@ func TestIsTransient(t *testing.T) {
 }
 
 func TestPipeline_TaskProgressIsTransient(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -593,6 +617,7 @@ func TestPipeline_TaskProgressIsTransient(t *testing.T) {
 // and no report, so it must reach neither the DB nor a client. Not transient —
 // dropped outright, because there is nothing to tell anyone.
 func TestPipeline_EmptyAgentResultDropped(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -613,6 +638,7 @@ func TestPipeline_EmptyAgentResultDropped(t *testing.T) {
 // A background launch reports a status and an agent but no content yet. It is
 // a real event and must survive the empty-result drop.
 func TestPipeline_AsyncLaunchedAgentResultPersisted(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -631,6 +657,7 @@ func TestPipeline_AsyncLaunchedAgentResultPersisted(t *testing.T) {
 }
 
 func TestPipeline_TaskStartedAndNotificationPersist(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -656,6 +683,7 @@ func TestPipeline_TaskStartedAndNotificationPersist(t *testing.T) {
 }
 
 func TestPipeline_UnknownEventDropped(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -671,6 +699,7 @@ func TestPipeline_UnknownEventDropped(t *testing.T) {
 }
 
 func TestPipeline_SubagentPlanModeIsolation(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	planTransitioned := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -690,6 +719,7 @@ func TestPipeline_SubagentPlanModeIsolation(t *testing.T) {
 }
 
 func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -713,6 +743,7 @@ func TestPipeline_SubagentWriteToolTriggersGitRefresh(t *testing.T) {
 }
 
 func TestPipeline_AgentResultPersisted(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -755,6 +786,7 @@ func TestPipeline_AgentResultPersisted(t *testing.T) {
 }
 
 func TestPipeline_UserEchoToolResultPersisted(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -781,6 +813,7 @@ func TestPipeline_UserEchoToolResultPersisted(t *testing.T) {
 }
 
 func TestPipeline_UserEchoToolResultTriggersGitRefresh(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	gitRefreshCalled := false
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -806,6 +839,7 @@ func TestPipeline_UserEchoToolResultTriggersGitRefresh(t *testing.T) {
 }
 
 func TestPipeline_UserEchoWithToolResultOnly(t *testing.T) {
+	t.Parallel()
 	// AgentResult metadata flows as a separate runtime.AgentResultEvent.
 	// UserEcho carries only the tool_result content blocks.
 	sink := newTestSink()
@@ -850,6 +884,7 @@ func deliveryConfirmations(ts *testSink) []WireMessageDeliveryEvent {
 }
 
 func TestPipeline_ReplayEchoConfirmsPendingMessage(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -874,6 +909,7 @@ func TestPipeline_ReplayEchoConfirmsPendingMessage(t *testing.T) {
 }
 
 func TestPipeline_ReplayEchoFIFOOrder(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -894,6 +930,7 @@ func TestPipeline_ReplayEchoFIFOOrder(t *testing.T) {
 }
 
 func TestPipeline_ReplayEchoWithoutPendingIsNoop(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -910,6 +947,7 @@ func TestPipeline_ReplayEchoWithoutPendingIsNoop(t *testing.T) {
 }
 
 func TestPipeline_ToolResultEchoIsNotReplay(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -942,6 +980,7 @@ func TestPipeline_ToolResultEchoIsNotReplay(t *testing.T) {
 }
 
 func TestPipeline_SetClaudeSessionID(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 
@@ -958,6 +997,7 @@ func TestPipeline_SetClaudeSessionID(t *testing.T) {
 }
 
 func TestPipeline_WireSeqAndEpoch(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()
@@ -1000,6 +1040,7 @@ func TestPipeline_WireSeqAndEpoch(t *testing.T) {
 }
 
 func TestPipeline_EpochUniquePerPipeline(t *testing.T) {
+	t.Parallel()
 	// A fresh pipeline (the resume/rebuild case) must mint a distinct epoch so
 	// the frontend detects the restart and resyncs instead of dropping the
 	// resumed stream's low sequence numbers as stale.

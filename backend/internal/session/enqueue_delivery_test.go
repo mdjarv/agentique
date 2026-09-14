@@ -73,6 +73,7 @@ type EnqueueDeliverySuite struct {
 }
 
 func TestEnqueueDeliverySuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EnqueueDeliverySuite))
 }
 

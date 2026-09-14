@@ -34,6 +34,7 @@ func newPermTestSession(autoApprove, permMode string) *Session {
 // interceptor returns deny-with-"delivered" regardless of session
 // configuration. The runtime never sees these calls.
 func TestInterceptSendMessage_DeniesWithSuccess(t *testing.T) {
+	t.Parallel()
 	modes := []struct {
 		auto string
 		perm string
@@ -66,6 +67,7 @@ func TestInterceptSendMessage_DeniesWithSuccess(t *testing.T) {
 // TestInterceptSendMessage_SpawnTarget verifies that @spawn targets take the
 // interceptSpawnWorkers path (not the regular deny path).
 func TestInterceptSendMessage_SpawnTarget(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("auto", "default")
 	defer sess.cancelCtx()
 

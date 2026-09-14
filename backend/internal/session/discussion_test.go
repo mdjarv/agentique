@@ -18,6 +18,7 @@ type DiscussionSuite struct {
 }
 
 func TestDiscussionSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(DiscussionSuite))
 }
 

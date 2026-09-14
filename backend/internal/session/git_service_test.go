@@ -106,6 +106,7 @@ type GitServiceSuite struct {
 }
 
 func TestGitServiceSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(GitServiceSuite))
 }
 

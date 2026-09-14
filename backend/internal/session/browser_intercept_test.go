@@ -17,6 +17,7 @@ import (
 // in handleToolPermission — so exercising the interceptor directly mirrors what
 // the runtime does on the permission goroutine.
 func TestInterceptBrowserTool_LaunchPerMode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		auto       string
 		perm       string
@@ -61,6 +62,7 @@ func TestInterceptBrowserTool_LaunchPerMode(t *testing.T) {
 // failure surfaces the actionable EnsureBrowser message as a deny, rather than
 // letting @playwright/mcp fail opaquely with a CDP ECONNREFUSED.
 func TestInterceptBrowserTool_DeniesOnLaunchFailure(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("fullAuto", "default")
 	defer sess.cancelCtx()
 
@@ -87,6 +89,7 @@ func TestInterceptBrowserTool_DeniesOnLaunchFailure(t *testing.T) {
 // browserToolNames stays consistent with the isBrowserTool prefix that backs the
 // pump path.
 func TestAgentiqueInterceptorsRegistersBrowserTools(t *testing.T) {
+	t.Parallel()
 	sess := newPermTestSession("fullAuto", "default")
 	defer sess.cancelCtx()
 

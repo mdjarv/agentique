@@ -7,6 +7,7 @@ import (
 )
 
 func TestParseSendMessageInput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -163,6 +164,7 @@ func TestParseSendMessageInput(t *testing.T) {
 // produced by parseSendMessageInput can be unmarshalled as a SpawnWorkersRequest
 // for all common input shapes.
 func TestParseSendMessageInput_SpawnPayloadRoundtrip(t *testing.T) {
+	t.Parallel()
 	spawnPayload := `{"channelName":"team","workers":[{"name":"W1","role":"expert","prompt":"do X"}]}`
 
 	inputs := []struct {
@@ -214,6 +216,7 @@ func TestParseSendMessageInput_SpawnPayloadRoundtrip(t *testing.T) {
 // callback is set. Even without a channel, interceptSendMessage still denies
 // with a success message — the pipeline handles the "no channel" case.
 func TestInterceptSendMessage_NoChannel(t *testing.T) {
+	t.Parallel()
 	sess := &Session{
 		ID:                 "solo-1",
 		syntheticApprovals: make(map[string]*syntheticApproval),
@@ -235,6 +238,7 @@ func TestInterceptSendMessage_NoChannel(t *testing.T) {
 // TestPipelineSendMessageRouting verifies that the EventPipeline's OnSendMessage
 // callback fires when a SendMessage ToolUseEvent is processed.
 func TestPipelineSendMessageRouting(t *testing.T) {
+	t.Parallel()
 	var gotToolID, gotTarget, gotContent, gotMsgType string
 	ch := make(chan struct{}, 1)
 
@@ -283,6 +287,7 @@ func TestPipelineSendMessageRouting(t *testing.T) {
 // TestPipelineSendMessageSkipsSpawn verifies @spawn targets are not routed
 // through the pipeline (handled by handleToolPermission instead).
 func TestPipelineSendMessageSkipsSpawn(t *testing.T) {
+	t.Parallel()
 	called := false
 	pipeline := NewEventPipeline(PipelineConfig{
 		SessionID:        "test-session",

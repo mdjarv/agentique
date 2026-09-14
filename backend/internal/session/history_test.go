@@ -15,6 +15,7 @@ func mustUnmarshal(t *testing.T, data json.RawMessage) map[string]any {
 }
 
 func TestNormalizeEventJSON_OldToolUse(t *testing.T) {
+	t.Parallel()
 	old := `{"type":"tool_use","id":"1","name":"Read","input":{}}`
 	got := mustUnmarshal(t, NormalizeEventJSON("tool_use", []byte(old)))
 
@@ -39,6 +40,7 @@ func TestNormalizeEventJSON_OldToolUse(t *testing.T) {
 }
 
 func TestNormalizeEventJSON_OldToolResult(t *testing.T) {
+	t.Parallel()
 	old := `{"type":"tool_result","toolUseId":"1","content":"ok"}`
 	got := mustUnmarshal(t, NormalizeEventJSON("tool_result", []byte(old)))
 
@@ -63,6 +65,7 @@ func TestNormalizeEventJSON_OldToolResult(t *testing.T) {
 }
 
 func TestNormalizeEventJSON_AlreadyNormalized(t *testing.T) {
+	t.Parallel()
 	toolUse := `{"type":"tool_use","toolId":"1","toolName":"Read","toolInput":{}}`
 	got := NormalizeEventJSON("tool_use", []byte(toolUse))
 	if string(got) != toolUse {
@@ -86,6 +89,7 @@ func TestNormalizeEventJSON_AlreadyNormalized(t *testing.T) {
 }
 
 func TestNormalizeEventJSON_OtherEvents(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		typ  string
 		data string
@@ -103,6 +107,7 @@ func TestNormalizeEventJSON_OtherEvents(t *testing.T) {
 }
 
 func TestNormalizeEventJSON_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	bad := `{not valid json`
 	got := NormalizeEventJSON("tool_use", []byte(bad))
 	if string(got) != bad {

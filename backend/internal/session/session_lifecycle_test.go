@@ -17,6 +17,7 @@ import (
 // agentkit/runtime and are tested there.
 
 func TestEventLoop_QueryThenResult(t *testing.T) {
+	t.Parallel()
 	db, q := testutil.SetupDB(t)
 	proj := testutil.SeedProject(t, q, "test", t.TempDir())
 	bc := &mockBroadcaster{}
@@ -67,6 +68,7 @@ func TestEventLoop_QueryThenResult(t *testing.T) {
 }
 
 func TestEventLoop_FatalError(t *testing.T) {
+	t.Parallel()
 	db, q := testutil.SetupDB(t)
 	proj := testutil.SeedProject(t, q, "test", t.TempDir())
 	bc := &mockBroadcaster{}
@@ -105,6 +107,7 @@ func TestEventLoop_FatalError(t *testing.T) {
 }
 
 func TestSession_Close(t *testing.T) {
+	t.Parallel()
 	db, q := testutil.SetupDB(t)
 	proj := testutil.SeedProject(t, q, "test", t.TempDir())
 	bc := &mockBroadcaster{}
@@ -132,6 +135,7 @@ func TestSession_Close(t *testing.T) {
 }
 
 func TestManager_CreateAndStop(t *testing.T) {
+	t.Parallel()
 	db, q := testutil.SetupDB(t)
 	proj := testutil.SeedProject(t, q, "test", t.TempDir())
 	bc := &mockBroadcaster{}
@@ -170,6 +174,7 @@ func TestManager_CreateAndStop(t *testing.T) {
 }
 
 func TestManager_CloseAll(t *testing.T) {
+	t.Parallel()
 	db, q := testutil.SetupDB(t)
 	proj := testutil.SeedProject(t, q, "test", t.TempDir())
 	bc := &mockBroadcaster{}

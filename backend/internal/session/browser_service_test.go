@@ -7,6 +7,7 @@ import (
 )
 
 func TestStandalonePlaywrightMCPConfig(t *testing.T) {
+	t.Parallel()
 	cfg := StandalonePlaywrightMCPConfig(54321, "/data/session-files/sess-1")
 
 	for _, want := range []string{
@@ -38,6 +39,7 @@ func TestStandalonePlaywrightMCPConfig(t *testing.T) {
 }
 
 func TestIsBrowserTool(t *testing.T) {
+	t.Parallel()
 	cases := map[string]bool{
 		"mcp__agentique-playwright__browser_navigate":        true,
 		"mcp__agentique-playwright__browser_take_screenshot": true,

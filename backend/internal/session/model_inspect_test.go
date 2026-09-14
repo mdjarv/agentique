@@ -30,6 +30,7 @@ func (f *fakeInspectQueries) GetModelResolution(_ context.Context, arg store.Get
 func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
 func TestInspectSessionModelPrefersLivePipeline(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{session: store.Session{
 		ID:            "s1",
 		Model:         "opus",
@@ -63,6 +64,7 @@ func TestInspectSessionModelPrefersLivePipeline(t *testing.T) {
 // dates the id it carries, and inventing "now" would date a reading nothing
 // took.
 func TestInspectSessionModelLiveAheadOfRowHasNoStamp(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{session: store.Session{
 		ID:         "s1",
 		Model:      "opus",
@@ -84,6 +86,7 @@ func TestInspectSessionModelLiveAheadOfRowHasNoStamp(t *testing.T) {
 }
 
 func TestInspectSessionModelReadsRowWhenNotLive(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{session: store.Session{
 		ID:            "s1",
 		Model:         "opus",
@@ -102,6 +105,7 @@ func TestInspectSessionModelReadsRowWhenNotLive(t *testing.T) {
 }
 
 func TestInspectSessionModelFallsBackToCatalog(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{
 		session: store.Session{ID: "s1", Model: "opus", Provider: "claude"},
 		resolution: store.ModelResolution{
@@ -134,6 +138,7 @@ func TestInspectSessionModelFallsBackToCatalog(t *testing.T) {
 }
 
 func TestInspectSessionModelUnresolvedIsStated(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		q    *fakeInspectQueries
@@ -180,6 +185,7 @@ func TestInspectSessionModelUnresolvedIsStated(t *testing.T) {
 // An unknown session is an error, not an unresolved report: "we could not find
 // it" and "it has not resolved yet" are different answers.
 func TestInspectSessionModelMissingSessionErrors(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{sessionErr: sql.ErrNoRows}
 
 	if _, err := NewModelInspector(q, nil).InspectSessionModel(context.Background(), "gone"); err == nil {
@@ -190,6 +196,7 @@ func TestInspectSessionModelMissingSessionErrors(t *testing.T) {
 // A missing provider defaults the same way every other surface defaults it, so
 // the catalog lookup asks for a provider that exists.
 func TestInspectSessionModelNormalizesProvider(t *testing.T) {
+	t.Parallel()
 	q := &fakeInspectQueries{
 		session: store.Session{ID: "s1", Model: "opus"},
 		resErr:  sql.ErrNoRows,

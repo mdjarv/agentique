@@ -9,6 +9,7 @@ import (
 // reading looks identical to one abandoned days ago and the sweep evicts it
 // mid-use. Attention has to defer eviction exactly as a turn would.
 func TestMarkActive_DefersIdleEviction(t *testing.T) {
+	t.Parallel()
 	ttl := 30 * time.Minute
 	sess := &Session{ID: "s1", state: StateIdle, lastActiveAt: time.Now().Add(-2 * ttl)}
 
@@ -28,6 +29,7 @@ func TestMarkActive_DefersIdleEviction(t *testing.T) {
 // Attention is not conversational activity. Bumping state or turn bookkeeping
 // would make a session someone merely looked at appear to have done something.
 func TestMarkActive_TouchesNothingButTheEvictionClock(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s2", state: StateIdle, queryCount: 3}
 	before := sess.lastActiveAt
 
@@ -48,6 +50,7 @@ func TestMarkActive_TouchesNothingButTheEvictionClock(t *testing.T) {
 // clock cannot save it, and would leave a resumed session claiming it was
 // active at a moment it was actually being torn down.
 func TestMarkActive_IgnoredOnceEvictionClaimed(t *testing.T) {
+	t.Parallel()
 	ttl := 30 * time.Minute
 	sess := &Session{ID: "s3", state: StateIdle, lastActiveAt: time.Now().Add(-2 * ttl)}
 	if !sess.beginIdleEvict(ttl, time.Now()) {
@@ -65,6 +68,7 @@ func TestMarkActive_IgnoredOnceEvictionClaimed(t *testing.T) {
 // A running session is never evictable, so attention is harmless there — but it
 // must not disturb the turn either.
 func TestMarkActive_SafeWhileRunning(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s4", state: StateRunning}
 	sess.MarkActive()
 	if sess.state != StateRunning {

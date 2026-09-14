@@ -7,6 +7,7 @@ import (
 )
 
 func TestClaudeProjectDir(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, home, workDir, want string
 	}{
@@ -35,6 +36,7 @@ func TestClaudeProjectDir(t *testing.T) {
 }
 
 func TestReadUserTurns(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	workDir := "/home/u/git/repo"
 	claudeSessionID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -77,12 +79,14 @@ func TestReadUserTurns(t *testing.T) {
 }
 
 func TestReadUserTurnsMissingSessionID(t *testing.T) {
+	t.Parallel()
 	if _, err := readUserTurns("/tmp", "/any", "", 0, 0); err == nil {
 		t.Error("expected error on empty claudeSessionID")
 	}
 }
 
 func TestReadUserTurnsMaxTurns(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	workDir := "/w"
 	id := "00000000-0000-0000-0000-000000000000"

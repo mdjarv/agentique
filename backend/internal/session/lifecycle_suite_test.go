@@ -25,6 +25,7 @@ type LifecycleSuite struct {
 }
 
 func TestLifecycleSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(LifecycleSuite))
 }
 

@@ -32,6 +32,7 @@ func newWithdrawalTestSession() (*Session, *[]any) {
 // disappearance the UI keeps a dead banner up and every click on it fails with
 // ErrPendingNotFound.
 func TestResolveWithdrawnPrompts_ClearsVanishedApproval(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 
@@ -50,6 +51,7 @@ func TestResolveWithdrawnPrompts_ClearsVanishedApproval(t *testing.T) {
 }
 
 func TestResolveWithdrawnPrompts_ClearsVanishedQuestion(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 
@@ -65,6 +67,7 @@ func TestResolveWithdrawnPrompts_ClearsVanishedQuestion(t *testing.T) {
 // A prompt replaced by a different one is just as gone as one withdrawn to
 // nothing — the UI must not keep showing the old id.
 func TestResolveWithdrawnPrompts_ClearsReplacedPrompt(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 
@@ -80,6 +83,7 @@ func TestResolveWithdrawnPrompts_ClearsReplacedPrompt(t *testing.T) {
 // Repeated events for the same still-pending prompt must not resolve it —
 // that would clear a banner the user is actively looking at.
 func TestResolveWithdrawnPrompts_StablePromptIsNotResolved(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 
@@ -95,6 +99,7 @@ func TestResolveWithdrawnPrompts_StablePromptIsNotResolved(t *testing.T) {
 
 // Once cleared, the same id must not be resolved a second time.
 func TestResolveWithdrawnPrompts_ResolvesOnce(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 
@@ -111,6 +116,7 @@ func TestResolveWithdrawnPrompts_ResolvesOnce(t *testing.T) {
 // An approval and a question are tracked independently: one going away must
 // not clear the other.
 func TestResolveWithdrawnPrompts_TracksApprovalAndQuestionIndependently(t *testing.T) {
+	t.Parallel()
 	sess, got := newWithdrawalTestSession()
 	defer sess.cancelCtx()
 

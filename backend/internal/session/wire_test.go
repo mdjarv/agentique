@@ -13,6 +13,7 @@ import (
 )
 
 func TestToWireEvent_ToolResultTextOnly(t *testing.T) {
+	t.Parallel()
 	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_123",
 		Content: []runtime.ToolContent{
@@ -38,6 +39,7 @@ func TestToWireEvent_ToolResultTextOnly(t *testing.T) {
 }
 
 func TestToWireEvent_ToolResultWithImage(t *testing.T) {
+	t.Parallel()
 	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_456",
 		Content: []runtime.ToolContent{
@@ -76,6 +78,7 @@ func TestToWireEvent_ToolResultWithImage(t *testing.T) {
 }
 
 func TestToWireEvent_ToolResultJSON(t *testing.T) {
+	t.Parallel()
 	event := runtime.ToolResultEvent{
 		ToolUseID: "tu_789",
 		Content: []runtime.ToolContent{
@@ -123,6 +126,7 @@ func TestToWireEvent_ToolResultJSON(t *testing.T) {
 }
 
 func TestToWireEvent_ErrorClassification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		err            error
@@ -181,6 +185,7 @@ func TestToWireEvent_ErrorClassification(t *testing.T) {
 }
 
 func TestToWireEvent_ResultTokens(t *testing.T) {
+	t.Parallel()
 	event := runtime.TurnCompletedEvent{
 		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    0.01,
@@ -214,6 +219,7 @@ func TestToWireEvent_ResultTokens(t *testing.T) {
 }
 
 func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
+	t.Parallel()
 	event := runtime.TurnCompletedEvent{
 		Status:     runtime.TurnStatusCompleted,
 		CostUSD:    0.01,
@@ -241,6 +247,7 @@ func TestToWireEvent_ResultDefaultContextWindow(t *testing.T) {
 }
 
 func TestToWireEvent_ParentToolUseID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		event runtime.CLIEvent
@@ -316,6 +323,7 @@ func TestToWireEvent_ParentToolUseID(t *testing.T) {
 }
 
 func TestToWireEvent_SubagentEvent(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		event   runtime.SubagentEvent
@@ -371,6 +379,7 @@ func TestToWireEvent_SubagentEvent(t *testing.T) {
 }
 
 func TestToWireEvent_WorkflowTask(t *testing.T) {
+	t.Parallel()
 	event := runtime.SubagentEvent{
 		Subtype:      "task_progress",
 		TaskID:       "w8a0hi7jg",
@@ -413,6 +422,7 @@ func TestToWireEvent_WorkflowTask(t *testing.T) {
 }
 
 func TestToWireEvent_OrdinarySubagentHasNilWorkflowProgress(t *testing.T) {
+	t.Parallel()
 	event := runtime.SubagentEvent{Subtype: "task_progress", TaskType: "local_agent"}
 	wire := ToWireEvent(event, "").(WireTaskEvent)
 	if wire.WorkflowProgress != nil {
@@ -421,6 +431,7 @@ func TestToWireEvent_OrdinarySubagentHasNilWorkflowProgress(t *testing.T) {
 }
 
 func TestToWireEvent_WorkflowLaunched(t *testing.T) {
+	t.Parallel()
 	event := runtime.WorkflowLaunchedEvent{
 		RunID: "run-1", WorkflowName: "deep-research", ScriptPath: "/x/script.js",
 		TranscriptDir: "/x/sub", Summary: "running in the background",
@@ -435,6 +446,7 @@ func TestToWireEvent_WorkflowLaunched(t *testing.T) {
 }
 
 func TestToWireEvent_ResultWorkflowPending(t *testing.T) {
+	t.Parallel()
 	pending := ToWireEvent(runtime.TurnCompletedEvent{WorkflowPending: true}, "").(WireResultEvent)
 	if !pending.WorkflowPending {
 		t.Error("expected WorkflowPending=true on placeholder result")
@@ -446,6 +458,7 @@ func TestToWireEvent_ResultWorkflowPending(t *testing.T) {
 }
 
 func TestToWireEvent_UserEchoReturnsNil(t *testing.T) {
+	t.Parallel()
 	// UserEcho is handled by EventPipeline.processUserEcho, not ToWireEvent.
 	event := runtime.UserEcho{MessageID: "msg_1"}
 	wire := ToWireEvent(event, "")
@@ -455,6 +468,7 @@ func TestToWireEvent_UserEchoReturnsNil(t *testing.T) {
 }
 
 func TestToWireEvent_NonJSONRawPayloadsMarshal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		event runtime.CLIEvent
@@ -492,6 +506,7 @@ func TestToWireEvent_NonJSONRawPayloadsMarshal(t *testing.T) {
 }
 
 func TestRawJSONOrStringPreservesValidJSON(t *testing.T) {
+	t.Parallel()
 	got := rawJSONOrString(json.RawMessage(`{"ok":true}`))
 	if string(got) != `{"ok":true}` {
 		t.Fatalf("rawJSONOrString valid JSON = %s", got)
@@ -504,6 +519,7 @@ func TestRawJSONOrStringPreservesValidJSON(t *testing.T) {
 }
 
 func TestToWireEvent_UnknownProviderEvent(t *testing.T) {
+	t.Parallel()
 	event := runtime.UnknownProviderEvent{Provider: "claude", Type: "future_type", Raw: json.RawMessage(`{}`)}
 	wire := ToWireEvent(event, "")
 	if wire != nil {
@@ -512,6 +528,7 @@ func TestToWireEvent_UnknownProviderEvent(t *testing.T) {
 }
 
 func TestToolResultText(t *testing.T) {
+	t.Parallel()
 	blocks := []WireContentBlock{
 		{Type: "text", Text: "line1"},
 		{Type: "image", URL: "data:image/png;base64,AAAA"},

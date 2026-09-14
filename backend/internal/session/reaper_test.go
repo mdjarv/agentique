@@ -12,6 +12,7 @@ import (
 func nn(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
 
 func TestJanitorSessions_MapsFieldsAndResolvesProject(t *testing.T) {
+	t.Parallel()
 	sessions := []store.Session{
 		{
 			ID:             "s1",
@@ -53,12 +54,14 @@ func TestJanitorSessions_MapsFieldsAndResolvesProject(t *testing.T) {
 }
 
 func TestParseDBTime_BadValueIsZero(t *testing.T) {
+	t.Parallel()
 	if !parseDBTime("not-a-time").IsZero() {
 		t.Error("unparseable timestamp should yield the zero time")
 	}
 }
 
 func TestJanitorProjects_KeyedBySanitizedName(t *testing.T) {
+	t.Parallel()
 	projects := []store.Project{
 		{ID: "p1", Name: "The Pint", Path: "/repos/the-pint"},
 		{ID: "p2", Name: "alltix-api", Path: "/repos/alltix-api"},

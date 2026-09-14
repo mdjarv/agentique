@@ -31,6 +31,7 @@ type LiveContextMeterSuite struct {
 }
 
 func TestLiveContextMeterSuite(t *testing.T) {
+	t.Parallel()
 	if testing.Short() || os.Getenv("AGENTIQUE_LIVE_CONTEXT") == "" {
 		t.Skip("live CLI test; set AGENTIQUE_LIVE_CONTEXT=1 and drop -short")
 	}

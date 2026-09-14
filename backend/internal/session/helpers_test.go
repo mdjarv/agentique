@@ -37,6 +37,7 @@ func isZeroBranchStatus(bs branchStatus) bool {
 }
 
 func TestComputeBranchStatus_EmptyBranch(t *testing.T) {
+	t.Parallel()
 	bs := computeBranchStatus(&mockBranchQuerier{}, "/repo", "", "/wt")
 	if !isZeroBranchStatus(bs) {
 		t.Errorf("expected zero value, got %+v", bs)
@@ -44,6 +45,7 @@ func TestComputeBranchStatus_EmptyBranch(t *testing.T) {
 }
 
 func TestComputeBranchStatus_EmptyProjectPath(t *testing.T) {
+	t.Parallel()
 	bs := computeBranchStatus(&mockBranchQuerier{}, "", "main", "/wt")
 	if !isZeroBranchStatus(bs) {
 		t.Errorf("expected zero value, got %+v", bs)
@@ -51,6 +53,7 @@ func TestComputeBranchStatus_EmptyProjectPath(t *testing.T) {
 }
 
 func TestComputeBranchStatus_BranchMissing(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{branchExists: false}
 	bs := computeBranchStatus(q, "/repo", "gone-branch", "")
 	if !bs.BranchMissing {
@@ -62,6 +65,7 @@ func TestComputeBranchStatus_BranchMissing(t *testing.T) {
 }
 
 func TestComputeBranchStatus_FullStatus(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{
 		branchExists: true,
 		ahead:        3,
@@ -88,6 +92,7 @@ func TestComputeBranchStatus_FullStatus(t *testing.T) {
 }
 
 func TestComputeBranchStatus_AheadBehindErrors(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{
 		branchExists: true,
 		aheadErr:     fmt.Errorf("git error"),
@@ -101,6 +106,7 @@ func TestComputeBranchStatus_AheadBehindErrors(t *testing.T) {
 }
 
 func TestComputeBranchStatus_EmptyWtPath_SkipsDirtyCheck(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{
 		branchExists: true,
 		dirty:        true, // should be ignored since wtPath is empty
@@ -113,6 +119,7 @@ func TestComputeBranchStatus_EmptyWtPath_SkipsDirtyCheck(t *testing.T) {
 }
 
 func TestComputeBranchStatus_MergeConflicts(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{
 		branchExists: true,
 		mergeResult: gitops.MergeTreeResult{
@@ -130,6 +137,7 @@ func TestComputeBranchStatus_MergeConflicts(t *testing.T) {
 }
 
 func TestComputeBranchStatus_MergeCheckError(t *testing.T) {
+	t.Parallel()
 	q := &mockBranchQuerier{
 		branchExists: true,
 		mergeErr:     fmt.Errorf("merge-tree failed"),
@@ -141,6 +149,7 @@ func TestComputeBranchStatus_MergeCheckError(t *testing.T) {
 }
 
 func TestLocalDirty(t *testing.T) {
+	t.Parallel()
 	t.Run("plain folder is a known clean answer", func(t *testing.T) {
 		q := &mockBranchQuerier{notRepo: true, dirty: true, dirtyErr: errors.New("fatal: not a git repository")}
 		dirty, ok := localDirty(q, "/some/folder")

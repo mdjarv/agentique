@@ -75,6 +75,7 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 // compaction-policy window is narrower than the model's hard limit, and
 // Remaining() tracks the narrower one.
 func TestContextMeter_EmitsResolvedWindow(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{
 		Model:                "claude-opus-5",
 		TotalTokens:          44942,
@@ -116,6 +117,7 @@ func TestContextMeter_EmitsResolvedWindow(t *testing.T) {
 // measured — clamping is the renderer's job, and hiding an over-limit session
 // is exactly the wrong lie for this widget to tell.
 func TestContextMeter_PublishesOverLimitUsageUnclamped(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{
 		TotalTokens: 250000, MaxTokens: 200000, Percentage: 125,
 	}, nil)
@@ -134,6 +136,7 @@ func TestContextMeter_PublishesOverLimitUsageUnclamped(t *testing.T) {
 // before its first model response, meaning "not yet" — see
 // TestContextMeter_TransientFailureStaysArmed.
 func TestContextMeter_LatchesOffWhenUnsupported(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(nil, runtime.ErrNotSupported)
 
 	m.Refresh()
@@ -156,6 +159,7 @@ func TestContextMeter_LatchesOffWhenUnsupported(t *testing.T) {
 // A transient failure (session evicted, resuming, CLI hiccup) must not latch:
 // the next real signal has to try again.
 func TestContextMeter_TransientFailureStaysArmed(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(nil, errors.New("cli went away"))
 
 	m.Refresh()
@@ -172,6 +176,7 @@ func TestContextMeter_TransientFailureStaysArmed(t *testing.T) {
 // A zero window cannot be rendered as a percentage; publishing it would push a
 // divide-by-zero to the frontend.
 func TestContextMeter_SkipsZeroWindow(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{TotalTokens: 100, MaxTokens: 0}, nil)
 
 	m.Refresh()
@@ -186,6 +191,7 @@ func TestContextMeter_SkipsZeroWindow(t *testing.T) {
 // Each measurement is a control round-trip, so a burst of signals must collapse
 // into one follow-up rather than one query per event.
 func TestContextMeter_CoalescesBurst(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{TotalTokens: 1, MaxTokens: 100}, nil)
 	gate := make(chan struct{})
 	m.mu.Lock()
@@ -214,6 +220,7 @@ func TestContextMeter_CoalescesBurst(t *testing.T) {
 // Refresh must never block: it is called from the event loop, which processes
 // every CLI event for the session.
 func TestContextMeter_RefreshDoesNotBlock(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{TotalTokens: 1, MaxTokens: 100}, nil)
 	gate := make(chan struct{})
 	defer close(gate)
@@ -237,6 +244,7 @@ func TestContextMeter_RefreshDoesNotBlock(t *testing.T) {
 // Stop must silence a measurement already in flight — a closing session has no
 // business broadcasting.
 func TestContextMeter_StopSuppressesInFlightEmit(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{TotalTokens: 1, MaxTokens: 100}, nil)
 	gate := make(chan struct{})
 	m.mu.Lock()
@@ -255,6 +263,7 @@ func TestContextMeter_StopSuppressesInFlightEmit(t *testing.T) {
 }
 
 func TestContextMeter_NilIsSafe(t *testing.T) {
+	t.Parallel()
 	var m *contextMeter
 	m.Refresh()
 	m.Stop()
@@ -393,6 +402,7 @@ func (s *StopQueuedSuite) liveUsageEvents() []WireContextUsageEvent {
 // the bar is actually rendered against. Following the event's own window would
 // make the bar jump 5x between two readings of the same session.
 func TestContextMeter_PushedMeasurementUsesTheSeededWindow(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{
 		Model:                "claude-sonnet-5",
 		TotalTokens:          20000,
@@ -441,6 +451,7 @@ func TestContextMeter_PushedMeasurementUsesTheSeededWindow(t *testing.T) {
 // Turn one must still move. With no query answered yet the event's own window
 // is the only one there is, and the meter asks for the real one behind it.
 func TestContextMeter_PushedBeforeSeedRendersAndAsksForTheWindow(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{
 		Model: "claude-sonnet-5", TotalTokens: 30000, MaxTokens: 200000, RawMaxTokens: 1000000,
 	}, nil)
@@ -470,6 +481,7 @@ func TestContextMeter_PushedBeforeSeedRendersAndAsksForTheWindow(t *testing.T) {
 // A provider that pushes measurements but cannot answer the query must not buy
 // a control round-trip per model response, forever.
 func TestContextMeter_WindowSeedsAreBounded(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(nil, errors.New("cli went away"))
 
 	for range 20 {
@@ -490,6 +502,7 @@ func TestContextMeter_WindowSeedsAreBounded(t *testing.T) {
 // v0.5.0 and the testmode connector still does, but a provider that pushes
 // measurements keeps moving the bar against the event's own window.
 func TestContextMeter_PushedMeasurementSurvivesAnUnsupportedQuery(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(nil, runtime.ErrNotSupported)
 
 	m.Refresh()
@@ -514,6 +527,7 @@ func TestContextMeter_PushedMeasurementSurvivesAnUnsupportedQuery(t *testing.T) 
 // The held window was resolved for one model's compaction policy. Another
 // model's measurement must not be divided by it.
 func TestContextMeter_ModelSwitchDropsTheHeldWindow(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{
 		Model: "claude-sonnet-5", TotalTokens: 1, MaxTokens: 200000, RawMaxTokens: 1000000,
 		AutoCompactEnabled: true, AutoCompactThreshold: 180000,
@@ -536,6 +550,7 @@ func TestContextMeter_ModelSwitchDropsTheHeldWindow(t *testing.T) {
 
 // A closing session has no business broadcasting, whichever source spoke.
 func TestContextMeter_StopSilencesPushedMeasurements(t *testing.T) {
+	t.Parallel()
 	m := newRecordingMeter(&runtime.ContextUsage{TotalTokens: 1, MaxTokens: 100}, nil)
 	m.Stop()
 
@@ -548,6 +563,7 @@ func TestContextMeter_StopSilencesPushedMeasurements(t *testing.T) {
 }
 
 func TestContextMeter_ObserveOnNilIsSafe(t *testing.T) {
+	t.Parallel()
 	var m *contextMeter
 	m.Observe(runtime.ContextUsage{TotalTokens: 1, MaxTokens: 2})
 }

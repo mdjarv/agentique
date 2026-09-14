@@ -11,6 +11,7 @@ import (
 // no runtime add-dir equivalent. Callers registering teammate worktrees
 // opportunistically match on this to stay quiet.
 func TestRegisterRepoRootUnsupportedProvider(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s1"}
 
 	err := sess.RegisterRepoRoot("/tmp/teammate")
@@ -27,6 +28,7 @@ func TestRegisterRepoRootUnsupportedProvider(t *testing.T) {
 // the set short-circuits before any control request is attempted, which is what
 // keeps a repeated channel-context refresh from erroring on every teammate.
 func TestRegisterRepoRootSkipsAlreadyRegistered(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s1", repoRoots: map[string]struct{}{"/tmp/teammate": {}}}
 
 	// No CLI is attached, so reaching the control request would surface as
@@ -43,6 +45,7 @@ func TestRegisterRepoRootSkipsAlreadyRegistered(t *testing.T) {
 // set must not survive a resume/reconnect or an idle-evict round trip —
 // otherwise the roots would be suppressed forever after the first eviction.
 func TestSetRuntimeClearsRepoRoots(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s1", repoRoots: map[string]struct{}{"/tmp/teammate": {}}}
 
 	sess.setRuntime(nil, runtime.CLISession(nil))

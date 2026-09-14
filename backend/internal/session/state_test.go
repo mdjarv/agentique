@@ -3,6 +3,7 @@ package session
 import "testing"
 
 func TestValidTransitions(t *testing.T) {
+	t.Parallel()
 	valid := []struct {
 		from, to State
 	}{
@@ -41,6 +42,7 @@ func TestValidTransitions(t *testing.T) {
 }
 
 func TestInvalidTransitions(t *testing.T) {
+	t.Parallel()
 	invalid := []struct {
 		from, to State
 	}{
@@ -68,6 +70,7 @@ func TestInvalidTransitions(t *testing.T) {
 }
 
 func TestValidateTransition(t *testing.T) {
+	t.Parallel()
 	if err := validateTransition(StateIdle, StateRunning, "test"); err != nil {
 		t.Errorf("expected nil, got %v", err)
 	}

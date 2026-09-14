@@ -15,6 +15,7 @@ import (
 // preamble reword drops the marker, orphans would silently stop being reaped —
 // so fail loudly here instead.
 func TestPreambleCarriesReaperMarker(t *testing.T) {
+	t.Parallel()
 	if !strings.Contains(preambleIdentity, procctl.CLIProcessMarker) {
 		t.Fatalf("preambleIdentity must contain the reaper marker %q so orphaned CLI processes stay reap-able; preambleIdentity=%q",
 			procctl.CLIProcessMarker, preambleIdentity)

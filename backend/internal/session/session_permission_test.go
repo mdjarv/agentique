@@ -3,6 +3,7 @@ package session
 import "testing"
 
 func TestIsPlanSafeTool(t *testing.T) {
+	t.Parallel()
 	safe := []string{"Read", "Glob", "Grep", "WebSearch", "WebFetch", "Agent", "ExitWorktree", "TodoWrite", "TodoRead"}
 	for _, tool := range safe {
 		if !isPlanSafeTool(tool) {
@@ -24,6 +25,7 @@ func TestIsPlanSafeTool(t *testing.T) {
 }
 
 func TestIsAutoSafeTool(t *testing.T) {
+	t.Parallel()
 	safe := []string{
 		"Read", "Glob", "Grep", // file_read
 		"Edit", "Write", "NotebookEdit", "MultiEdit", // file_write
@@ -52,6 +54,7 @@ func TestIsAutoSafeTool(t *testing.T) {
 }
 
 func TestShouldBypassPermission(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		auto string
@@ -120,6 +123,7 @@ func TestShouldBypassPermission(t *testing.T) {
 // agree with the ExitPlanMode rows in TestShouldBypassPermission — two code
 // paths answering the same question differently is the bug this guards.
 func TestPlanReviewRequired(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		mode string
 		want bool

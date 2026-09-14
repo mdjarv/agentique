@@ -14,6 +14,7 @@ import (
 // the counting semantics the wire field is built on.
 
 func TestPipeline_AgentsInFlightCounting(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var counts []int
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -55,6 +56,7 @@ func TestPipeline_AgentsInFlightCounting(t *testing.T) {
 // A background subagent outlives the turn that spawned it — the count must
 // survive the turn boundary and reset only with the CLI process.
 func TestPipeline_AgentsInFlightSurvivesTurnEndAndResets(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	fired := 0
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {

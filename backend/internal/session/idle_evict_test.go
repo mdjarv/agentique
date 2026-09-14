@@ -9,6 +9,7 @@ import (
 )
 
 func TestBeginIdleEvictConditions(t *testing.T) {
+	t.Parallel()
 	ttl := 30 * time.Minute
 	now := time.Now()
 
@@ -72,6 +73,7 @@ func TestBeginIdleEvictConditions(t *testing.T) {
 }
 
 func TestClearEvicting(t *testing.T) {
+	t.Parallel()
 	s := &Session{ID: "t", state: StateIdle, lastActiveAt: time.Now().Add(-time.Hour)}
 	if !s.beginIdleEvict(time.Minute, time.Now()) {
 		t.Fatal("expected claim")
@@ -92,6 +94,7 @@ func TestClearEvicting(t *testing.T) {
 // -race. Both operations serialize on s.mu; whichever wins first either sets
 // evicting (turn refused) or refreshes lastActiveAt (claim skipped).
 func TestIdleEvictVsQueryMutualExclusion(t *testing.T) {
+	t.Parallel()
 	ttl := 10 * time.Millisecond
 	for i := 0; i < 2000; i++ {
 		s := &Session{

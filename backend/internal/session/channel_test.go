@@ -18,6 +18,7 @@ type ChannelSuite struct {
 }
 
 func TestChannelSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(ChannelSuite))
 }
 

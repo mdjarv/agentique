@@ -13,6 +13,7 @@ import (
 // can't accidentally break the precedence ordering.
 
 func TestResolveSessionConfig_ExplicitWinsOverPersona(t *testing.T) {
+	t.Parallel()
 	p := CreateSessionParams{
 		Model:           "sonnet",
 		Effort:          "high",
@@ -42,6 +43,7 @@ func TestResolveSessionConfig_ExplicitWinsOverPersona(t *testing.T) {
 }
 
 func TestResolveSessionConfig_PersonaFillsBlanks(t *testing.T) {
+	t.Parallel()
 	p := CreateSessionParams{}
 	pc := PersonaConfig{
 		Model:           "haiku",
@@ -66,6 +68,7 @@ func TestResolveSessionConfig_PersonaFillsBlanks(t *testing.T) {
 }
 
 func TestResolveSessionConfig_ProjectDefaultsForPresets(t *testing.T) {
+	t.Parallel()
 	p := CreateSessionParams{}
 	pc := PersonaConfig{} // empty
 	project := store.Project{
@@ -79,6 +82,7 @@ func TestResolveSessionConfig_ProjectDefaultsForPresets(t *testing.T) {
 }
 
 func TestResolveSessionConfig_Opus1MFallbackWhenNothingSet(t *testing.T) {
+	t.Parallel()
 	got := resolveSessionConfig(CreateSessionParams{}, PersonaConfig{}, store.Project{})
 	if got.model != "opus[1m]" {
 		t.Errorf("model fallback: got %q, want opus[1m]", got.model)
@@ -86,6 +90,7 @@ func TestResolveSessionConfig_Opus1MFallbackWhenNothingSet(t *testing.T) {
 }
 
 func TestResolveSessionConfig_PartialExplicitMixesWithPersona(t *testing.T) {
+	t.Parallel()
 	// Caller specifies model only — effort/autoApprove must come from persona.
 	p := CreateSessionParams{Model: "sonnet"}
 	pc := PersonaConfig{Effort: "low", AutoApproveMode: "manual"}
@@ -103,6 +108,7 @@ func TestResolveSessionConfig_PartialExplicitMixesWithPersona(t *testing.T) {
 }
 
 func TestResolveSessionConfig_ExplicitPresetsZeroDoesNotInheritPersona(t *testing.T) {
+	t.Parallel()
 	// IsZero() on caller-side BehaviorPresets means "no preference". Persona
 	// presets fill in. ParsePresets({}) should not fire because persona has
 	// non-zero presets.
@@ -123,6 +129,7 @@ func TestResolveSessionConfig_ExplicitPresetsZeroDoesNotInheritPersona(t *testin
 // guards against a typo silently dropping a field on the wire payload.
 
 func TestBaseSessionInfo_FullProjection(t *testing.T) {
+	t.Parallel()
 	ss := store.Session{
 		ID:              "sess-1",
 		ProjectID:       "proj-1",
@@ -178,6 +185,7 @@ func TestBaseSessionInfo_FullProjection(t *testing.T) {
 }
 
 func TestBaseSessionInfo_NullStringsBecomeEmpty(t *testing.T) {
+	t.Parallel()
 	got := baseSessionInfo(store.Session{
 		ID:        "x",
 		ProjectID: "y",
@@ -193,6 +201,7 @@ func TestBaseSessionInfo_NullStringsBecomeEmpty(t *testing.T) {
 }
 
 func TestBaseSessionInfo_DefaultPresetsForEmptyJSON(t *testing.T) {
+	t.Parallel()
 	got := baseSessionInfo(store.Session{ID: "x", BehaviorPresets: ""})
 	want := DefaultPresets()
 	if !reflect.DeepEqual(got.BehaviorPresets, want) {
@@ -205,6 +214,7 @@ func TestBaseSessionInfo_DefaultPresetsForEmptyJSON(t *testing.T) {
 // a minimal one here and verify the flags landed.
 
 func TestApplyPostResumeFlags_MarksMergedAndCompleted(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s"}
 	dbSess := store.Session{
 		ID:             "s",
@@ -223,6 +233,7 @@ func TestApplyPostResumeFlags_MarksMergedAndCompleted(t *testing.T) {
 }
 
 func TestApplyPostResumeFlags_NoOpForFreshSession(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "s"}
 	applyPostResumeFlags(sess, store.Session{ID: "s"})
 

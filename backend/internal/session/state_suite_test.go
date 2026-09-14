@@ -14,6 +14,7 @@ type StateSuite struct {
 }
 
 func TestStateSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(StateSuite))
 }
 

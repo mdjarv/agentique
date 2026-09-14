@@ -3,6 +3,7 @@ package session
 import "testing"
 
 func TestParsePersonaConfig_Full(t *testing.T) {
+	t.Parallel()
 	raw := `{
 		"model": "sonnet",
 		"effort": "high",
@@ -37,6 +38,7 @@ func TestParsePersonaConfig_Full(t *testing.T) {
 }
 
 func TestParsePersonaConfig_Empty(t *testing.T) {
+	t.Parallel()
 	pc := parsePersonaConfig("")
 	if pc.Model != "" || pc.Effort != "" || pc.SystemPromptAdditions != "" {
 		t.Error("empty string should return zero-value PersonaConfig")
@@ -44,6 +46,7 @@ func TestParsePersonaConfig_Empty(t *testing.T) {
 }
 
 func TestParsePersonaConfig_EmptyObject(t *testing.T) {
+	t.Parallel()
 	pc := parsePersonaConfig("{}")
 	if pc.Model != "" || pc.Effort != "" || pc.SystemPromptAdditions != "" {
 		t.Error("empty JSON object should return zero-value PersonaConfig")
@@ -51,6 +54,7 @@ func TestParsePersonaConfig_EmptyObject(t *testing.T) {
 }
 
 func TestParsePersonaConfig_Partial(t *testing.T) {
+	t.Parallel()
 	raw := `{"model": "opus", "systemPromptAdditions": "Be terse."}`
 	pc := parsePersonaConfig(raw)
 
@@ -66,6 +70,7 @@ func TestParsePersonaConfig_Partial(t *testing.T) {
 }
 
 func TestParsePersonaConfig_Malformed(t *testing.T) {
+	t.Parallel()
 	pc := parsePersonaConfig("not json")
 	if pc.Model != "" {
 		t.Error("malformed JSON should return zero-value PersonaConfig")

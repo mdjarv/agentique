@@ -55,6 +55,7 @@ func exists(dir, rel string) bool {
 }
 
 func TestDiscardOneRefusesAPathGitDoesNotReportChanged(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	files := []gitops.FileStatus{{Path: "other.txt", Status: "modified"}}
 
@@ -69,6 +70,7 @@ func TestDiscardOneRefusesAPathGitDoesNotReportChanged(t *testing.T) {
 }
 
 func TestDiscardOneUndoesAModification(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	writeAt(t, dir, "kept.txt", "edited\n")
 
@@ -81,6 +83,7 @@ func TestDiscardOneUndoesAModification(t *testing.T) {
 }
 
 func TestDiscardOneDeletesAnUntrackedFile(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	writeAt(t, dir, "new.txt", "scratch\n")
 
@@ -93,6 +96,7 @@ func TestDiscardOneDeletesAnUntrackedFile(t *testing.T) {
 }
 
 func TestDiscardOneDropsAStagedAddition(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	writeAt(t, dir, "added.txt", "staged\n")
 	runGit(t, dir, "add", "added.txt")
@@ -107,6 +111,7 @@ func TestDiscardOneDropsAStagedAddition(t *testing.T) {
 }
 
 func TestDiscardOneUndoesBothHalvesOfARename(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	runGit(t, dir, "mv", "kept.txt", "moved.txt")
 
@@ -123,6 +128,7 @@ func TestDiscardOneUndoesBothHalvesOfARename(t *testing.T) {
 }
 
 func TestDiscardOneRestoresADeletion(t *testing.T) {
+	t.Parallel()
 	dir := discardRepo(t)
 	if err := os.Remove(filepath.Join(dir, "kept.txt")); err != nil {
 		t.Fatal(err)

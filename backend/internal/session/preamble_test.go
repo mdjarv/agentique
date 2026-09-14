@@ -8,6 +8,7 @@ import (
 )
 
 func TestBuildPersonaPreamble_LeanForWebOnly(t *testing.T) {
+	t.Parallel()
 	got := buildPersonaPreamble("You are Socrates. Question everything.", "DEV-SAFETY-EXTRA")
 
 	// Keeps: the Agentique identity, the persona's own system-prompt additions,
@@ -40,6 +41,7 @@ func TestBuildPersonaPreamble_LeanForWebOnly(t *testing.T) {
 }
 
 func TestBuildPersonaPreamble_EmptyAdditions(t *testing.T) {
+	t.Parallel()
 	got := buildPersonaPreamble("", "")
 	if got != preambleIdentity {
 		t.Errorf("empty persona preamble should equal preambleIdentity, got:\n%s", got)
@@ -47,6 +49,7 @@ func TestBuildPersonaPreamble_EmptyAdditions(t *testing.T) {
 }
 
 func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
+	t.Parallel()
 	// DefaultPresets (suggestParallel=true, autoCommit=true) with a worktree
 	// should produce the same output as the old hardcoded preamble.
 	projects := []ProjectInfo{{Name: "MyProject", Slug: "my-project"}}
@@ -74,6 +77,7 @@ func TestBuildPreamble_DefaultPresetsMatchesLegacy(t *testing.T) {
 }
 
 func TestBuildPreamble_SuggestParallelToolGuidance(t *testing.T) {
+	t.Parallel()
 	// Parallel-work suggestions go through the schema-validated SuggestSessionPrompt
 	// tool (structurally can't be malformed), not inline markup. The guidance must
 	// name the tool and stress that the prompt is self-contained.
@@ -95,6 +99,7 @@ func TestBuildPreamble_SuggestParallelToolGuidance(t *testing.T) {
 }
 
 func TestBuildPreamble_SuggestParallelCoversHandoffs(t *testing.T) {
+	t.Parallel()
 	// The trigger wording must reach beyond "parallel work" to cover a hand-off /
 	// spec written for another repo's agent — the case where the model otherwise
 	// pastes a plain code fence and the card affordance silently doesn't exist.
@@ -116,6 +121,7 @@ func TestBuildPreamble_SuggestParallelCoversHandoffs(t *testing.T) {
 }
 
 func TestBuildPreamble_ToolGuidanceGatedBySuggestParallel(t *testing.T) {
+	t.Parallel()
 	// The suggestion guidance lives inside the suggest-parallel snippet; it must be
 	// absent when that preset is off.
 	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, BehaviorPresets{}, nil, nil, "", false, false, "")
@@ -125,6 +131,7 @@ func TestBuildPreamble_ToolGuidanceGatedBySuggestParallel(t *testing.T) {
 }
 
 func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
+	t.Parallel()
 	projects := []ProjectInfo{
 		{Name: "Frontend", Slug: "frontend"},
 		{Name: "Backend", Slug: "backend"},
@@ -143,6 +150,7 @@ func TestBuildPreamble_DefaultPresetsMultiProject(t *testing.T) {
 }
 
 func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{SuggestParallel: false, AutoCommit: true}
 	projects := []ProjectInfo{
 		{Name: "A", Slug: "a"},
@@ -164,6 +172,7 @@ func TestBuildPreamble_SuggestParallelOff(t *testing.T) {
 }
 
 func TestBuildPreamble_AutoCommitOff(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: false}
 	got := buildPreamble("sess-id", "session-xyz", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, false, "")
 
@@ -173,6 +182,7 @@ func TestBuildPreamble_AutoCommitOff(t *testing.T) {
 }
 
 func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{SuggestParallel: true, AutoCommit: true}
 	got := buildPreamble("sess-id", "", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, false, "")
 
@@ -182,6 +192,7 @@ func TestBuildPreamble_AutoCommitNoWorktree(t *testing.T) {
 }
 
 func TestBuildPreamble_PlanFirst(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{PlanFirst: true}
 	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, false, "")
 
@@ -191,6 +202,7 @@ func TestBuildPreamble_PlanFirst(t *testing.T) {
 }
 
 func TestBuildPreamble_Terse(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{Terse: true}
 	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, false, "")
 
@@ -200,6 +212,7 @@ func TestBuildPreamble_Terse(t *testing.T) {
 }
 
 func TestBuildPreamble_CustomInstructions(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{CustomInstructions: "Only touch backend files."}
 	got := buildPreamble("sess-id", "", nil, presets, nil, nil, "", false, false, "")
 
@@ -209,6 +222,7 @@ func TestBuildPreamble_CustomInstructions(t *testing.T) {
 }
 
 func TestBuildPreamble_AllOff(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{}
 	got := buildPreamble("sess-id", "branch", []ProjectInfo{{Name: "P", Slug: "p"}}, presets, nil, nil, "", false, false, "")
 
@@ -231,6 +245,7 @@ func TestBuildPreamble_AllOff(t *testing.T) {
 }
 
 func TestBuildPreamble_ChannelContext(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{}
 	ch := &ChannelPreambleInfo{
 		ChannelName: "alpha-squad",
@@ -262,6 +277,7 @@ func TestBuildPreamble_ChannelContext(t *testing.T) {
 }
 
 func TestBuildPreamble_GlobalExtra(t *testing.T) {
+	t.Parallel()
 	got := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "Do not touch the production database.", false, false, "")
 
 	if !strings.Contains(got, "Do not touch the production database.") {
@@ -270,6 +286,7 @@ func TestBuildPreamble_GlobalExtra(t *testing.T) {
 }
 
 func TestBuildPreamble_GlobalExtraEmpty(t *testing.T) {
+	t.Parallel()
 	with := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 	without := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 	if with != without {
@@ -278,6 +295,7 @@ func TestBuildPreamble_GlobalExtraEmpty(t *testing.T) {
 }
 
 func TestBuildPreamble_DelegationAlwaysPresent(t *testing.T) {
+	t.Parallel()
 	// Delegation should be present regardless of preset configuration.
 	tests := []struct {
 		name    string
@@ -302,6 +320,7 @@ func TestBuildPreamble_DelegationAlwaysPresent(t *testing.T) {
 }
 
 func TestBuildPreamble_TeamIdentity(t *testing.T) {
+	t.Parallel()
 	presets := BehaviorPresets{}
 	team := &TeamPreambleInfo{
 		TeamName:    "Core Team",
@@ -338,6 +357,7 @@ func TestBuildPreamble_TeamIdentity(t *testing.T) {
 }
 
 func TestBuildPreamble_SessionFiles(t *testing.T) {
+	t.Parallel()
 	got := buildPreamble("abc-123-def", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 
 	if !strings.Contains(got, "## Session Files") {
@@ -358,6 +378,7 @@ func TestBuildPreamble_SessionFiles(t *testing.T) {
 }
 
 func TestBuildPreamble_SessionFilesEmptyID(t *testing.T) {
+	t.Parallel()
 	got := buildPreamble("", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 
 	if strings.Contains(got, "## Session Files") {
@@ -366,6 +387,7 @@ func TestBuildPreamble_SessionFilesEmptyID(t *testing.T) {
 }
 
 func TestBuildPreamble_SystemPromptAdditions(t *testing.T) {
+	t.Parallel()
 	got := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "You are a senior backend developer. Always write tests.")
 
 	if !strings.Contains(got, "You are a senior backend developer. Always write tests.") {
@@ -374,6 +396,7 @@ func TestBuildPreamble_SystemPromptAdditions(t *testing.T) {
 }
 
 func TestBuildPreamble_SystemPromptAdditionsEmpty(t *testing.T) {
+	t.Parallel()
 	with := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 	without := buildPreamble("sess-id", "", nil, BehaviorPresets{}, nil, nil, "", false, false, "")
 	if with != without {
@@ -382,6 +405,7 @@ func TestBuildPreamble_SystemPromptAdditionsEmpty(t *testing.T) {
 }
 
 func TestBuildPreamble_BrowserBlocks(t *testing.T) {
+	t.Parallel()
 	const agentMarker = "## Browser automation"
 	const panelMarker = "## Browser panel"
 
@@ -411,6 +435,7 @@ func TestBuildPreamble_BrowserBlocks(t *testing.T) {
 }
 
 func TestBuildWorkerPrompt(t *testing.T) {
+	t.Parallel()
 	got := buildWorkerPrompt("alpha-squad", "backend expert", "lead-session", []string{"Frontend UI"}, "Implement the API endpoints.")
 
 	if !strings.Contains(got, "backend expert") {
@@ -443,6 +468,7 @@ func TestBuildWorkerPrompt(t *testing.T) {
 }
 
 func TestBuildWorkerPrompt_NoPeers(t *testing.T) {
+	t.Parallel()
 	got := buildWorkerPrompt("team", "expert", "lead", nil, "Do stuff.")
 	if strings.Contains(got, "teammates") {
 		t.Error("should not mention teammates when there are none")
@@ -450,6 +476,7 @@ func TestBuildWorkerPrompt_NoPeers(t *testing.T) {
 }
 
 func TestBuildWorkerPrompt_EmptyRole(t *testing.T) {
+	t.Parallel()
 	got := buildWorkerPrompt("team", "", "lead", nil, "Do stuff.")
 	if !strings.Contains(got, "worker") {
 		t.Error("empty role should default to 'worker'")
@@ -459,6 +486,7 @@ func TestBuildWorkerPrompt_EmptyRole(t *testing.T) {
 // A session in a plain folder is told so, after the blocks that assume git;
 // a session at a repository root hears nothing extra.
 func TestFolderPreamble(t *testing.T) {
+	t.Parallel()
 	plain := t.TempDir()
 	got := folderPreamble(plain)
 	if !strings.Contains(got, plain) || !strings.Contains(got, "not a git repository") {

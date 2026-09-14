@@ -20,6 +20,7 @@ func recvOutcome(t *testing.T, ch <-chan TurnOutcome) TurnOutcome {
 }
 
 func TestTurnRegistry_DeliverResolvesSubscribedTurn(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	ch := r.Subscribe(3)
 
@@ -32,6 +33,7 @@ func TestTurnRegistry_DeliverResolvesSubscribedTurn(t *testing.T) {
 }
 
 func TestTurnRegistry_DeliveryIsPerTurn(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	ch3 := r.Subscribe(3)
 	ch4 := r.Subscribe(4)
@@ -49,6 +51,7 @@ func TestTurnRegistry_DeliveryIsPerTurn(t *testing.T) {
 }
 
 func TestTurnRegistry_MultipleSubscribersSameTurn(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	a := r.Subscribe(1)
 	b := r.Subscribe(1)
@@ -64,6 +67,7 @@ func TestTurnRegistry_MultipleSubscribersSameTurn(t *testing.T) {
 }
 
 func TestTurnRegistry_DeliverWithoutSubscribersIsNoop(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	r.Deliver(TurnOutcome{TurnIndex: 9})
 	// A later subscriber for the same index waits for a future delivery —
@@ -77,6 +81,7 @@ func TestTurnRegistry_DeliverWithoutSubscribersIsNoop(t *testing.T) {
 }
 
 func TestTurnRegistry_CloseResolvesOpenSubscriptions(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	ch := r.Subscribe(7)
 
@@ -98,6 +103,7 @@ func TestTurnRegistry_CloseResolvesOpenSubscriptions(t *testing.T) {
 }
 
 func TestTurnRegistry_ConcurrentSubscribeDeliverClose(t *testing.T) {
+	t.Parallel()
 	r := newTurnRegistry()
 	var wg sync.WaitGroup
 	const turns = 50
@@ -138,6 +144,7 @@ func TestTurnRegistry_ConcurrentSubscribeDeliverClose(t *testing.T) {
 }
 
 func TestClassifyErrorKind(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		ev   runtime.ErrorEvent
@@ -163,6 +170,7 @@ func TestClassifyErrorKind(t *testing.T) {
 }
 
 func TestStrongerErrorKind(t *testing.T) {
+	t.Parallel()
 	if got := strongerErrorKind(ErrorKindOther, ErrorKindRateLimit); got != ErrorKindRateLimit {
 		t.Errorf("specific must beat other, got %q", got)
 	}
@@ -186,6 +194,7 @@ func (e errString) Error() string { return string(e) }
 // could advance turnIndex under the unprocessed completion and steal its
 // outcome. WaitTurnClosed is the guard: regression for the misattribution.
 func TestPipeline_WaitTurnClosedGuardsOutcomeAttribution(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	var got []TurnOutcome
 	p := newTestPipeline(sink, func(cfg *PipelineConfig) {
@@ -213,6 +222,7 @@ func TestPipeline_WaitTurnClosedGuardsOutcomeAttribution(t *testing.T) {
 }
 
 func TestPipeline_FatalErrorClosesTurn(t *testing.T) {
+	t.Parallel()
 	sink := newTestSink()
 	p := newTestPipeline(sink)
 	p.AdvanceTurn()

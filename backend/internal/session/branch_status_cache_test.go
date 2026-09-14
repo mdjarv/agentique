@@ -14,6 +14,7 @@ import (
 )
 
 func TestBranchStatusCache_GetRequiresMatchingKey(t *testing.T) {
+	t.Parallel()
 	c := newBranchStatusCache()
 	key := branchStatusKey{projectPath: "/repo", branch: "feature"}
 	if _, ok := c.get("s1", key); ok {
@@ -35,6 +36,7 @@ func TestBranchStatusCache_GetRequiresMatchingKey(t *testing.T) {
 }
 
 func TestBranchStatusCache_StaleAfterTTL(t *testing.T) {
+	t.Parallel()
 	c := newBranchStatusCache()
 	now := time.Now()
 	c.now = func() time.Time { return now }
@@ -53,6 +55,7 @@ func TestBranchStatusCache_StaleAfterTTL(t *testing.T) {
 // One refresh per queued session, whatever the number of requests, on one
 // worker, and requests made before a refresher exists are kept.
 func TestBranchStatusCache_RequestsCoalesceOntoOneWorker(t *testing.T) {
+	t.Parallel()
 	c := newBranchStatusCache()
 	c.request("s1")
 	c.request("s1")

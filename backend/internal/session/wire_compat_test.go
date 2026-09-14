@@ -29,6 +29,7 @@ func fieldsOf(t *testing.T, v any) map[string]any {
 }
 
 func TestGitSnapshotCarriesLegacyArchivedAlias(t *testing.T) {
+	t.Parallel()
 	got := fieldsOf(t, GitSnapshot{SessionID: "s1", ArchivedAt: "2026-08-24T06:00:00Z"})
 
 	if got["archivedAt"] != "2026-08-24T06:00:00Z" {
@@ -53,6 +54,7 @@ func TestGitSnapshotCarriesLegacyArchivedAlias(t *testing.T) {
 // generated schema mirrors these tags, and a client would then reject every
 // payload from a peer that predates the rename.
 func TestGitSnapshotOmitsTheMarkerWhenOpen(t *testing.T) {
+	t.Parallel()
 	got := fieldsOf(t, GitSnapshot{SessionID: "s1"})
 
 	if _, present := got["archivedAt"]; present {
@@ -73,6 +75,7 @@ func TestGitSnapshotOmitsTheMarkerWhenOpen(t *testing.T) {
 // which means a read receipt can only clear the badge on other clients if the
 // broadcast says "cleared" in so many words.
 func TestGitSnapshotAlwaysStatesUnseenCompletedAt(t *testing.T) {
+	t.Parallel()
 	cleared := fieldsOf(t, GitSnapshot{SessionID: "s1"})
 	v, present := cleared["unseenCompletedAt"]
 	if !present {
@@ -89,6 +92,7 @@ func TestGitSnapshotAlwaysStatesUnseenCompletedAt(t *testing.T) {
 }
 
 func TestSessionInfoAlwaysStatesUnseenCompletedAt(t *testing.T) {
+	t.Parallel()
 	cleared := fieldsOf(t, SessionInfo{ID: "s1"})
 	v, present := cleared["unseenCompletedAt"]
 	if !present {
@@ -106,6 +110,7 @@ func TestSessionInfoAlwaysStatesUnseenCompletedAt(t *testing.T) {
 }
 
 func TestSessionInfoCarriesLegacyArchivedAlias(t *testing.T) {
+	t.Parallel()
 	got := fieldsOf(t, SessionInfo{ID: "s1", ArchivedAt: "2026-08-24T06:00:00Z"})
 
 	if got["archivedAt"] != "2026-08-24T06:00:00Z" {

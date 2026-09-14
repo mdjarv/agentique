@@ -8,6 +8,7 @@ import "testing"
 // what prevents a resumed turn from writing a worktree while a git op mutates
 // it on an offline session (which has no in-memory StateMerging).
 func TestGitOpLockExcludesResume(t *testing.T) {
+	t.Parallel()
 	mgr := &Manager{}
 	const sid = "sess-1"
 

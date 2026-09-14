@@ -252,6 +252,7 @@ func (s *ServiceSuite) findSession(sessionID string) SessionInfo {
 // snapshot it broadcasts is built from memory, so the mirror has to be seeded
 // from the row.
 func TestApplyPostResumeFlagsSeedsUnseen(t *testing.T) {
+	t.Parallel()
 	sess := &Session{}
 	applyPostResumeFlags(sess, storeSessionWithUnseen("2026-08-26T10:00:00Z"))
 	if got := sess.UnseenCompletedAt(); got != "2026-08-26T10:00:00Z" {

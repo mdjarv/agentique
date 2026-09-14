@@ -30,6 +30,7 @@ func (f *fakeResolutionQueries) UpsertModelResolution(_ context.Context, arg sto
 }
 
 func TestPersistResolvedModelRecordsAliasMapping(t *testing.T) {
+	t.Parallel()
 	q := &fakeResolutionQueries{}
 	persistResolvedModel(sessionParams{id: "s1", model: "opus", provider: "claude", queries: q}, "claude-opus-5")
 
@@ -46,6 +47,7 @@ func TestPersistResolvedModelRecordsAliasMapping(t *testing.T) {
 }
 
 func TestPersistResolvedModelDefaultsProvider(t *testing.T) {
+	t.Parallel()
 	q := &fakeResolutionQueries{}
 	persistResolvedModel(sessionParams{id: "s1", model: "opus", queries: q}, "claude-opus-5")
 
@@ -55,6 +57,7 @@ func TestPersistResolvedModelDefaultsProvider(t *testing.T) {
 }
 
 func TestPersistResolvedModelSkipsNonAliasSlugs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		slug       string
@@ -81,6 +84,7 @@ func TestPersistResolvedModelSkipsNonAliasSlugs(t *testing.T) {
 }
 
 func TestPersistResolvedModelIgnoresEmptyID(t *testing.T) {
+	t.Parallel()
 	q := &fakeResolutionQueries{}
 	persistResolvedModel(sessionParams{id: "s1", model: "opus", queries: q}, "")
 	if len(q.sessionUpdates) != 0 || len(q.upserts) != 0 {
@@ -89,6 +93,7 @@ func TestPersistResolvedModelIgnoresEmptyID(t *testing.T) {
 }
 
 func TestPersistResolvedModelSurvivesWriteFailures(t *testing.T) {
+	t.Parallel()
 	q := &fakeResolutionQueries{sessionErr: errors.New("locked"), upsertErr: errors.New("locked")}
 	// A catalog hint that cannot be stored must not take the session down.
 	persistResolvedModel(sessionParams{id: "s1", model: "opus", queries: q}, "claude-opus-5")
@@ -98,6 +103,7 @@ func TestPersistResolvedModelSurvivesWriteFailures(t *testing.T) {
 }
 
 func TestPipelineConfigBroadcastsResolvedModel(t *testing.T) {
+	t.Parallel()
 	q := &fakeResolutionQueries{}
 	var pushType string
 	var payload PushSessionModelResolved

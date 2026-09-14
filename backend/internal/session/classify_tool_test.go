@@ -3,6 +3,7 @@ package session
 import "testing"
 
 func TestClassifyTool(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		tool string

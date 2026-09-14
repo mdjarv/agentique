@@ -32,6 +32,7 @@ type LiveSessionControlSuite struct {
 }
 
 func TestLiveSessionControlSuite(t *testing.T) {
+	t.Parallel()
 	if testing.Short() || os.Getenv("AGENTIQUE_LIVE_SESSION") == "" {
 		t.Skip("live CLI test; set AGENTIQUE_LIVE_SESSION=1 and drop -short")
 	}

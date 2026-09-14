@@ -17,6 +17,7 @@ import (
 const imgTestSessionID = "6f1c1d2e-0000-4000-8000-000000000001"
 
 func TestDetachToolResultImages_RewritesInlineImages(t *testing.T) {
+	t.Parallel()
 	in := json.RawMessage(`{"type":"tool_result","toolId":"t1","content":[` +
 		`{"type":"text","text":"shot taken"},` +
 		`{"type":"image","mediaType":"image/jpeg","url":"data:image/jpeg;base64,/9j/AAAA"},` +
@@ -56,6 +57,7 @@ func TestDetachToolResultImages_RewritesInlineImages(t *testing.T) {
 }
 
 func TestDetachToolResultImages_LeavesTextResultsUntouched(t *testing.T) {
+	t.Parallel()
 	in := json.RawMessage(`{"type":"tool_result","toolId":"t1","content":[{"type":"text","text":"ok"}]}`)
 	out := detachToolResultImages(imgTestSessionID, 1, in)
 	if string(out) != string(in) {
@@ -70,6 +72,7 @@ func TestDetachToolResultImages_LeavesTextResultsUntouched(t *testing.T) {
 }
 
 func TestBuildTurns_DetachesPromptAttachments(t *testing.T) {
+	t.Parallel()
 	rows := []store.SessionEvent{
 		{ID: 7, SessionID: imgTestSessionID, TurnIndex: 0, Seq: 0, Type: "prompt",
 			Data: `{"prompt":"look","attachments":[{"name":"a.png","mimeType":"image/png","dataUrl":"data:image/png;base64,iVBORw0KGgo="}]}`},
@@ -85,6 +88,7 @@ func TestBuildTurns_DetachesPromptAttachments(t *testing.T) {
 }
 
 func TestTrimTurnsToBudget(t *testing.T) {
+	t.Parallel()
 	big := json.RawMessage(`{"type":"text","content":"` + strings.Repeat("x", 600) + `"}`)
 	turn := func(i int) HistoryTurn {
 		return HistoryTurn{Prompt: "p", Events: []json.RawMessage{big}, TurnIndex: i}
@@ -137,6 +141,7 @@ func serveImage(h *EventImageHandler, sessionID, eventID, idx string) *httptest.
 }
 
 func TestEventImageHandler_ServesInlineImage(t *testing.T) {
+	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
 	h := &EventImageHandler{Queries: q}
 	rec := serveImage(h, sid, itoa(eid), "1")
@@ -155,6 +160,7 @@ func TestEventImageHandler_ServesInlineImage(t *testing.T) {
 }
 
 func TestEventImageHandler_NonImageTypeIsADownload(t *testing.T) {
+	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
 	h := &EventImageHandler{Queries: q}
 	rec := serveImage(h, sid, itoa(eid), "2")
@@ -170,6 +176,7 @@ func TestEventImageHandler_NonImageTypeIsADownload(t *testing.T) {
 }
 
 func TestEventImageHandler_RefusesWhatItCannotName(t *testing.T) {
+	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
 	h := &EventImageHandler{Queries: q}
 	cases := []struct {

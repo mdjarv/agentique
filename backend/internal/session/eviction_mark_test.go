@@ -20,6 +20,7 @@ type EvictionMarkSuite struct {
 }
 
 func TestEvictionMarkSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(EvictionMarkSuite))
 }
 
@@ -112,6 +113,7 @@ func (s *EvictionMarkSuite) TestResumeClearsTheMark() {
 // The claim is released when the stop behind it fails, and the mark goes with
 // it: a session that is still running was never reclaimed.
 func TestClearEvictingDropsTheMark(t *testing.T) {
+	t.Parallel()
 	sess := &Session{ID: "t", state: StateIdle, lastActiveAt: time.Now().Add(-time.Hour)}
 	if !sess.beginIdleEvict(time.Minute, time.Now()) {
 		t.Fatal("expected claim")

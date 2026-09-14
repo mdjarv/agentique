@@ -21,6 +21,7 @@ type SpawnSuite struct {
 }
 
 func TestSpawnSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(SpawnSuite))
 }
 

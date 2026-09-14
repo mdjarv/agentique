@@ -15,6 +15,7 @@ import (
 // will never complete must not make the next start wait out the full timeout.
 
 func TestPipelineTurnClosesOnCompletion(t *testing.T) {
+	t.Parallel()
 	p := newTestPipeline(newTestSink())
 
 	p.AdvanceTurn()
@@ -29,6 +30,7 @@ func TestPipelineTurnClosesOnCompletion(t *testing.T) {
 }
 
 func TestPipelineTurnStaysOpenAcrossAWorkflowPlaceholder(t *testing.T) {
+	t.Parallel()
 	p := newTestPipeline(newTestSink())
 	p.AdvanceTurn()
 
@@ -41,6 +43,7 @@ func TestPipelineTurnStaysOpenAcrossAWorkflowPlaceholder(t *testing.T) {
 }
 
 func TestPipelineFatalErrorClosesTheTurn(t *testing.T) {
+	t.Parallel()
 	p := newTestPipeline(newTestSink())
 	p.AdvanceTurn()
 
@@ -53,6 +56,7 @@ func TestPipelineFatalErrorClosesTheTurn(t *testing.T) {
 }
 
 func TestCloseTurn_IsIdempotent(t *testing.T) {
+	t.Parallel()
 	p := newTestPipeline(newTestSink())
 	p.AdvanceTurn()
 
@@ -64,6 +68,7 @@ func TestCloseTurn_IsIdempotent(t *testing.T) {
 }
 
 func TestCloseTurn_ReleasesWaiters(t *testing.T) {
+	t.Parallel()
 	p := newTestPipeline(newTestSink())
 	p.AdvanceTurn()
 

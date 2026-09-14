@@ -114,6 +114,7 @@ type StopQueuedSuite struct {
 }
 
 func TestStopQueuedSuite(t *testing.T) {
+	t.Parallel()
 	suite.Run(t, new(StopQueuedSuite))
 }
 
