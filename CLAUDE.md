@@ -23,6 +23,21 @@ byte offset, so one multi-byte character shifts those offsets and corrupts the
 generated code for *later* queries. The error points at the victim, not the
 cause ("extraneous input 'SELECid'").
 
+## Releasing
+
+A release is an annotated `vX.Y.Z` tag on a pushed `master` commit; pushing the
+tag runs `release.yml`, which builds and publishes. Bump minor for any `feat`,
+patch for fixes and docs only. Watch the run to green and confirm the release
+has all its binaries plus `checksums.txt`.
+
+**Every release gets written notes.** This repo does not use pull requests, so
+GitHub's generated notes are an empty compare link. Read the commits since the
+previous tag — bodies included, since the subject rarely says why — and replace
+the notes with `gh release edit vX.Y.Z --notes-file`: short bullets under a few
+headers grouped by feature area (plus Security / Fixes / Docs as needed),
+user-facing effect rather than implementation, no costs, ending with the
+`**Full Changelog**` compare link.
+
 ## Priorities
 
 Performance and reliability come first, and behaviour stays predictable under
