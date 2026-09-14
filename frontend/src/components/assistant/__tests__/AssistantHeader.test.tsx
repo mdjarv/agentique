@@ -35,7 +35,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 function features(over: { brain: boolean; voice: boolean }) {
   useFeatureStore.setState({
-    features: { browser: false, teams: false, assistant: true, ...over },
+    features: { browser: false, teams: false, dictation: false, assistant: true, ...over },
     loaded: true,
   });
 }

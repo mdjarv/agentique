@@ -40,7 +40,14 @@ const POLICY: AssistantPolicy = {
 beforeEach(() => {
   useAssistantStore.getState().reset();
   useFeatureStore.setState({
-    features: { browser: false, teams: false, assistant: true, brain: false, voice: false },
+    features: {
+      browser: false,
+      teams: false,
+      dictation: false,
+      assistant: true,
+      brain: false,
+      voice: false,
+    },
     loaded: true,
   });
   savePolicy.mockReset();
@@ -128,7 +135,14 @@ describe("AssistantPoliciesPage", () => {
 
   it("says so when the assistant is off, rather than drawing rules nothing reads", () => {
     useFeatureStore.setState({
-      features: { browser: false, teams: false, assistant: false, brain: false, voice: false },
+      features: {
+        browser: false,
+        teams: false,
+        dictation: false,
+        assistant: false,
+        brain: false,
+        voice: false,
+      },
       loaded: true,
     });
     render(<AssistantPoliciesPage />);

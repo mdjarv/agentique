@@ -20,6 +20,12 @@ interface Features {
    * looks alive. See docs/assistant.md.
    */
   assistant: boolean;
+  /**
+   * Server-side dictation (`/api/voice/dictation`), the composer mic's fallback
+   * where the browser's own recognizer cannot work. Mounted only where [voice]
+   * has real speech credentials, independent of the voice experiment.
+   */
+  dictation: boolean;
 }
 
 interface FeatureState {
@@ -46,6 +52,7 @@ const DEFAULT_FEATURES: Features = {
   voice: false,
   brain: false,
   assistant: false,
+  dictation: false,
 };
 
 export const useFeatureStore = create<FeatureState>((set, get) => ({

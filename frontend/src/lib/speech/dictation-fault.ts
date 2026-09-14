@@ -18,7 +18,8 @@ export type DictationFault =
   | "service-disabled"
   | "service-unreachable"
   | "no-microphone"
-  | "language-unsupported";
+  | "language-unsupported"
+  | "server-unavailable";
 
 export const DICTATION_FAULT_COPY: Record<DictationFault, { title: string; detail: string }> = {
   "browser-blocked": {
@@ -42,6 +43,10 @@ export const DICTATION_FAULT_COPY: Record<DictationFault, { title: string; detai
   "no-microphone": {
     title: "No microphone found",
     detail: "Connect a microphone or pick one in the system's sound settings.",
+  },
+  "server-unavailable": {
+    title: "Dictation service is unavailable",
+    detail: "The server couldn't open a speech session. Try again in a moment.",
   },
   "language-unsupported": {
     title: "This language isn't supported for dictation",

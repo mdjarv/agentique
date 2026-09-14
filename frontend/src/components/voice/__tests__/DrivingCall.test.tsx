@@ -35,7 +35,14 @@ function mockMatchMedia(matches: boolean) {
 
 function liveCall() {
   useFeatureStore.setState({
-    features: { browser: false, teams: false, voice: true, brain: false, assistant: false },
+    features: {
+      browser: false,
+      teams: false,
+      voice: true,
+      brain: false,
+      assistant: false,
+      dictation: false,
+    },
   });
   useChatStore.setState({
     activeSessionId: "s1",

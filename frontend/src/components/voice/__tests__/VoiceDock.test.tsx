@@ -52,7 +52,14 @@ function mockMatchMedia(matches: boolean) {
 /** A live call, mid-sentence, focused on a session with a long name. */
 function liveCall() {
   useFeatureStore.setState({
-    features: { browser: false, teams: false, voice: true, brain: false, assistant: false },
+    features: {
+      browser: false,
+      teams: false,
+      voice: true,
+      brain: false,
+      assistant: false,
+      dictation: false,
+    },
   });
   useChatStore.setState({
     activeSessionId: "s1",
@@ -120,7 +127,14 @@ describe("the assistant's row", () => {
     liveCall();
     useVoiceStore.setState({ status: "idle", interim: null, focusSessionId: null });
     useFeatureStore.setState({
-      features: { browser: false, teams: false, voice: true, brain: false, assistant: true },
+      features: {
+        browser: false,
+        teams: false,
+        voice: true,
+        brain: false,
+        assistant: true,
+        dictation: false,
+      },
     });
   });
 
@@ -144,7 +158,14 @@ describe("the assistant's row", () => {
 
   it("is there with voice off, because the thread needs no line", () => {
     useFeatureStore.setState({
-      features: { browser: false, teams: false, voice: false, brain: false, assistant: true },
+      features: {
+        browser: false,
+        teams: false,
+        voice: false,
+        brain: false,
+        assistant: true,
+        dictation: false,
+      },
     });
     render(<VoiceDock />);
     expect(screen.getByRole("button", { name: "Ask the assistant" })).toBeInTheDocument();
@@ -153,7 +174,14 @@ describe("the assistant's row", () => {
   it("still gives a live call its card", () => {
     liveCall();
     useFeatureStore.setState({
-      features: { browser: false, teams: false, voice: true, brain: false, assistant: true },
+      features: {
+        browser: false,
+        teams: false,
+        voice: true,
+        brain: false,
+        assistant: true,
+        dictation: false,
+      },
     });
     render(<VoiceDock />);
     expect(screen.getByText("Live call")).toBeInTheDocument();

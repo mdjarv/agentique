@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { useSpeechRecognition } from "~/hooks/useSpeechRecognition";
+import { type DictationEnd, type DictationRoute, useDictation } from "~/hooks/useDictation";
 import { DICTATION_FAULT_COPY, type DictationFault } from "~/lib/speech/dictation-fault";
+import type { DictationPhase } from "~/lib/speech/server-dictation";
+
+/** Words for a server dictation that ended on its own. */
+const END_COPY: Record<DictationEnd, string> = {
+  "time-limit": "Dictation stopped — it reached its time limit. Press the mic to continue.",
+  idle: "Dictation stopped after a long silence.",
+  lost: "Dictation stopped — the connection was lost.",
+};
 
 interface UseComposerSpeechParams {
   /** Reads the current composer text (synchronous, ref-backed). */
@@ -15,6 +23,9 @@ export interface ComposerSpeech {
   isListening: boolean;
   /** Why dictation cannot work here, if known — drives the mic button's resting look. */
   fault: DictationFault | null;
+  /** Where a server dictation is; `null` on the browser route or when idle. */
+  phase: DictationPhase | null;
+  route: DictationRoute;
   /** Unconditional teardown — used by send before clearing. */
   forceStop: () => void;
   /** Click/keyboard toggle. */
@@ -49,7 +60,7 @@ const HOLD_THRESHOLD_MS = 500;
 export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams): ComposerSpeech {
   const speechBaseRef = useRef("");
 
-  const speech = useSpeechRecognition({
+  const speech = useDictation({
     onBeforeStart: useCallback(() => {
       speechBaseRef.current = getText();
     }, [getText]),
@@ -66,6 +77,14 @@ export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams)
     onFault: useCallback((fault: DictationFault) => {
       const copy = DICTATION_FAULT_COPY[fault];
       toast.error(copy.title, { id: "dictation-fault", description: copy.detail });
+    }, []),
+    onFallback: useCallback((fault: DictationFault) => {
+      toast(`${DICTATION_FAULT_COPY[fault].title} — dictating through Gemini instead.`, {
+        id: "dictation-fault",
+      });
+    }, []),
+    onEnded: useCallback((end: DictationEnd) => {
+      toast(END_COPY[end], { id: "dictation-fault" });
     }, []),
   });
 
@@ -145,6 +164,8 @@ export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams)
     isSupported: speech.isSupported,
     isListening: speech.isListening,
     fault: speech.fault,
+    phase: speech.phase,
+    route: speech.route,
     forceStop: speech.forceStop,
     toggle: speech.toggle,
     micHandlers: {
