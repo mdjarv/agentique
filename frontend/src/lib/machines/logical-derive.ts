@@ -117,6 +117,9 @@ export function compareLogicalProjects(a: LogicalProjectVM, b: LogicalProjectVM)
 /**
  * Free-text match across the WHOLE group: typing a remote copy's name
  * ("Agentique" when only zbook calls it that) must still find the merged row.
+ * Every whitespace-separated term must hit some member's name, slug or
+ * machine, so "alltix zbook" narrows to the repo that lives there — the same
+ * rule the launch picker applies (`matchesLaunchTarget`).
  */
 export function matchesLogicalProject(
   row: LogicalProjectVM,
@@ -124,14 +127,15 @@ export function matchesLogicalProject(
   query: string,
   includePath = false,
 ): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  for (const member of row.members) {
-    const p = projectsById.get(member.projectId);
-    if (!p) continue;
-    if (p.name.toLowerCase().includes(q)) return true;
-    if (p.slug.toLowerCase().includes(q)) return true;
-    if (includePath && p.path.toLowerCase().includes(q)) return true;
-  }
-  return false;
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = row.members
+    .flatMap((member) => {
+      const p = projectsById.get(member.projectId);
+      if (!p) return [];
+      return [p.name, p.slug, member.machineLabel, includePath ? p.path : ""];
+    })
+    .join("\n")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }

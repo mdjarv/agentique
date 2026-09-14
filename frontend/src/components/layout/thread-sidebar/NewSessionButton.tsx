@@ -205,7 +205,7 @@ function ProjectPaletteRow({
   const gitStatus = useAppStore((s) => s.projectGitStatus[row.id]);
   const dirty = gitStatus?.uncommittedCount ?? 0;
   const { named, nameOf } = useMachineNaming();
-  const home = row.members[0];
+
   const away = row.away;
   const alsoOn = row.remoteMembers
     .map((m) => `${m.machineLabel}${m.offline ? " (offline)" : ""}`)
@@ -236,16 +236,23 @@ function ProjectPaletteRow({
         )}
       >
         <ProjectPill slug={row.slug} showIcon size="md" background={false} />
-        {/* The machine the row launches on, named whenever more than one is
+        {/* Every machine holding the repo, named whenever more than one is
             paired: two machines can hold unrelated projects of one name, and
-            only this tells those rows apart. */}
-        {named && home && (
-          <MachineTag
-            machine={nameOf(home)}
-            className="max-w-[9rem] text-[10px] text-muted-foreground-faint"
-          />
+            only this tells those rows apart. The first is where the row
+            launches; a repo on several machines lists them all. */}
+        {named ? (
+          <span className="flex min-w-0 items-center gap-1.5 overflow-hidden text-[10px] text-muted-foreground-faint">
+            {row.members.map((member) => (
+              <MachineTag
+                key={member.projectId}
+                machine={nameOf(member)}
+                className={cn("max-w-[7rem]", member.offline && "opacity-50")}
+              />
+            ))}
+          </span>
+        ) : (
+          <MemberGlyphs row={row} />
         )}
-        <MemberGlyphs row={row} />
         {away && (
           <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">
             offline

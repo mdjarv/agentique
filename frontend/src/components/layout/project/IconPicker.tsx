@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 import { DynamicIcon, dynamicIconImports, type IconName, iconNames } from "lucide-react/dynamic";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import { cacheProjectIcon, getProjectIcon, PROJECT_ICONS } from "~/lib/project-icons";
+import { cacheProjectIcon, getProjectIcon, PROJECT_ICON_GROUPS } from "~/lib/project-icons";
 import { cn } from "~/lib/utils";
 
 const MAX_RESULTS = 36;
@@ -73,7 +73,7 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[280px] p-3"
+        className="w-[296px] max-w-[calc(100vw-16px)] p-3"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           inputRef.current?.focus();
@@ -87,13 +87,13 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search icons..."
+            placeholder="Search all icons..."
             className="w-full text-xs bg-input/50 border rounded pl-7 pr-2 py-1.5 outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground-faint"
           />
         </div>
 
         {/* Icon grid */}
-        <div className="max-h-[240px] overflow-y-auto">
+        <div className="max-h-[320px] overflow-y-auto">
           {/* Clear option */}
           <button
             type="button"
@@ -108,26 +108,33 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
           </button>
 
           {filtered === null ? (
-            // Featured icons (no search query)
-            PROJECT_ICONS.map((opt) => {
-              const Icon = opt.icon;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => handleSelect(opt.id)}
-                  className={cn(
-                    "inline-flex size-8 rounded-md items-center justify-center transition-colors cursor-pointer",
-                    value === opt.id
-                      ? "bg-primary/10 text-foreground"
-                      : "hover:bg-muted/50 text-muted-foreground",
-                  )}
-                  title={opt.id}
-                >
-                  <Icon className="size-4" />
-                </button>
-              );
-            })
+            // Featured icons (no search query), by category
+            PROJECT_ICON_GROUPS.map((group) => (
+              <div key={group.label} className="mt-2">
+                <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground-faint">
+                  {group.label}
+                </div>
+                {group.icons.map((opt) => {
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleSelect(opt.id)}
+                      className={cn(
+                        "inline-flex size-8 rounded-md items-center justify-center transition-colors cursor-pointer",
+                        value === opt.id
+                          ? "bg-primary/10 text-foreground"
+                          : "hover:bg-muted/50 text-muted-foreground",
+                      )}
+                      title={opt.id}
+                    >
+                      <Icon className="size-4" />
+                    </button>
+                  );
+                })}
+              </div>
+            ))
           ) : filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground py-4 text-center">No icons found</p>
           ) : (

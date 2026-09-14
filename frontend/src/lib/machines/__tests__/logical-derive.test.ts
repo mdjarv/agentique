@@ -146,6 +146,13 @@ describe("matchesLogicalProject", () => {
     expect(matchesLogicalProject(row, byId, "/srv/code", true)).toBe(true);
   });
 
+  it("matches a machine's name, alone or alongside the repo", () => {
+    if (!row) throw new Error("no row");
+    expect(matchesLogicalProject(row, byId, "zbook")).toBe(true);
+    expect(matchesLogicalProject(row, byId, "agentique zbook")).toBe(true);
+    expect(matchesLogicalProject(row, byId, "agentique desktop")).toBe(false);
+  });
+
   it("keeps an empty query inclusive", () => {
     if (!row) throw new Error("no row");
     expect(matchesLogicalProject(row, byId, "   ")).toBe(true);
