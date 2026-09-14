@@ -33,6 +33,22 @@ type PRDescriptionResult struct {
 // RunWithRetry wraps RunBlocking with retry on retriable errors (rate limit, overloaded).
 // Non-retriable errors fail immediately.
 func RunWithRetry(ctx context.Context, runner Runner, prompt string, opts ...claudecli.Option) (*claudecli.BlockingResult, error) {
+	return runWithRetry(ctx, runner, prompt, waitFor, opts...)
+}
+
+// waitFor blocks for d, or until ctx is done.
+func waitFor(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// runWithRetry is RunWithRetry with the backoff wait injected, so a test can
+// check which delay was asked for without sleeping through it.
+func runWithRetry(ctx context.Context, runner Runner, prompt string, wait func(context.Context, time.Duration) error, opts ...claudecli.Option) (*claudecli.BlockingResult, error) {
 	var lastErr error
 	for attempt := range maxRetries + 1 {
 		result, err := runner.RunBlocking(ctx, prompt, opts...)
@@ -47,10 +63,8 @@ func RunWithRetry(ctx context.Context, runner Runner, prompt string, opts ...cla
 		}
 		slog.Warn("retriable error, backing off", "attempt", attempt+1, "delay", delay, "error", err)
 
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
+		if err := wait(ctx, delay); err != nil {
+			return nil, err
 		}
 	}
 	return nil, lastErr

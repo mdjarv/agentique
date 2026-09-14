@@ -2,12 +2,16 @@ package assistant
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // fakeSummarizer is compaction's one model call, without a model: a canned
@@ -58,11 +62,34 @@ func (s *fakeSummarizer) prompt(i int) string {
 // compactWorld is a service whose clock is fixed, with a summariser that answers.
 func compactWorld(t *testing.T, opts ...Option) (*Service, *fakeSummarizer, *testClock) {
 	t.Helper()
+	_, queries := testutil.SetupDB(t)
+	return compactWorldOn(t, queries, opts...)
+}
+
+// compactWorldOn is compactWorld over a database the caller already holds.
+func compactWorldOn(t *testing.T, queries *store.Queries, opts ...Option) (*Service, *fakeSummarizer, *testClock) {
+	t.Helper()
 	clock := &testClock{at: mustTime("2026-09-12T09:00:00Z")}
 	summarizer := &fakeSummarizer{answer: "Riff finished its tests and nothing failed."}
 	opts = append([]Option{WithSummarizer(summarizer), WithClock(clock.now)}, opts...)
-	svc, _, _ := newTestService(t, opts...)
+	svc, _, _ := newTestServiceOn(t, queries, opts...)
 	return svc, summarizer, clock
+}
+
+// seedJournalRun writes n raw entries of one kind, one second apart starting a
+// second after from, in ONE statement. Through appendJournal a busy day's worth
+// of rows cost seconds under -race: the price is sqlite parsing each insert, so
+// a transaction does not help and a single statement does.
+func seedJournalRun(t *testing.T, db *sql.DB, from time.Time, n int, kind JournalKind, sessionID, summary string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(), `
+		WITH RECURSIVE seq(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seq WHERE i < ?)
+		INSERT INTO assistant_journal (at, kind, session_id, summary)
+		SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ?, '+' || i || ' seconds'), ?, ?, ? FROM seq`,
+		n, formatTime(from), string(kind), sessionID, summary)
+	if err != nil {
+		t.Fatalf("seed %d journal rows: %v", n, err)
+	}
 }
 
 // happenedAt writes one journal entry with a stamp of its own, which is what a
@@ -729,7 +756,8 @@ func TestTheFoldBoundaryOutlivesTheBudgetsLookback(t *testing.T) {
 // and — the one that costs something — the policy ids a longer budget lookback
 // would come here for.
 func TestABusyDaysPayloadDescribesTheWholeDay(t *testing.T) {
-	svc, summarizer, _ := compactWorld(t)
+	db, queries := testutil.SetupDB(t)
+	svc, summarizer, _ := compactWorldOn(t, queries)
 
 	// The oldest row of the day is the one the read cannot reach, so it carries
 	// the facts the payload has to carry anyway.
@@ -738,11 +766,7 @@ func TestABusyDaysPayloadDescribesTheWholeDay(t *testing.T) {
 		Kind: JournalSessionCreated, SessionID: "s1", Summary: "created under nightly",
 		Payload: map[string]any{payloadPolicyID: "pol-oldest", payloadPolicyName: "nightly"},
 	})
-	for i := 1; i <= maxCompactDayRows; i++ {
-		happenedAt(t, svc, formatTime(day.Add(time.Duration(i)*time.Second)), journalWrite{
-			Kind: JournalSessionFinished, SessionID: "s2", Summary: "one of many",
-		})
-	}
+	seedJournalRun(t, db, day, maxCompactDayRows, JournalSessionFinished, "s2", "one of many")
 
 	report, err := svc.Compact(context.Background())
 	if err != nil {

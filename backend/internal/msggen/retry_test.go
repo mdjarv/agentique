@@ -76,12 +76,14 @@ func TestRunWithRetry_OverloadedThenSuccess(t *testing.T) {
 		},
 	}
 
-	// Override retryDelay via short context timeout behavior — just verify it retries.
-	// The actual delay (5s) is too long for tests, so we use a generous timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// The real backoff is 5s; record the wait instead of sleeping through it.
+	var waited []time.Duration
+	wait := func(_ context.Context, d time.Duration) error {
+		waited = append(waited, d)
+		return nil
+	}
 
-	result, err := RunWithRetry(ctx, r, "test")
+	result, err := runWithRetry(context.Background(), r, "test", wait)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,6 +92,9 @@ func TestRunWithRetry_OverloadedThenSuccess(t *testing.T) {
 	}
 	if r.calls != 2 {
 		t.Errorf("calls = %d, want 2", r.calls)
+	}
+	if len(waited) != 1 || waited[0] != 5*time.Second {
+		t.Errorf("waited %v, want one 5s backoff", waited)
 	}
 }
 

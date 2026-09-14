@@ -18,8 +18,15 @@ import (
 // stub store would test the stub.
 func newTestService(t *testing.T, opts ...Option) (*Service, *store.Queries, *eventbus.Recorder) {
 	t.Helper()
-
 	_, queries := testutil.SetupDB(t)
+	return newTestServiceOn(t, queries, opts...)
+}
+
+// newTestServiceOn is newTestService over a database the caller already holds,
+// for a test that also needs the raw handle.
+func newTestServiceOn(t *testing.T, queries *store.Queries, opts ...Option) (*Service, *store.Queries, *eventbus.Recorder) {
+	t.Helper()
+
 	recorder := &eventbus.Recorder{}
 	opts = append([]Option{WithBroadcaster(recorder), WithLogger(testLogger())}, opts...)
 
