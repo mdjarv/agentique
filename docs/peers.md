@@ -254,9 +254,9 @@ the browser's credential; it is not a blast-radius claim.
 
 ## Phases
 
-- **P1, owner side. Built.** Peer credential and the route matrix (9282e880);
-  list, create and send behind the guard (f37d770b); `AssistantReport` on every
-  server, the outbox and the event poll (69ab5e1d).
+- **P1, owner side. Built.** Peer credential and the route matrix (80ab3935);
+  list, create and send behind the guard (60a2dfbd); `AssistantReport` on every
+  server, the outbox and the event poll (50d29c89).
 - **P2, acting side. Built.** `peerlink` mints, holds and rotates the credential
   (e6dc7c34); the directory, dispatcher and verbs act by reach (faa9533b); the
   poller feeds the journal and the call (4f54f825); the voice call acts the same
