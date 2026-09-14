@@ -62,6 +62,7 @@ type Catalog interface {
 // Client talks to paired machines' peer surfaces.
 type Client struct {
 	http    *http.Client
+	poll    *http.Client
 	catalog Catalog
 	label   func(ctx context.Context) string
 
@@ -76,6 +77,13 @@ type Option func(*Client)
 // mint so a rename shows on the next one.
 func WithLabel(label func(ctx context.Context) string) Option {
 	return func(c *Client) { c.label = label }
+}
+
+// WithPollClient sets the HTTP client [Client.Events] uses. A long poll is held
+// open by design, so it needs a longer timeout than the client every other call
+// uses; without one, polls use that client and must wait less than its timeout.
+func WithPollClient(client *http.Client) Option {
+	return func(c *Client) { c.poll = client }
 }
 
 // New builds a client. httpClient must not follow redirects (the server's
@@ -132,18 +140,26 @@ func (c *Client) Events(ctx context.Context, machineID string, since int64, wait
 	q.Set("since", strconv.FormatInt(since, 10))
 	q.Set("wait", strconv.Itoa(int(wait/time.Second)))
 	var out peer.EventsResponse
-	err := c.do(ctx, machineID, http.MethodGet, "/api/peer/events?"+q.Encode(), nil, maxListBytes, &out)
+	client := c.http
+	if c.poll != nil {
+		client = c.poll
+	}
+	err := c.doWith(ctx, client, machineID, http.MethodGet, "/api/peer/events?"+q.Encode(), nil, maxListBytes, &out)
 	return out, err
 }
 
 // do runs one call with the peer credential, rotating it once if the machine
 // no longer accepts it.
 func (c *Client) do(ctx context.Context, machineID, method, path string, body any, maxBytes int64, dst any) error {
+	return c.doWith(ctx, c.http, machineID, method, path, body, maxBytes, dst)
+}
+
+func (c *Client) doWith(ctx context.Context, client *http.Client, machineID, method, path string, body any, maxBytes int64, dst any) error {
 	m, token, err := c.credential(ctx, machineID, "")
 	if err != nil {
 		return err
 	}
-	err = c.call(ctx, m, token, method, path, body, maxBytes, dst)
+	err = c.call(ctx, client, m, token, method, path, body, maxBytes, dst)
 	var status *machine.RemoteStatusError
 	if !errors.As(err, &status) || status.Status != http.StatusUnauthorized {
 		return err
@@ -154,12 +170,12 @@ func (c *Client) do(ctx context.Context, machineID, method, path string, body an
 	if err != nil {
 		return err
 	}
-	return c.call(ctx, m, token, method, path, body, maxBytes, dst)
+	return c.call(ctx, client, m, token, method, path, body, maxBytes, dst)
 }
 
-func (c *Client) call(ctx context.Context, m store.Machine, token, method, path string, body any, maxBytes int64, dst any) error {
+func (c *Client) call(ctx context.Context, client *http.Client, m store.Machine, token, method, path string, body any, maxBytes int64, dst any) error {
 	remote := machine.RemotePeer{BaseURL: m.BaseUrl, MachineID: m.MachineID, IdentityKey: m.IdentityKey, Token: token}
-	err := machine.DoRemoteJSON(ctx, c.http, remote, method, path, body, maxBytes, dst)
+	err := machine.DoRemoteJSON(ctx, client, remote, method, path, body, maxBytes, dst)
 	return classify(err)
 }
 

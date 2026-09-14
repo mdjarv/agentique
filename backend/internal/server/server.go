@@ -263,6 +263,9 @@ type Server struct {
 	// it, which is what stops the head's subprocess and drops the credential
 	// file behind it.
 	assistantSvc *assistant.Service
+	// peerPoller reads paired machines' news for this server's assistant or
+	// live call (docs/peers.md). Nil when neither is on. Started by serve.go.
+	peerPoller *peerPoller
 	// assistantState is the session.state subscription behind the journal's
 	// merge and archive entries, released on shutdown so the bus is not left
 	// delivering into a closed server.
@@ -328,6 +331,11 @@ func (s *Server) Scheduler() *schedule.Scheduler { return s.scheduler }
 // starts head turns, and nothing a constructor a test might call may do either.
 // Nil when [experimental] assistant is off.
 func (s *Server) Assistant() *assistant.Service { return s.assistantSvc }
+
+// PeerPoller exposes the paired-machine event poller so serve.go can start it:
+// it dials other machines, which no constructor a test calls may do. Nil when
+// neither the assistant nor voice is on.
+func (s *Server) PeerPoller() *peerPoller { return s.peerPoller }
 
 // AssistantHeartbeat is how often that loop should tick, or 0 for never —
 // resolved once in New from the config, so the parse and its boot warning live
@@ -1179,10 +1187,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// the assistant knew only this machine's database, and a session the
 		// sidebar showed on zbook did not exist for it. Lazy: nothing is
 		// dialled until an assistant or a call asks.
-		peerLink = peerlink.New(machineHTTPClient, queries, peerlink.WithLabel(func(ctx context.Context) string {
-			label, _ := hostPresentation(ctx)
-			return label
-		}))
+		// A long poll holds its request open, so it gets a client whose timeout
+		// outlives the wait; everything else keeps the machine client's.
+		pollHTTPClient := *machineHTTPClient
+		pollHTTPClient.Timeout = peerPollWait + 20*time.Second
+		peerLink = peerlink.New(machineHTTPClient, queries,
+			peerlink.WithPollClient(&pollHTTPClient),
+			peerlink.WithLabel(func(ctx context.Context) string {
+				label, _ := hostPresentation(ctx)
+				return label
+			}))
 		peerSrc = newPeerSessions(queries, machineHTTPClient, peerLink, cfg.MachineID)
 		assistantDir.peers, assistantDir.link = peerSrc, peerLink
 		assistantDisp.peers, assistantDisp.link = peerSrc, peerLink
@@ -1380,7 +1394,28 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
+	var poller *peerPoller
+	if peerLink != nil {
+		var sink peerEventSink
+		switch {
+		case assistantSvc != nil:
+			sink = assistantPeerSink{svc: assistantSvc}
+		case reportRegistry != nil:
+			sink = registryPeerSink{reg: reportRegistry}
+		}
+		if sink != nil {
+			poller = newPeerPoller(queries, peerLink, sink, cfg.MachineID)
+			poller.onTurnEnd = func(machineID, sessionID string) {
+				// What the session is doing just changed, and a summary of it
+				// describes the turn before.
+				peerSrc.Invalidate(machineID)
+				summarizer.Forget(machineID + ":" + sessionID)
+			}
+		}
+	}
+
 	s := &Server{
+		peerPoller:         poller,
 		mux:                mux,
 		mgr:                mgr,
 		svc:                svc,

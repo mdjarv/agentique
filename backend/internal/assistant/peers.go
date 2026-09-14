@@ -131,3 +131,52 @@ func (s *Service) followingRemote(ctx context.Context, sessionID string) bool {
 	}
 	return false
 }
+
+// IngestPeerReport files a report a paired machine's session wrote, as that
+// machine relayed it (docs/peers.md, the event feed).
+//
+// The owner already enforced the report budget; this side applies the watch
+// list, the same gate [Service.Report] applies locally: a report about a
+// session nobody here follows is not news here, and it is dropped without a
+// journal row. What is kept is marked untrusted, because it is agent-written
+// text about a repository nobody here authored.
+func (s *Service) IngestPeerReport(ctx context.Context, machineName, sessionID string, report Report) {
+	listening := s.reg.Listening(sessionID)
+	if !listening && !s.Following(ctx, sessionID) {
+		return
+	}
+	payload := map[string]any{"kind": string(report.Kind)}
+	if machineName != "" {
+		payload["machine"] = machineName
+	}
+	if _, err := s.appendJournal(ctx, journalWrite{
+		Kind:      JournalReport,
+		SessionID: sessionID,
+		Summary:   report.Headline,
+		Payload:   payload,
+		Untrusted: true,
+	}); err != nil {
+		s.log.Warn("assistant: peer report not journaled", "session", sessionID, "error", err)
+	}
+	s.deliver(ctx, Item{Kind: ItemReport, SessionID: sessionID, Report: &report})
+	if listening {
+		if _, err := s.reg.Deliver(sessionID, report); err != nil {
+			s.log.Warn("assistant: peer report not delivered", "session", sessionID, "error", err)
+		}
+	}
+}
+
+// IngestPeerTurnEnd records how a paired machine's session's turn ended —
+// finished, failed, or stopped on something only a person can answer — for a
+// session this server follows, exactly as a local turn end is recorded.
+func (s *Service) IngestPeerTurnEnd(ctx context.Context, machineName, sessionID, name string, notice Notice) {
+	if !s.reg.Listening(sessionID) && !s.Following(ctx, sessionID) {
+		return
+	}
+	if name != "" && machineName != "" {
+		name = name + " on " + machineName
+	}
+	// No project: a remote project id means nothing here, and it is what a
+	// memory scope is filed under.
+	s.recordNotice(ctx, sessionID, "", notice, journalKindFor(notice.Kind), name)
+}

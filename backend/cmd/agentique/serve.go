@@ -761,6 +761,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 			"db", dbFile, "canonical_db", paths.DBPath())
 	}
 
+	// Paired machines' news for this server's assistant or live call
+	// (docs/peers.md). Here rather than in server.New because it dials other
+	// machines. Not gated on owning the data dir: it only reads, and its one
+	// write is this server's own cursor.
+	if pp := srv.PeerPoller(); pp != nil {
+		go pp.Run(context.Background())
+	}
+
 	// The assistant's heartbeat (docs/assistant.md, the M4 contract). Here
 	// rather than in server.New for the reason everything else in this area is:
 	// it is a timer that runs a model and starts head turns, and a constructor a
