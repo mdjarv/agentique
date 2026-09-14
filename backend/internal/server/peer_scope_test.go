@@ -63,6 +63,7 @@ var peerRouteMatrix = []struct{ method, path string }{
 	{"POST", "/api/auth/pairing-tokens"},
 	{"POST", "/api/auth/peer-credential"},
 	{"POST", "/api/auth/invite"},
+	{"POST", "/api/auth/ws-ticket"},
 	{"GET", "/ws"},
 	{"GET", "/api/voice/live"},
 	// Spelled to slip past a prefix test into another family.

@@ -178,6 +178,22 @@ type PairingToken struct {
 	CreatedAt string         `json:"created_at"`
 }
 
+type PeerFollow struct {
+	SessionID    string `json:"session_id"`
+	CredentialID string `json:"credential_id"`
+	PolicyID     string `json:"policy_id"`
+	FollowedAt   string `json:"followed_at"`
+}
+
+type PeerOutbox struct {
+	Seq          int64  `json:"seq"`
+	CredentialID string `json:"credential_id"`
+	Kind         string `json:"kind"`
+	SessionID    string `json:"session_id"`
+	Payload      string `json:"payload"`
+	At           string `json:"at"`
+}
+
 type PersonaInteraction struct {
 	ID             string  `json:"id"`
 	ProfileID      string  `json:"profile_id"`

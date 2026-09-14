@@ -3,11 +3,12 @@
 How the assistant acts on a paired machine, and how every machine reports on its
 own health.
 
-**Status: designed, not implemented.** Two verdicts settled in design rounds on
-2026-09-13/14: **C** (one assistant; the owner guards its sessions) and **S1**
-(sensors on every machine, one mind at home). Four questions are still open and
-listed at the end with the default this document assumes. The rounds, with the
-rejected options and their costs, are the artifact "Assistant Across Machines".
+**Status: P1 (the owner side) built; P2 onward designed.** Two verdicts settled
+in design rounds on 2026-09-13/14: **C** (one assistant; the owner guards its
+sessions) and **S1** (sensors on every machine, one mind at home). The four
+questions that were open were answered "defaults" on 2026-09-14 and are recorded
+at the end. The rounds, with the rejected options and their costs, are the
+artifact "Assistant Across Machines".
 
 This extends [multi-machine.md](multi-machine.md), which stays the record for
 pairing, identity and routing, and [assistant.md](assistant.md), which stays the
@@ -57,10 +58,18 @@ The peer surface is authenticated with a **peer credential**, never the browser
 bearer: an `auth_sessions` row with `kind = 'peer'`, minted by the owner and
 requested once by the acting server using the full bearer it already holds.
 
-- Accepted **only** on `/api/peer/*` and the ws-ticket mint for `/api/peer/stream`.
-  The route-matrix test specified in multi-machine.md's security gates covers it:
-  a peer credential presented to every other API family, WebSockets included, is
-  denied.
+- Minted with `POST /api/auth/peer-credential {label, replaceSessionId?}`,
+  authorized like pairing (an admin session or the admin secret).
+  `replaceSessionId` rotates, and can only name a peer credential.
+- Accepted **only** on `/api/peer/*` and on revoking itself
+  (`DELETE /api/auth/session`). Not on a ws-ticket mint: the peer surface has no
+  socket. `auth.credentialAllowed` is the one rule, and it runs where every
+  request authenticates (`authenticateRequest`, and ticket redemption), so no
+  route can forget it. A browser credential is refused on the peer surface in
+  the same place. A peer path must be clean and unencoded, because the check
+  reads the decoded path and the mux does not route it verbatim.
+- `TestPeerCredentialIsRefusedOutsideThePeerSurface` is the route matrix at the
+  real HTTP boundary. Adding a route means adding it there.
 - Stored outbound in a new `machines.peer_token` column, plaintext for the reason
   `machines.token` is (an outbound credential; see CLAUDE.md).
 - Every connection proves identity first (`machine.FetchRemoteJSON`), on the
@@ -78,12 +87,15 @@ must not unpair the machine for the browser.
 
 | Route | Does | Refuses |
 |---|---|---|
-| `GET /api/peer/sessions` | The owner's sessions with project name and `remote_url`, origin and policy, and a `peerSurface` version. Replaces reading `/api/sessions` plus `/api/projects`. | — |
-| `POST /api/peer/sessions` | Create in a project named by id or `remote_url`: worktree only, `fullAuto`, origin assistant, policy recorded. Answers the row. | Actions not accepted; unknown project; quota. |
+| `GET /api/peer/sessions` | The owner's sessions and projects (name and canonical remote, never a path), each session's origin, the owner's two opt-ins, and a `peerSurface` version. Replaces reading `/api/sessions` plus `/api/projects`. | — |
+| `POST /api/peer/sessions` | Create in a project named by id or canonical remote, with a model **family** this machine's catalog resolves: worktree only, `fullAuto`, origin assistant. An optional `prompt` is sent in the same call, and a send that fails is reported beside the created session, never instead of it. `requestId` makes a retry idempotent. | Actions not accepted; policies not accepted; unknown or ambiguous project; unknown model; creates per hour; in-flight cap. |
 | `POST /api/peer/sessions/{id}/send` | Enqueue with origin assistant and optional policy. Answers the `MessageDelivery`. | Actions not accepted; archived; main worktree; not `fullAuto`; rate. |
-| `POST /api/peer/proposals/check` | Runs the owner's own check for a verb on a session and answers facts plus a version. | — |
-| `POST /api/peer/proposals/execute` | Re-checks against the version, then runs through the owner's `GitService`/`session.Service`. Answers `done`, `stale`, `conflict`, `needs_rebase`, `dirty_worktree` or `failed`. | Actions not accepted; stale facts perform nothing. |
-| `GET /api/peer/stream` (WS) | A sequenced event stream: `session.state` subset, `turn_end`, `report`, `finding`. | — |
+| `GET /api/peer/events?since=N&wait=S` | This credential's outbox rows after `since`, held open up to 25s when there are none. Answers `{events, latest}`. | — |
+| `POST /api/peer/proposals/check` (P3) | Runs the owner's own check for a verb on a session and answers facts plus a version. | — |
+| `POST /api/peer/proposals/execute` (P3) | Re-checks against the version, then runs through the owner's `GitService`/`session.Service`. Answers `done`, `stale`, `conflict`, `needs_rebase`, `dirty_worktree` or `failed`. | Actions not accepted; stale facts perform nothing. |
+
+Refusals answer `{error, reason}` with a stable `reason` (`peer.Reason*`), so the
+acting side says each in its own words. Every refusal is logged.
 
 Path parameters are validated as UUIDs before use, on CLAUDE.md's `{id}` rule.
 
@@ -101,27 +113,41 @@ agent's delegate and is not a trusted principal:
 - **Rate ceilings per credential**, as a backstop the acting server's budgets
   cannot widen: sends per minute, creates per hour, in-flight assistant sessions.
 - **Actions are opt-in per machine.** `[peer] accept-actions` defaults to false:
-  list, stream and findings only. `[peer] accept-policies` separately gates sends
+  list, events and findings only. `[peer] accept-policies` separately gates sends
   and creates that carry a policy, so a machine can take asked-for work but no
-  autonomy (open question 4).
+  autonomy.
 - **Uncontained verbs execute only on a passing owner-side re-check.** A card
   accepted at home narrows what happens; it never widens it.
 
-### The stream is a log
+### The event feed is a log
 
-The owner stamps each stream event with a per-owner `seq`. Reports and findings
-are **durable on the owner** (a `assistant_report` session event, a
-`steward_findings` row); state and turn ends are derived from what the owner
-already persists. The acting server keeps `peer_cursors(machine_id, seq)` and
-reconnects with `since`, so a stream that drops loses nothing and a replay is
-idempotent. This is the cursor model presentation sync already specifies:
-commit the cursor only through what was actually applied.
+News for a paired server is an **outbox**: `peer_follows` records that a
+credential sent to or created a session, and `peer_outbox` holds one row per
+follower for each report and turn end, stamped with a `seq`. Rows are never
+marked read. The follower keeps its cursor and polls
+`GET /api/peer/events?since=`, so a poll that is lost, retried or duplicated
+changes nothing, and a server asleep for a day catches up in one read. `latest`
+lets a follower with no cursor start from now rather than from the whole
+retention window. Rows age out after seven days, which is the only delete.
+
+A long poll rather than a socket, on purpose: the same cursor semantics, the
+credential stays in a header instead of a ticket, revocation is judged on every
+poll, and no socket tracking or origin rule is involved. A waiting poll wakes the
+moment a row is written.
+
+Session state is not in the feed. The acting side re-lists
+(`GET /api/peer/sessions`) when it needs state; the feed carries what a list
+cannot show after the fact: that a turn ended and how, and what the agent
+reported.
 
 ## Reports belong to the owner
 
-`AssistantReport` is registered on **every** server regardless of feature flags.
-A report is rate-limited by the owner's registry budget, persisted as a session
-event, delivered to any local follower, and published on the stream. This fixes
+`AssistantReport` is registered on **every** server regardless of feature flags
+(`peerAwareReporter`). A report goes to the peer outbox for every paired server
+following the session (rate-limited per session), and to the local service or
+registry when there is one. The agent is told it was kept if either kept it: a
+local "nobody is following" must not tell it to stop reporting to someone
+listening from another machine. This fixes
 the prompt that names a missing tool, and it makes a report a fact about the
 session wherever it is read from.
 
@@ -134,8 +160,9 @@ thread or journal.
 - **`SessionBrief` becomes `Locate(id) → (row, owner)`**, where owner is local or
   a machine id. Verbs route through a per-machine `PeerActions`, the server-side
   counterpart of the browser's routing facade. The local path is unchanged.
-- **One stream client per paired machine**, reconnecting in place and never
-  replaced, the rule the browser's per-machine clients already follow.
+- **One event poller per paired machine**, holding a durable cursor
+  (`peer_cursors`) and never replaced, the rule the browser's per-machine clients
+  already follow.
 - **The journal ingests peer events.** `turn_end` and `report` map to the same
   notice kinds as local ones, and the subject carries a machine id.
   `assistant_follows` gains `machine_id`.
@@ -155,7 +182,7 @@ thread or journal.
 
 Every machine runs one, from serve's production block, never a constructor. It has
 **no model**, writes only its own findings table, and reads what the existing
-collectors already know. Name pending (open question 1); **never `janitor`**,
+collectors already know. Its name is *steward*; **never `janitor`**,
 which is already `internal/janitor`, the disk planner.
 
 **A finding is a fact, not a sentence.** A closed union of kinds, each with a
@@ -193,8 +220,8 @@ reports its health even while the acting server is down or unreachable.
 | Owner asleep | Listed as not answering; sends refuse naming it; reports and findings wait on the owner and replay on reconnect. |
 | Acting server down | Owners keep running; findings show in each machine's own footer; nothing is acted on. |
 | Owner on an older release | List-only, said by name. |
-| `accept-actions` off | List, stream and findings work; every act refuses naming the setting. |
-| Stream drops mid-turn | Reconnect with `since`; the turn end arrives once. |
+| `accept-actions` off | List, events and findings work; every act refuses naming the setting. |
+| A poll drops mid-turn | The next poll with `since` returns the turn end; applying it twice is a no-op on the acting side. |
 | Owner answers a budget query late | Counted at last known, never zero. |
 | Two servers with the assistant on | Unsupported. Serve warns when a peer's `/api/health` reports `assistant: true`; owners' rate ceilings bound the damage. |
 | Peer credential revoked | Stream and actions fail closed and surface as a machine fault; listing falls back to nothing, not to the full bearer. |
@@ -217,25 +244,25 @@ the browser's credential; it is not a blast-radius claim.
 
 ## Phases
 
-- **P1, owner side.** Peer credential and the route matrix. `/api/peer/*` behind
-  `accept-actions`. `AssistantReport` always registered, reports persisted as
-  session events. The stream with `seq`. Expand only.
-- **P2, acting side.** `Locate`, `PeerActions`, stream clients and cursors, journal
+- **P1, owner side. Built.** Peer credential and the route matrix (9282e880).
+  `/api/peer/sessions` list, create and send behind the guard and
+  `[peer] accept-actions` (f37d770b). `AssistantReport` on every server, the
+  outbox and the event poll. Expand only: nothing an older acting server calls
+  changed.
+- **P2, acting side.** `Locate`, `PeerActions`, event pollers and cursors, journal
   ingest, `machine_id` on follows. Listing moves to `/api/peer/sessions`.
 - **P3, budgets and proposals across machines.**
-- **P4, the steward.** Findings table and kinds, stream publication, footer mark,
+- **P4, the steward.** Findings table and kinds, outbox publication, footer mark,
   heartbeat triage.
 - **P5, contract.** Remove the transitional full-bearer listing; rewrite the
   security sections of assistant.md and CLAUDE.md.
 
-## Open questions
+## Settled on 2026-09-14
 
-Each carries the default this document assumes until answered.
-
-1. **The steward's name.** Default: *steward*.
-2. **Where the assistant lives.** Default: whichever server enables it, one per
-   account, with the serve warning above.
-3. **The cross-machine boundary.** Default: accepted as described under Security,
-   gated per machine by `accept-actions`.
-4. **Autonomy on peers.** Default: policy-carrying work is refused unless the owner
-   sets `accept-policies`; asked-for work needs only `accept-actions`.
+1. **The steward's name** is *steward*.
+2. **Where the assistant lives:** whichever server enables it, one per account,
+   with the serve warning above.
+3. **The cross-machine boundary** is accepted as described under Security, gated
+   per machine by `accept-actions`.
+4. **Autonomy on peers:** policy-carrying work is refused unless the owner sets
+   `accept-policies`; asked-for work needs only `accept-actions`.

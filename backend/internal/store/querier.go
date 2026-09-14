@@ -229,7 +229,12 @@ type Querier interface {
 	InsertEventWithMessageID(ctx context.Context, arg InsertEventWithMessageIDParams) error
 	InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error)
 	InsertMessageDelivery(ctx context.Context, arg InsertMessageDeliveryParams) error
+	InsertPeerOutbox(ctx context.Context, arg InsertPeerOutboxParams) (int64, error)
 	InsertPersonaInteraction(ctx context.Context, arg InsertPersonaInteractionParams) (PersonaInteraction, error)
+	// The newest seq one follower has, 0 when it has none: what a follower that
+	// has never read starts from when it wants news from now on rather than the
+	// whole retention window.
+	LatestPeerOutboxSeq(ctx context.Context, credentialID string) (int64, error)
 	ListAgentMessagesByChannel(ctx context.Context, channelID string) ([]SessionEvent, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListAllSessions(ctx context.Context) ([]Session, error)
@@ -319,6 +324,8 @@ type Querier interface {
 	ListMachines(ctx context.Context) ([]Machine, error)
 	ListMessagesByChannel(ctx context.Context, channelID string) ([]Message, error)
 	ListModelResolutions(ctx context.Context) ([]ModelResolution, error)
+	ListPeerFollowers(ctx context.Context, sessionID string) ([]string, error)
+	ListPeerOutboxSince(ctx context.Context, arg ListPeerOutboxSinceParams) ([]ListPeerOutboxSinceRow, error)
 	ListPendingDeliveriesForSession(ctx context.Context, recipientSessionID string) ([]ListPendingDeliveriesForSessionRow, error)
 	ListPersonaInteractions(ctx context.Context, arg ListPersonaInteractionsParams) ([]PersonaInteraction, error)
 	ListPersonaInteractionsForProfile(ctx context.Context, arg ListPersonaInteractionsForProfileParams) ([]PersonaInteraction, error)
@@ -363,6 +370,7 @@ type Querier interface {
 	MarkScheduleRunFired(ctx context.Context, arg MarkScheduleRunFiredParams) error
 	MarkScheduleViewed(ctx context.Context, arg MarkScheduleViewedParams) error
 	MaxTurnIndex(ctx context.Context, sessionID string) (int64, error)
+	PrunePeerOutbox(ctx context.Context, at string) (int64, error)
 	PruneScheduleRuns(ctx context.Context, arg PruneScheduleRunsParams) error
 	RecoverStaleSessions(ctx context.Context) error
 	RemoveChannelMember(ctx context.Context, arg RemoveChannelMemberParams) error
@@ -498,6 +506,7 @@ type Querier interface {
 	// platform would strip the glyph until the next fresh pair.
 	UpsertMachine(ctx context.Context, arg UpsertMachineParams) error
 	UpsertModelResolution(ctx context.Context, arg UpsertModelResolutionParams) error
+	UpsertPeerFollow(ctx context.Context, arg UpsertPeerFollowParams) error
 	UseInviteToken(ctx context.Context, arg UseInviteTokenParams) error
 }
 

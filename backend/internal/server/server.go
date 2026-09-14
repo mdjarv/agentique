@@ -965,10 +965,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// on need not run an assistant itself; the auth middleware admits only a
 	// peer credential here, and the guard inside decides what that credential
 	// may actually do.
+	//
+	// The outbox is what a paired server following a session here reads back:
+	// its reports and how its turns end. It listens to every turn end and keeps
+	// only those of followed sessions.
+	peerOutbox := peer.NewOutbox(queries, &assistantTurnFacts{svc: svc, queries: queries})
+	mgr.AddTurnEndListener(peerOutbox.OnTurnEnd)
 	peer.New(svc, queries,
 		peer.WithSettings(peer.Settings{AcceptActions: cfg.Peer.AcceptActions, AcceptPolicies: cfg.Peer.AcceptPolicies}),
 		peer.WithMachineID(cfg.MachineID),
 		peer.WithCatalog(catalog),
+		peer.WithOutbox(peerOutbox),
 	).RegisterRoutes(mux)
 
 	// Persistent memory ("the brain"). Opt-in: [brain] enabled is the master switch
@@ -1305,22 +1312,22 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if sched != nil {
 		schedCreator = sched
 	}
-	// Two halves, two gates. AssistantReport goes wherever a report has
-	// somewhere to go: the service when the assistant is on (journal and
-	// followers), the bare registry when only a call is following — the
-	// instruction that names the tool rides every prompt the dispatcher sends,
-	// so gating it on the service would name a missing tool on every voice
-	// dispatch. The verb table is the head's and exists only with the service.
-	// Same typed-nil trap as above in both cases.
-	var assistantReporter mcphttp.AssistantReporter
+	// Two halves, two gates. AssistantReport is registered on EVERY server
+	// (docs/peers.md): a report reaches the local service when the assistant is
+	// on (journal and followers), the bare registry when only a call is
+	// following, and the peer outbox when a paired server is following — and
+	// the machine a session runs on need not run an assistant for that last
+	// one, so the tool cannot be gated on either local half. The verb table is
+	// the head's and exists only with the service. Same typed-nil trap as above.
+	var localReporter mcphttp.AssistantReporter
 	switch {
 	case assistantSvc != nil:
-		assistantReporter = assistantSvc
+		localReporter = assistantSvc
 	case reportRegistry != nil:
-		assistantReporter = reportRegistry
+		localReporter = reportRegistry
 	}
 	mcpHandler := mcphttp.NewHandler(mcpTokens, devStore, svc, schedCreator,
-		assistantReporter, sessionModelInspector{svc: svc})
+		&peerAwareReporter{local: localReporter, outbox: peerOutbox}, sessionModelInspector{svc: svc})
 	// Register explicit methods so the pattern doesn't conflict with the SPA
 	// catch-all "GET /". The handler dispatches on method internally.
 	mux.Handle("POST /mcp", mcpHandler)

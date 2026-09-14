@@ -15,8 +15,8 @@ func TestCredentialAllowed(t *testing.T) {
 		want         bool
 	}{
 		{KindPeer, "/api/peer/sessions", true},
-		{KindPeer, "/api/peer/stream", true},
-		{KindPeer, "/api/auth/ws-ticket", true},
+		{KindPeer, "/api/peer/events", true},
+		{KindPeer, "/api/auth/ws-ticket", false},
 		{KindPeer, "/api/auth/session", true},
 		{KindPeer, "/api/projects", false},
 		{KindPeer, "/api/sessions", false},
@@ -35,7 +35,7 @@ func TestCredentialAllowed(t *testing.T) {
 		{KindPeer, "/api/peer//sessions", false},
 		{"bearer", "/api/projects", true},
 		{"bearer", "/api/peer/sessions", false},
-		{"bearer", "/api/peer/stream", false},
+		{"bearer", "/api/peer/events", false},
 		{"cookie", "/api/peer/sessions", false},
 		{"cookie", "/ws", true},
 	}
@@ -134,40 +134,18 @@ func TestPeerCredentialLifecycle(t *testing.T) {
 	}
 }
 
-// A ticket inherits its session's scope at the upgrade path it is redeemed on.
-func TestPeerTicketOpensOnlyThePeerStream(t *testing.T) {
+// A peer credential cannot mint a WebSocket ticket, so it can open no socket.
+func TestPeerCredentialOpensNoSocket(t *testing.T) {
 	svc, queries := newTestService(t)
 	admin := createAdminUser(t, queries)
 	bearer, _ := svc.createSession(context.Background(), admin.ID, "review", "bearer")
 	_, peer, _ := mintPeer(t, svc, bearer, `{}`)
 
-	ticketFor := func(token string) string {
-		r := httptest.NewRequest(http.MethodPost, "/api/auth/ws-ticket", nil)
-		r.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
-		svc.handleCreateWSTicket(w, r)
-		var resp struct {
-			Ticket string `json:"ticket"`
-		}
-		_ = json.Unmarshal(w.Body.Bytes(), &resp)
-		if resp.Ticket == "" {
-			t.Fatalf("ticket mint = %d %s", w.Code, w.Body.String())
-		}
-		return resp.Ticket
-	}
-	upgrade := func(path, ticket string) error {
-		r := httptest.NewRequest(http.MethodGet, path+"?wsTicket="+ticket, nil)
-		_, err := svc.authenticate(r)
-		return err
-	}
-
-	if err := upgrade("/ws", ticketFor(peer)); err == nil {
-		t.Error("a peer ticket opened /ws")
-	}
-	if err := upgrade("/api/peer/stream", ticketFor(peer)); err != nil {
-		t.Errorf("a peer ticket did not open the peer stream: %v", err)
-	}
-	if err := upgrade("/api/peer/stream", ticketFor(bearer)); err == nil {
-		t.Error("a browser ticket opened the peer stream")
+	r := httptest.NewRequest(http.MethodPost, "/api/auth/ws-ticket", nil)
+	r.Header.Set("Authorization", "Bearer "+peer)
+	w := httptest.NewRecorder()
+	svc.handleCreateWSTicket(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("peer ws-ticket mint = %d, want 401", w.Code)
 	}
 }

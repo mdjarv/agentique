@@ -3,8 +3,10 @@ package peer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,6 +53,7 @@ type Handler struct {
 	settings  Settings
 	machineID string
 	limits    *limiter
+	outbox    *Outbox
 }
 
 // Option configures a [Handler].
@@ -65,6 +68,11 @@ func WithMachineID(id string) Option { return func(h *Handler) { h.machineID = i
 // WithCatalog resolves model families on create. Without one, a create that
 // names a model is refused rather than guessed.
 func WithCatalog(c Catalog) Option { return func(h *Handler) { h.catalog = c } }
+
+// WithOutbox records follows on send and create, and serves the event poll.
+// Without one there is no /api/peer/events and nothing a paired server sends
+// here reports back.
+func WithOutbox(o *Outbox) Option { return func(h *Handler) { h.outbox = o } }
 
 // withClock replaces the limiter's clock, for tests.
 func withClock(now func() time.Time) Option { return func(h *Handler) { h.limits = newLimiter(now) } }
@@ -86,6 +94,59 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/peer/sessions", h.handleList)
 	mux.HandleFunc("POST /api/peer/sessions", h.handleCreate)
 	mux.HandleFunc("POST /api/peer/sessions/{id}/send", h.handleSend)
+	if h.outbox != nil {
+		mux.HandleFunc("GET /api/peer/events", h.handleEvents)
+	}
+}
+
+// handleEvents is the follower's poll: GET /api/peer/events?since=N&wait=S.
+// A credential reads only its own rows, so two paired servers never see each
+// other's news.
+func (h *Handler) handleEvents(w http.ResponseWriter, r *http.Request) {
+	credential, ok := h.requirePeer(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	since, err := parseNonNegative(q.Get("since"))
+	if err != nil {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "since must be a non-negative integer"))
+		return
+	}
+	waitSeconds, err := parseNonNegative(q.Get("wait"))
+	if err != nil {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "wait must be a non-negative integer of seconds"))
+		return
+	}
+	out, err := h.outbox.Events(r.Context(), credential, since, time.Duration(waitSeconds)*time.Second)
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("read peer events", err))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, out)
+}
+
+func parseNonNegative(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
+		return 0, errors.New("not a non-negative integer")
+	}
+	return n, nil
+}
+
+// follow records that this credential's server is following the session. A
+// failure is logged, never fatal to the action that already happened: the send
+// went, and the worst case is news that does not come back.
+func (h *Handler) follow(ctx context.Context, sessionID, credential, policyID string) {
+	if h.outbox == nil {
+		return
+	}
+	if err := h.outbox.Follow(ctx, sessionID, credential, policyID); err != nil {
+		slog.Warn("peer: follow not recorded", "session", sessionID, "credential", credential, "error", err)
+	}
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +239,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		httperror.RespondError(w, httperror.Internal("send to session", err))
 		return
 	}
+	h.follow(ctx, id, credential, req.PolicyID)
 	slog.Info("peer: sent", "session", id, "credential", credential, "delivery", delivery, "policy", req.PolicyID)
 	httperror.JSON(w, http.StatusOK, SendResponse{Delivery: string(delivery)})
 }
@@ -248,6 +310,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Model: created.Model, WorktreeBranch: created.WorktreeBranch, AutoApproveMode: created.AutoApproveMode,
 		Origin: session.OriginAssistant, CreatedAt: created.CreatedAt,
 	}}
+	h.follow(ctx, created.SessionID, credential, req.PolicyID)
 	if req.Prompt != "" {
 		h.sendAfterCreate(ctx, credential, created.SessionID, req, &out)
 	}

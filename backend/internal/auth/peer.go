@@ -27,9 +27,10 @@ var errCredentialScope = errors.New("credential is not valid for this route")
 
 // credentialAllowed is the one scope rule for every credential kind.
 //
-// A peer credential is accepted on the peer surface, on the ws-ticket mint that
-// opens the peer stream, and on revoking itself. Nothing else — not the
-// session API, not the machine catalog, not the files, not pairing. Every other
+// A peer credential is accepted on the peer surface and on revoking itself.
+// Nothing else — not a ws-ticket (the peer surface has no socket; its event feed
+// is a long poll that carries the credential in a header), not the session
+// API, not the machine catalog, not the files, not pairing. Every other
 // kind is refused on the peer surface, because a peer route stamps what it does
 // as the assistant's, and that claim comes from the credential rather than the
 // request body.
@@ -43,8 +44,7 @@ func credentialAllowed(kind string, r *http.Request) bool {
 	if kind != KindPeer {
 		return !strings.HasPrefix(path, PeerRoutePrefix)
 	}
-	switch path {
-	case "/api/auth/ws-ticket", "/api/auth/session":
+	if path == "/api/auth/session" {
 		return true
 	}
 	if !strings.HasPrefix(path, PeerRoutePrefix) {
