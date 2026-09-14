@@ -235,8 +235,8 @@ Three things go wrong here often enough to name:
   usable pair. Browsers treat `localhost` as secure, so plain HTTP is fine there
   and nowhere else.
 - `initial-project` only fires when the database holds zero projects. With it
-  unset, the first start registers the server's working directory (or its git
-  root) instead, which for a service is your home directory.
+  unset, nothing is registered: add projects from the UI. The server's working
+  directory is never used, since for a service that is your home directory.
 
 ### 4. Install and start the service
 

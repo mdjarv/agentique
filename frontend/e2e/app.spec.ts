@@ -54,12 +54,6 @@ test.describe("Health check", () => {
 });
 
 test.describe("Project management", () => {
-  test("starts with default project from cwd", async ({ page }) => {
-    await page.goto("/");
-    // Default project is auto-created from cwd on first launch.
-    await expect(page.getByText("agentique", { exact: true }).first()).toBeVisible();
-  });
-
   test("can create a project via the dialog", async ({ page }) => {
     await page.goto("/");
 

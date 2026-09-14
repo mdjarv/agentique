@@ -946,45 +946,26 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// findGitRoot walks up from dir to find the nearest .git directory.
-func findGitRoot(dir string) string {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
-}
-
-// ensureDefaultProject creates a project if none exist.
-// Uses initialProject from config if set, otherwise falls back to git root or cwd.
+// ensureDefaultProject registers `[setup] initial-project` when no project
+// exists. It never falls back to the working directory: a project is a
+// registration the operator makes, and a service's cwd is nobody's choice —
+// under systemd or launchd it is $HOME, which put the home directory in the
+// project list of every freshly installed (and so every newly paired) machine,
+// and put it back on each restart after it was removed.
 func ensureDefaultProject(q *store.Queries, initialProject string) {
+	if initialProject == "" {
+		return
+	}
 	projects, err := q.ListProjects(context.Background())
 	if err != nil || len(projects) > 0 {
 		return
 	}
-
-	var projectDir string
-	if initialProject != "" {
-		if info, err := os.Stat(initialProject); err == nil && info.IsDir() {
-			projectDir = initialProject
-		}
-	}
-	if projectDir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return
-		}
-		projectDir = cwd
-		if root := findGitRoot(cwd); root != "" {
-			projectDir = root
-		}
+	if info, err := os.Stat(initialProject); err != nil || !info.IsDir() {
+		slog.Warn("initial-project is not a directory; no project registered", "path", initialProject)
+		return
 	}
 
+	projectDir := initialProject
 	name := filepath.Base(projectDir)
 	_, err = q.CreateProject(context.Background(), store.CreateProjectParams{
 		ID:   uuid.NewString(),

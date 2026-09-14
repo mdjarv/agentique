@@ -147,7 +147,7 @@ before touching it.
 | Server answering, `credentialCount` 0 | Unfinished first run. On a network listener this is urgent: the first browser to register becomes admin. Register now, or bind to `localhost` until the person can. |
 | A user registered, passkey lost | `agentique auth rekey` with the server stopped; register again with the printed code. |
 | `agentique.prev` beside the binary | The copy an in-app upgrade keeps for `agentique rollback`. Deliberate; leave it. |
-| The home directory shows up as a project in the UI | The first start ran without `initial-project`. Harmless; the person can remove it in the UI and add the repo they meant. |
+| The home directory shows up as a project in the UI | Left by an older release, whose first start registered the service's working directory when `initial-project` was unset. Harmless; the person can remove it in the UI and add the repo they meant. It does not come back. |
 | Tailscale `BackendState` is `NeedsLogin` or `Stopped` | `tailscale up` was aborted or the node logged out. Rerun it; the person opens the URL. |
 | `tailscale serve status` proxies a different port, or a stale entry | Point it at the port in `addr`. Remove only the entry that belongs to agentique; serve can carry other services. |
 | `tailscale cert` files present, expired or for another name | Regenerate for the current MagicDNS name, or move to `tailscale serve` and drop `tls-cert`/`tls-key` from the config. |
@@ -222,7 +222,7 @@ Localhost only:
 addr = "localhost:9201"
 
 [setup]
-initial-project = "/absolute/path/to/a/repo"   # ask which repo; omitted, the service registers $HOME
+initial-project = "/absolute/path/to/a/repo"   # ask which repo; omitted, no project until one is added in the UI
 ```
 
 Then install the service **from a shell where `claude` is on `PATH`** — the Linux

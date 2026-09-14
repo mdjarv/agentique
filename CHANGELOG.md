@@ -8,6 +8,18 @@ before you upgrade.
 Starts at v0.4.0. Releases v0.1.0 through v0.3.0 are listed at the bottom with
 links to their own notes, rather than reconstructed here after the fact.
 
+## Unreleased
+
+### Fixed
+
+- **A new machine no longer lists its home directory as a project.** With
+  `[setup] initial-project` unset, the first start registered the server's
+  working directory, which for a service is `$HOME`, so every freshly installed
+  machine paired in with its home directory as a project, and removing it
+  brought it back on the next restart. Only `initial-project` registers a
+  project now. An existing home-directory project is left alone; remove it in
+  the UI and it stays gone.
+
 ## v0.7.2
 
 Nothing to do before upgrading: no migration, no config key, no credential
