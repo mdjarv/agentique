@@ -8,6 +8,7 @@ import (
 )
 
 func TestNewRefusesWithoutAStore(t *testing.T) {
+	t.Parallel()
 	if _, err := New(nil); err == nil {
 		t.Error("New(nil) built a service with nowhere to write")
 	}
@@ -16,6 +17,7 @@ func TestNewRefusesWithoutAStore(t *testing.T) {
 // The conversation is created once and found again, and the second call is the
 // cached one rather than a second channel.
 func TestEnsureConversationIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 
@@ -54,6 +56,7 @@ func TestEnsureConversationIsIdempotent(t *testing.T) {
 // A fresh service on an existing database finds the conversation from the
 // state row rather than starting a second one.
 func TestConversationSurvivesARestart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 
@@ -77,6 +80,7 @@ func TestConversationSurvivesARestart(t *testing.T) {
 
 // Say stores both turns, in order, and pushes them.
 func TestSayStoresBothTurnsAndStreams(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "I will look at that."}
 	svc, _, recorder := newTestService(t, WithHeadManager(head))
@@ -137,6 +141,7 @@ func TestSayStoresBothTurnsAndStreams(t *testing.T) {
 // The socket's own path: the ask is stored and pushed before the turn, and the
 // reply arrives on its own.
 func TestSayAsyncAnswersWithTheAskAndRepliesLater(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "on it"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -169,6 +174,7 @@ func TestSayAsyncAnswersWithTheAskAndRepliesLater(t *testing.T) {
 }
 
 func TestSayRefusesNothingAndAnUnnamedSurface(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t, WithHeadManager(&fakeHead{reply: "ok"}))
 
@@ -189,6 +195,7 @@ func TestSayRefusesNothingAndAnUnnamedSurface(t *testing.T) {
 // releases it on the reply — so a turn that ends in silence is a shut composer
 // and nothing to read.
 func TestSayKeepsTheAskAndSaysTheTurnFailed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -216,6 +223,7 @@ func TestSayKeepsTheAskAndSaysTheTurnFailed(t *testing.T) {
 // have done nothing but call verbs, and a silent reply is indistinguishable from
 // a turn still running.
 func TestASilentTurnStillStoresAReply(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: ""}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -241,6 +249,7 @@ func TestASilentTurnStillStoresAReply(t *testing.T) {
 // socket's read lane, whose membership is the claim that the handler mutates
 // nothing a later request could observe out of order.
 func TestHistoryDoesNotCreateTheConversation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 
@@ -262,6 +271,7 @@ func TestHistoryDoesNotCreateTheConversation(t *testing.T) {
 // A call's turns land in the same conversation, marked with the surface and
 // the call, so what was agreed on a drive is in the thread.
 func TestMirrorWritesACallsTurns(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -299,6 +309,7 @@ func TestMirrorWritesACallsTurns(t *testing.T) {
 // stamp alone, so what the thread rendered from the pure journal read is what
 // it acknowledges.
 func TestLookClearsTheUnseenCount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -356,6 +367,7 @@ func TestLookClearsTheUnseenCount(t *testing.T) {
 }
 
 func TestSinceLastIsNewsThenNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -396,6 +408,7 @@ func TestSinceLastIsNewsThenNothing(t *testing.T) {
 // fifty OLDER entries — announcing last week after today, for as many looks as
 // it took to drain. A look means "caught up to here".
 func TestSinceLastCatchesUpPastOnePage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -429,6 +442,7 @@ func TestSinceLastCatchesUpPastOnePage(t *testing.T) {
 // Two surfaces have two marks: the thread reading the news must not consume the
 // call's.
 func TestSinceLastIsPerSurface(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -451,6 +465,7 @@ func TestSinceLastIsPerSurface(t *testing.T) {
 // What was said on a call while the thread was away is part of what the thread
 // has missed.
 func TestSinceLastCarriesTheConversation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// A movable clock rather than a sleep. The mark is whole seconds and a
 	// message's stamp is fractional, so a message written inside the same second
@@ -477,6 +492,7 @@ func TestSinceLastCarriesTheConversation(t *testing.T) {
 }
 
 func TestFollowIsDurableAndUnfollowIsForgiving(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 	session := seedSession(t, queries)
@@ -514,6 +530,7 @@ func TestFollowIsDurableAndUnfollowIsForgiving(t *testing.T) {
 }
 
 func TestRegisterSurfaceRefusesANameThatIsNotOne(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	if _, err := svc.RegisterSurface(&fakeSurface{name: "thread.two"}); err == nil {
 		t.Error("a surface name is a JSON path component; a dot must be refused")
@@ -526,6 +543,7 @@ func TestRegisterSurfaceRefusesANameThatIsNotOne(t *testing.T) {
 // A surface that cannot render is that surface's problem: delivery failures
 // are logged and never propagated to the runtime or an MCP handler.
 func TestDeliveryToleratesABrokenSurface(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -554,6 +572,7 @@ func TestDeliveryToleratesABrokenSurface(t *testing.T) {
 
 // History pages backwards and reads forwards.
 func TestHistoryPagesOldestFirst(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -593,6 +612,7 @@ func TestHistoryPagesOldestFirst(t *testing.T) {
 }
 
 func TestCloseStopsNothingItNeverStarted(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	if err := svc.Close(); err != nil {
 		t.Errorf("Close() on a service with no head = %v", err)
@@ -605,6 +625,7 @@ func TestCloseStopsNothingItNeverStarted(t *testing.T) {
 // An unknown journal kind is refused rather than written: the set is closed so
 // that the digest and compaction can rely on it.
 func TestJournalRefusesAKindOutsideTheSet(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	if _, err := svc.appendJournal(context.Background(), journalWrite{Kind: "vibes"}); err == nil {
 		t.Error("appendJournal() accepted a kind outside the closed set")

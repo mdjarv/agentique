@@ -257,9 +257,9 @@ func (s *Service) HasMemory() bool { return s.mem != nil }
 // per-request timeout, which sums to minutes on a cold process. A slow index has
 // to cost the head its index, never the start.
 //
-// A var rather than a const so a test can shorten it — the same reason
-// `refineTimeout` in internal/brain is one.
-var memoryBriefingBudget = 10 * time.Second
+// It is the default for [Service.memoryBudget], which a test shortens per
+// service; a package var a test reassigns would race every parallel test.
+const memoryBriefingBudget = 10 * time.Second
 
 // memoryBriefing reads the two halves of what the preamble carries, and says when
 // it could not read them.
@@ -279,7 +279,7 @@ func (s *Service) memoryBriefing(ctx context.Context) (pinned []Fact, index []In
 		return nil, nil, false
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, memoryBriefingBudget)
+	ctx, cancel := context.WithTimeout(ctx, s.memoryBudget)
 	defer cancel()
 
 	var err error

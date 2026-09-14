@@ -5,6 +5,7 @@ import "testing"
 // The inputs here are the real ones: a name that went through a microphone, a
 // speech model, and someone who half-remembers it.
 func TestMatchSessionsFindsWhatWasActuallySaid(t *testing.T) {
+	t.Parallel()
 	rows := []SessionRow{
 		{ID: "s1", Name: "Live Voice Dialog", ProjectName: "agentique", ProjectSlug: "agentique", MachineName: "workstation", LastActivity: "2026-08-26T12:00:00Z"},
 		{ID: "s2", Name: "Reconnect Drops", ProjectName: "agentique", ProjectSlug: "agentique", MachineName: "workstation", LastActivity: "2026-08-26T11:00:00Z"},
@@ -104,6 +105,7 @@ func TestMatchSessionsFindsWhatWasActuallySaid(t *testing.T) {
 // Among equally good matches, the one waiting on the operator is the one they
 // probably meant — the same ordering the deck's Needs-you band uses.
 func TestMatchRanksAttentionAboveRecency(t *testing.T) {
+	t.Parallel()
 	rows := []SessionRow{
 		{ID: "recent", Name: "Voice Work", LastActivity: "2026-08-26T12:00:00Z"},
 		{ID: "waiting", Name: "Voice Work", Attention: AttentionApproval, LastActivity: "2026-08-26T08:00:00Z"},
@@ -119,6 +121,7 @@ func TestMatchRanksAttentionAboveRecency(t *testing.T) {
 
 // Five is already more than anyone wants read aloud.
 func TestMatchIsBounded(t *testing.T) {
+	t.Parallel()
 	rows := make([]SessionRow, 0, maxCandidates*3)
 	for i := range maxCandidates * 3 {
 		rows = append(rows, SessionRow{ID: string(rune('a' + i)), Name: "Voice Work"})

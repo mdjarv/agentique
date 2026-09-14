@@ -15,6 +15,7 @@ import (
 // guessed at relevance and injected the guess into every turn, and the guess was
 // the noise. Anything a head has not asked for arrives as a label and a count.
 func TestPreambleCarriesTheIndexAndThePinnedSetAndNoOtherBodies(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{
 		pinned: []Fact{{
@@ -67,6 +68,7 @@ func TestPreambleCarriesTheIndexAndThePinnedSetAndNoOtherBodies(t *testing.T) {
 // No memory wired, no section. A head told it remembers things and then refused
 // at every call is worse off than one that was never told.
 func TestPreambleHasNoMemorySectionWithoutAMemory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -82,6 +84,7 @@ func TestPreambleHasNoMemorySectionWithoutAMemory(t *testing.T) {
 // An empty memory still gets the section: the verbs are in the table, and the
 // head has to be told that writing is how anything ever gets in there.
 func TestPreambleNamesAnEmptyMemory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head), WithMemory(&fakeMemory{}))
@@ -102,6 +105,7 @@ func TestPreambleNamesAnEmptyMemory(t *testing.T) {
 // from transcripts — so writing a notable entry is what stages one, rather than
 // each writer remembering to.
 func TestANotableEntryBecomesACapture(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -130,6 +134,7 @@ func TestANotableEntryBecomesACapture(t *testing.T) {
 // it is staged with its provenance, so consolidation can weigh it differently
 // from something the operator said.
 func TestAnUntrustedNotableEntryIsCapturedAsReported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -163,6 +168,7 @@ func TestAnUntrustedNotableEntryIsCapturedAsReported(t *testing.T) {
 // on every session writes one — and capturing all of it would be the transcript
 // extraction this design took out, one layer up.
 func TestAnOrdinaryEntryIsNotCaptured(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -185,6 +191,7 @@ func TestAnOrdinaryEntryIsNotCaptured(t *testing.T) {
 // saying a fact was stored would hand consolidation a meta-phrased second copy to
 // judge against the first.
 func TestAMemoryWritesOwnJournalEntryIsNotCaptured(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -214,6 +221,7 @@ func TestAMemoryWritesOwnJournalEntryIsNotCaptured(t *testing.T) {
 // A capture that fails costs the index entry and never the journal. The journal
 // is the record of what happened; memory is an index over it.
 func TestACaptureFailureDoesNotFailTheJournalWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t, WithMemory(&failingCapture{}))
 
@@ -233,6 +241,7 @@ func TestACaptureFailureDoesNotFailTheJournalWrite(t *testing.T) {
 // store does not know is a fact written under a category nothing will ever rank
 // by, and a provenance it cannot map.
 func TestTheClosedSetsAreTheStoresOwn(t *testing.T) {
+	t.Parallel()
 	for _, c := range categories {
 		if got, ok := parseCategory(string(c)); !ok || got != c {
 			t.Errorf("parseCategory(%q) = %q, %v", c, got, ok)
@@ -274,6 +283,7 @@ func (*failingCapture) Capture(context.Context, string, string, memory.Source) e
 // The project is resolved FROM the session the head named, so there is no second
 // argument that can disagree with the first.
 func TestANoteAboutASessionIsCapturedInItsProject(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	dir := &fakeDirectory{sessions: []SessionRow{
@@ -301,6 +311,7 @@ func TestANoteAboutASessionIsCapturedInItsProject(t *testing.T) {
 // A note about nothing in particular stays global, and so does one naming a session
 // this machine does not hold: an unplaceable note is a note with no project.
 func TestANoteWithNoPlaceStaysGlobal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	dir := &fakeDirectory{sessions: []SessionRow{
@@ -332,6 +343,7 @@ func TestANoteWithNoPlaceStaysGlobal(t *testing.T) {
 // going dark — and a head told its memory is empty says so to the operator and then
 // remembers facts it already holds a second time.
 func TestAnUnreadableMemoryIsNotReportedAsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{pinnedErr: errors.New("store unavailable"), indexErr: errors.New("store unavailable")}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -364,12 +376,10 @@ func TestAnUnreadableMemoryIsNotReportedAsEmpty(t *testing.T) {
 // one turn lock is held and the composer is shut, so it carries its own. A store that
 // never answers costs the head its index rather than the start.
 func TestTheMemoryBriefingIsBounded(t *testing.T) {
-	prev := memoryBriefingBudget
-	memoryBriefingBudget = 50 * time.Millisecond
-	t.Cleanup(func() { memoryBriefingBudget = prev })
-
+	t.Parallel()
 	mem := &fakeMemory{blockReads: true}
-	svc, _, _ := newTestService(t, WithMemory(mem))
+	shortBudget := func(s *Service) { s.memoryBudget = 50 * time.Millisecond }
+	svc, _, _ := newTestService(t, WithMemory(mem), shortBudget)
 
 	done := make(chan bool, 1)
 	go func() {

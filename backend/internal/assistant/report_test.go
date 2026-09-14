@@ -10,6 +10,7 @@ import (
 )
 
 func TestParseReport(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		kind     string
@@ -44,6 +45,7 @@ func TestParseReport(t *testing.T) {
 // A verbose worker gets truncated, not rejected: it is mid-task, and failing
 // its tool call over wordiness helps nobody.
 func TestParseReportTruncatesRatherThanRejecting(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("a", maxHeadline*2)
 	got, err := ParseReport("milestone", long)
 	if err != nil {
@@ -105,6 +107,7 @@ func (e *reportError) Error() string { return e.s }
 // A report with nobody on the call must say so, so the worker can stop
 // spending tool calls on an empty room.
 func TestReportWithNoFollowerTellsTheWorker(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	msg, err := r.Report("s1", "surprise", "nobody home")
 	if err != nil {
@@ -116,6 +119,7 @@ func TestReportWithNoFollowerTellsTheWorker(t *testing.T) {
 }
 
 func TestReportReachesFollowers(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	a, b := &recorder{}, &recorder{}
 	defer r.Follow("s1", a)()
@@ -136,6 +140,7 @@ func TestReportReachesFollowers(t *testing.T) {
 }
 
 func TestUnfollowStopsDelivery(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	f := &recorder{}
 	release := r.Follow("s1", f)
@@ -156,6 +161,7 @@ func TestUnfollowStopsDelivery(t *testing.T) {
 // The budget is the ceiling that catches a worker ignoring the prompt's
 // guidance, and a throttled call must teach rather than fail.
 func TestReportBudgetThrottles(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	now := time.Now()
 	r.now = func() time.Time { return now }
@@ -196,6 +202,7 @@ func TestReportBudgetThrottles(t *testing.T) {
 
 // The budget is per session — one chatty run must not silence another.
 func TestReportBudgetIsPerSession(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	now := time.Now()
 	r.now = func() time.Time { return now }
@@ -221,6 +228,7 @@ func TestReportBudgetIsPerSession(t *testing.T) {
 // Dropping the last follower must drop the budget with it, or a second call
 // inherits a bucket the first one spent.
 func TestBudgetResetsWithTheLastFollower(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	now := time.Now()
 	r.now = func() time.Time { return now }
@@ -246,6 +254,7 @@ func TestBudgetResetsWithTheLastFollower(t *testing.T) {
 }
 
 func TestReportRejectsBadInputBeforeSpendingBudget(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	f := &recorder{}
 	defer r.Follow("s1", f)()
@@ -265,6 +274,7 @@ func TestReportRejectsBadInputBeforeSpendingBudget(t *testing.T) {
 }
 
 func TestReportingInstructionsNameTheTool(t *testing.T) {
+	t.Parallel()
 	got := ReportingInstructions("mcp__agentique__AssistantReport")
 	if !strings.Contains(got, "mcp__agentique__AssistantReport") {
 		t.Error("instructions must name the tool the worker has to call")

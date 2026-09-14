@@ -113,15 +113,18 @@ type TurnOutcome struct {
 // whole constructor — a half-wired assistant must degrade, because the
 // alternative is a server that will not boot.
 type Service struct {
-	store   Store
-	dir     Directory
-	disp    Dispatcher
-	heads   HeadManager
-	allow   Allowances
-	facts   TurnFacts
-	mem     Memory
-	actions Actions
-	triager Triager
+	store Store
+	dir   Directory
+	disp  Dispatcher
+	heads HeadManager
+	allow Allowances
+	facts TurnFacts
+	mem   Memory
+	// memoryBudget bounds the memory briefing; [memoryBriefingBudget] unless a
+	// test shortens it.
+	memoryBudget time.Duration
+	actions      Actions
+	triager      Triager
 	// summarizer folds a day of the journal into one sentence. Nil means the
 	// journal is not folded at all — see [Service.Compact]: deleting rows nothing
 	// can account for is losing them.
@@ -260,13 +263,14 @@ func New(st Store, opts ...Option) (*Service, error) {
 	}
 
 	s := &Service{
-		store:     st,
-		reg:       NewRegistry(),
-		bus:       eventbus.NopBroadcaster{},
-		log:       slog.Default(),
-		now:       time.Now,
-		surfaces:  newSurfaceSet(),
-		stateBase: make(map[string]outcomeBase),
+		store:        st,
+		reg:          NewRegistry(),
+		bus:          eventbus.NopBroadcaster{},
+		log:          slog.Default(),
+		now:          time.Now,
+		memoryBudget: memoryBriefingBudget,
+		surfaces:     newSurfaceSet(),
+		stateBase:    make(map[string]outcomeBase),
 	}
 	for _, opt := range opts {
 		opt(s)

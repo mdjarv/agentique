@@ -45,6 +45,7 @@ func proposalArgs(verb string) map[string]any {
 // Every uncontained verb writes a card and performs nothing. That is the whole
 // tier: the handler's only power is a row.
 func TestEveryUncontainedVerbProposes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 	// Behind, so the merge verb has something to rebase and the rebase verb is
@@ -101,6 +102,7 @@ func TestEveryUncontainedVerbProposes(t *testing.T) {
 // A rationale is required: the card is read by somebody who was not in the
 // conversation.
 func TestAProposalNeedsARationale(t *testing.T) {
+	t.Parallel()
 	svc, actions, _ := proposalWorld(t)
 
 	payload, err := svc.Invoke(context.Background(), VerbArchiveSession, map[string]any{"session_id": "s1"})
@@ -119,6 +121,7 @@ func TestAProposalNeedsARationale(t *testing.T) {
 // is "rebase first", not a card: the server's merge is fast-forward only, so
 // the proposal could only ever come back needs_rebase.
 func TestAMergeOfABehindBranchRefusesRatherThanProposing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 	actions.branch = BranchFacts{Ahead: 2, Behind: 3, MergeStatus: "clean"}
@@ -151,6 +154,7 @@ func TestAMergeOfABehindBranchRefusesRatherThanProposing(t *testing.T) {
 // for one decision, and accepting either would leave the other pointing at
 // work already done.
 func TestAskingTwiceReturnsTheOpenProposal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -186,6 +190,7 @@ func TestAskingTwiceReturnsTheOpenProposal(t *testing.T) {
 
 // Accepting performs the action through [Actions] and records what it did.
 func TestAcceptPerformsTheAction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -227,6 +232,7 @@ func TestAcceptPerformsTheAction(t *testing.T) {
 // The accept-time re-check is the storage page's rule one layer up: a stale
 // card narrows what happens and never widens it.
 func TestAcceptOnChangedFactsGoesStaleAndPerformsNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -262,6 +268,7 @@ func TestAcceptOnChangedFactsGoesStaleAndPerformsNothing(t *testing.T) {
 // A git operation that refuses is `failed` with its own word as the outcome,
 // never a crash.
 func TestAFailedExecutorIsAFailedProposal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 	actions.execErr = &OutcomeError{
@@ -290,6 +297,7 @@ func TestAFailedExecutorIsAFailedProposal(t *testing.T) {
 
 // Declining performs nothing and says who declined it where.
 func TestDeclinePerformsNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -313,6 +321,7 @@ func TestDeclinePerformsNothing(t *testing.T) {
 // same card, and the second one to press must learn what happened rather than
 // be told it broke something.
 func TestDecidingATwiceDecidedProposalAnswersItself(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -343,6 +352,7 @@ func TestDecidingATwiceDecidedProposalAnswersItself(t *testing.T) {
 // An undecided proposal stops being an offer. Expiry is derived on the read and
 // written on the next decide, so a pure read stays pure.
 func TestAProposalExpires(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	clock := &testClock{at: time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)}
 	svc, actions, _ := proposalWorld(t, WithClock(clock.now))
@@ -378,6 +388,7 @@ func TestAProposalExpires(t *testing.T) {
 // The head can ask and it cannot decide. There is no verb for it, and no verb
 // it does have moves a proposal off open.
 func TestTheHeadHasNoVerbThatDecides(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -416,6 +427,7 @@ func TestTheHeadHasNoVerbThatDecides(t *testing.T) {
 // A proposal is announced twice over: pushed for a page that is already open,
 // and handed to every surface so a blind one can say it out loud.
 func TestAProposalIsPushedAndDelivered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{sessions: []SessionRow{{ID: "s1", Name: "the retry fix", ProjectName: "riff"}}}
 	actions := newFakeActions()
@@ -453,6 +465,7 @@ func TestAProposalIsPushedAndDelivered(t *testing.T) {
 // would be accepted, change the session to something nobody asked for, and
 // report success.
 func TestAnUnknownPermissionModeIsRefused(t *testing.T) {
+	t.Parallel()
 	svc, actions, _ := proposalWorld(t)
 
 	payload, err := svc.Invoke(context.Background(), VerbSetSessionMode, map[string]any{
@@ -476,6 +489,7 @@ func TestAnUnknownPermissionModeIsRefused(t *testing.T) {
 // A session on another machine cannot be proposed about, for the same reason it
 // cannot be dispatched to: the world snapshot it came from is a view.
 func TestAProposalRefusesARemoteSession(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{sessions: []SessionRow{{
 		ID: "s9", Name: "the other one", ProjectName: "riff",
 		MachineID: "elsewhere", MachineName: "the laptop",
@@ -503,6 +517,7 @@ func TestAProposalRefusesARemoteSession(t *testing.T) {
 // same capability bits. So a codex target is refused in words that name it, and
 // no row is written.
 func TestTheSetVerbsRefuseAProviderThatCannotDoIt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, verb := range []string{VerbSetSessionModel, VerbSetSessionMode} {
 		svc, actions, _ := proposalWorld(t)
@@ -533,6 +548,7 @@ func TestTheSetVerbsRefuseAProviderThatCannotDoIt(t *testing.T) {
 // the target of set_session_model is an existing session whose provider is
 // knowable, and claude's answer is a slug that session cannot run.
 func TestAModelIsResolvedAgainstTheTargetsProvider(t *testing.T) {
+	t.Parallel()
 	svc, actions, _ := proposalWorld(t)
 	actions.settings.Provider = "some-other-cli"
 
@@ -550,6 +566,7 @@ func TestAModelIsResolvedAgainstTheTargetsProvider(t *testing.T) {
 // executor that runs while the request context dies must still leave a settled
 // row — one left `open` after the action is one the next press performs again.
 func TestADecisionIsRecordedWhenItsCallerGoesAway(t *testing.T) {
+	t.Parallel()
 	svc, actions, _ := proposalWorld(t)
 
 	payload, err := svc.Invoke(context.Background(), VerbArchiveSession,
@@ -598,6 +615,7 @@ func TestADecisionIsRecordedWhenItsCallerGoesAway(t *testing.T) {
 // a partial unique index now, and the insert that loses answers "already
 // waiting".
 func TestOnlyOneOpenProposalSurvivesConcurrentAsks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := proposalWorld(t)
 
@@ -629,6 +647,7 @@ func TestOnlyOneOpenProposalSurvivesConcurrentAsks(t *testing.T) {
 // and the verb whose argument went missing must not perform the irreversible
 // variant of itself.
 func TestADissolveWithNoArgsKeepsTheHistory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 
@@ -657,6 +676,7 @@ func TestADissolveWithNoArgsKeepsTheHistory(t *testing.T) {
 // SetPermissionMode COERCES an unknown mode to "default", which is exactly the
 // "changed something nobody asked for and reported success" this guards.
 func TestASetVerbWithAnUnreadableArgumentChangesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, actions, _ := proposalWorld(t)
 

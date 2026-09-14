@@ -8,6 +8,7 @@ import (
 // The ordering must match lib/session/priority.ts: the thing still holding a
 // process outranks the thing that already stopped. One rule, both surfaces.
 func TestNoticePriorityMatchesTheAttentionRule(t *testing.T) {
+	t.Parallel()
 	if NoticeBlocked.Priority() >= NoticeFailed.Priority() {
 		t.Error("blocked must outrank failed — it is still holding a process")
 	}
@@ -17,6 +18,7 @@ func TestNoticePriorityMatchesTheAttentionRule(t *testing.T) {
 }
 
 func TestEndsWork(t *testing.T) {
+	t.Parallel()
 	if !NoticeFinished.EndsWork() || !NoticeFailed.EndsWork() {
 		t.Error("a run that finished or failed is over")
 	}
@@ -28,6 +30,7 @@ func TestEndsWork(t *testing.T) {
 }
 
 func TestNoticeReachesFollowers(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	f, other := &recorder{}, &recorder{}
 	defer r.Follow("s1", f)()
@@ -47,6 +50,7 @@ func TestNoticeReachesFollowers(t *testing.T) {
 // often" is a sensible thing to tell a chatty agent and a nonsensical thing to
 // say about "the run failed".
 func TestNoticesAreNeverThrottled(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	now := time.Now()
 	r.now = func() time.Time { return now }
@@ -73,6 +77,7 @@ func TestNoticesAreNeverThrottled(t *testing.T) {
 // A notice with nobody listening is a no-op, not an error: unlike a report,
 // nothing is waiting on the answer.
 func TestNoticeWithNoFollowerIsSilent(t *testing.T) {
+	t.Parallel()
 	r := NewRegistry()
 	r.Notice("nobody", Notice{Kind: NoticeFinished, Headline: "done"})
 }

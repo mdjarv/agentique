@@ -85,6 +85,7 @@ func heartbeatMark(t *testing.T, svc *Service) string {
 // The gate is the whole point: nothing has happened, so no model runs. It still
 // stamps, because a window that is never closed only grows.
 func TestTheGateRunsNoModelAndStampsAnyway(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictAct + ": something"}
 	svc, head, _ := heartbeatWorld(t, triager)
 
@@ -112,6 +113,7 @@ func TestTheGateRunsNoModelAndStampsAnyway(t *testing.T) {
 // An enabled policy and something to judge: one model call, one journal entry
 // carrying the verdict, and nothing else.
 func TestAQuietVerdictJournalsItselfAndDoesNothing(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	svc, head, clock := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -157,6 +159,7 @@ func TestAQuietVerdictJournalsItselfAndDoesNothing(t *testing.T) {
 // The policies and the entries both reach the triager, and an untrusted entry
 // reaches it as a quotation rather than as a line of prose.
 func TestTriageIsShownThePoliciesAndTheWindow(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	svc, _, _ := heartbeatWorld(t, triager)
 	if _, err := svc.appendJournal(context.Background(), journalWrite{
@@ -184,6 +187,7 @@ func TestTriageIsShownThePoliciesAndTheWindow(t *testing.T) {
 
 // `digest` posts one and wakes nobody.
 func TestADigestVerdictPostsTheDigest(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictDigest}
 	svc, head, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -207,6 +211,7 @@ func TestADigestVerdictPostsTheDigest(t *testing.T) {
 // first stamps the mark, so the second would print "Nothing has happened since
 // the last digest." directly under the digest it is about.
 func TestADueDigestAndADigestVerdictPostOnce(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictDigest}
 	clock := &testClock{at: time.Date(2026, 9, 12, 9, 0, 0, 0, time.Local)}
 	svc, _, _ := newTestService(t, WithTriager(triager), WithClock(clock.now),
@@ -251,6 +256,7 @@ func digestsIn(t *testing.T, svc *Service) int {
 // `act` writes the system message first and then runs exactly one head turn,
 // with the heartbeat's own section on it.
 func TestAnActWritesTheSystemMessageAndRunsTheHeadOnce(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: "act: nightly tests — the retry fix finished and its tests pass"}
 	svc, head, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -324,6 +330,7 @@ func TestAnActWritesTheSystemMessageAndRunsTheHeadOnce(t *testing.T) {
 // turned on — seeds the mark and judges nothing, rather than handing a triager
 // the newest sixty entries of all time and letting an `act` run on them.
 func TestAnUnsetMarkSeedsTheWindowAndJudgesNothing(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictAct + ": nightly tests, everything is on fire"}
 	clock := &testClock{at: mustTime("2026-09-12T09:00:00Z")}
 	head := &fakeHead{reply: "acting"}
@@ -363,6 +370,7 @@ func TestAnUnsetMarkSeedsTheWindowAndJudgesNothing(t *testing.T) {
 // gate one statement later already worked this way; the mark is the more
 // load-bearing of the two reads.
 func TestAnUnreadableStateRowStampsNothing(t *testing.T) {
+	t.Parallel()
 	_, queries, _ := newTestService(t)
 	clock := &testClock{at: mustTime("2026-09-12T09:00:00Z")}
 	triager := &fakeTriager{answer: VerdictAct + ": whatever"}
@@ -401,6 +409,7 @@ func (s *stateUnreadable) GetAssistantState(context.Context) (store.AssistantSta
 // closed verdict contract is at the end of the prompt, and a prompt that lost it
 // would answer prose, which parses as `none` forever.
 func TestABigWindowNeverCostsTheAnswerFormat(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	svc, _, clock := heartbeatWorld(t, triager)
 	for i := range maxHeartbeatEntries {
@@ -440,6 +449,7 @@ func TestABigWindowNeverCostsTheAnswerFormat(t *testing.T) {
 // One line, whatever a repository puts in a summary: clamped on a rune boundary,
 // so a prompt cannot end mid-character.
 func TestAWindowLineIsClampedOnARuneBoundary(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	entry := JournalEntry{
 		Kind: JournalReport, SessionID: "s1", Untrusted: true,
@@ -460,6 +470,7 @@ func TestAWindowLineIsClampedOnARuneBoundary(t *testing.T) {
 // The parser fails closed. Everything that is not one of the three exact shapes
 // does nothing at all — a tick is cheap to lose and an unasked-for act is not.
 func TestAnUnparsableVerdictIsNone(t *testing.T) {
+	t.Parallel()
 	for _, answer := range []string{
 		"",
 		"Sure! Here is my verdict:\nact: do the thing",
@@ -492,6 +503,7 @@ func TestAnUnparsableVerdictIsNone(t *testing.T) {
 // A rambling answer reaches the tick as `none`: no head, and the journal says
 // what happened.
 func TestARamblingAnswerWakesNobody(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: "Let me think about this.\nact: nightly tests"}
 	svc, head, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -511,6 +523,7 @@ func TestARamblingAnswerWakesNobody(t *testing.T) {
 // A triager that fails is a tick that did nothing, not a tick that crashed —
 // and the window is still closed, because the failure is not the journal's.
 func TestATriagerThatFailsCostsOnlyTheTick(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{err: errors.New("the CLI is not installed")}
 	svc, head, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -530,6 +543,7 @@ func TestATriagerThatFailsCostsOnlyTheTick(t *testing.T) {
 // No triager at all is a valid server: the gate runs, nothing is judged, and
 // nothing panics.
 func TestNoTriagerIsStillAHeartbeat(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	enablePolicy(t, svc, "nightly tests", 1, 3)
 	somethingHappened(t, svc)
@@ -549,6 +563,7 @@ func TestNoTriagerIsStillAHeartbeat(t *testing.T) {
 // Something happened but no policy is enabled: there is nothing to judge it
 // against, so no model runs.
 func TestWithNoEnabledPolicyNothingIsTriaged(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictAct + ": whatever"}
 	head := &fakeHead{}
 	svc, _, _ := newTestService(t, WithHeadManager(head), WithTriager(triager))
@@ -568,6 +583,7 @@ func TestWithNoEnabledPolicyNothingIsTriaged(t *testing.T) {
 // The timed digest fires once for the day it is due in, and not again on the
 // next tick an hour later.
 func TestTheTimedDigestFiresOncePerDay(t *testing.T) {
+	t.Parallel()
 	// 09:00 local, with the digest due at 08:00: overdue on the first tick.
 	clock := &testClock{at: time.Date(2026, 9, 12, 9, 0, 0, 0, time.Local)}
 	svc, _, _ := newTestService(t,
@@ -603,6 +619,7 @@ func TestTheTimedDigestFiresOncePerDay(t *testing.T) {
 
 // Before the hour it is not due, and an unset time is never due.
 func TestTheTimedDigestWaitsForItsHour(t *testing.T) {
+	t.Parallel()
 	clock := &testClock{at: time.Date(2026, 9, 12, 7, 59, 0, 0, time.Local)}
 	svc, _, _ := newTestService(t,
 		WithClock(clock.now), WithDigestAt(DigestTime{Hour: 8, Set: true}))
@@ -623,6 +640,7 @@ func TestTheTimedDigestWaitsForItsHour(t *testing.T) {
 // "HH:MM" and nothing else. An empty string is valid and disables the clock;
 // anything unreadable is an error the boot warning names.
 func TestParseDigestAt(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		in   string
 		want DigestTime
@@ -649,6 +667,7 @@ func TestParseDigestAt(t *testing.T) {
 // Ticks never overlap: while one is still judging, the next is skipped rather
 // than queued, so one window is never triaged twice.
 func TestTicksDoNotOverlap(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone, hold: make(chan struct{})}
 	svc, _, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)
@@ -676,6 +695,7 @@ func TestTicksDoNotOverlap(t *testing.T) {
 // A non-positive interval is the off switch, and it returns rather than
 // spinning.
 func TestADisabledHeartbeatRunsNothing(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	svc, _, _ := heartbeatWorld(t, triager)
 	somethingHappened(t, svc)

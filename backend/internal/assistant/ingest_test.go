@@ -34,6 +34,7 @@ func waitForJournal(t *testing.T, svc *Service, want int) []JournalEntry {
 // persona fire it, and an entry about one would be the assistant reporting on
 // itself.
 func TestTurnEndIgnoresATurnWithNoSession(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{sessions: []SessionRow{{ID: "s1", Name: "Reconnect Drops"}}}
 	facts := &fakeFacts{outcome: TurnOutcome{ClosingWords: "done"}}
 	svc, _, _ := newTestService(t, WithDirectory(dir), WithTurnFacts(facts))
@@ -51,6 +52,7 @@ func TestTurnEndIgnoresATurnWithNoSession(t *testing.T) {
 // lib/session/priority.ts uses: the thing still holding a process is more
 // urgent than the thing that already stopped.
 func TestTurnEndOrdersBlockedBeforeFailed(t *testing.T) {
+	t.Parallel()
 	facts := &fakeFacts{
 		pending: "May I run the migration?",
 		outcome: TurnOutcome{Failed: true, ClosingWords: "it broke"},
@@ -79,6 +81,7 @@ func TestTurnEndOrdersBlockedBeforeFailed(t *testing.T) {
 }
 
 func TestTurnEndJournalsFinishedAndFailed(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		failed bool
@@ -115,6 +118,7 @@ func TestTurnEndJournalsFinishedAndFailed(t *testing.T) {
 // With no turn facts wired there is nothing to say, and saying nothing must not
 // cost a goroutine or a row.
 func TestTurnEndIsSilentWithNoFacts(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	svc.OnTurnEnd("s1")
 
@@ -130,6 +134,7 @@ func TestTurnEndIsSilentWithNoFacts(t *testing.T) {
 // A FOLLOWED run's report is kept whether or not anyone is live, which is the
 // whole reason the registry outlives the call.
 func TestReportIsJournaledUntrustedAndDelivered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, recorder := newTestService(t)
 	session := seedSession(t, queries)
@@ -181,6 +186,7 @@ func TestReportIsJournaledUntrustedAndDelivered(t *testing.T) {
 // a run nobody is following is refused in words and nothing is written: those
 // entries ride every head turn as untrusted news.
 func TestReportFromAnUnfollowedSessionIsNotKept(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -203,6 +209,7 @@ func TestReportFromAnUnfollowedSessionIsNotKept(t *testing.T) {
 // The budget is spent per REPORT, not per delivery: the journal write is what
 // rides every head turn, so it needs the same one ceiling the spoken half has.
 func TestReportBudgetBoundsTheJournalToo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 	session := seedSession(t, queries)
@@ -226,6 +233,7 @@ func TestReportBudgetBoundsTheJournalToo(t *testing.T) {
 }
 
 func TestReportRejectsAnUnknownKindWithoutJournaling(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	if _, err := svc.Report("s1", "progress", "opening a file"); err == nil {
@@ -243,6 +251,7 @@ func TestReportRejectsAnUnknownKindWithoutJournaling(t *testing.T) {
 // A report reaches a live follower through the registry, the way a call gets
 // one, and the worker's answer says it was spoken.
 func TestReportReachesAFollower(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	follower := &recorder{}
@@ -263,6 +272,7 @@ func TestReportReachesAFollower(t *testing.T) {
 // The state push repeats, and a journal is append-only: a merge is one entry
 // however many times it is announced.
 func TestSessionStateWritesOncePerSessionAndKind(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries := primed(t)
 	sess := seedSession(t, queries)
@@ -311,6 +321,7 @@ func TestSessionStateWritesOncePerSessionAndKind(t *testing.T) {
 // is a state; the journal records transitions against what the sessions table
 // already held.
 func TestSessionStateBaselineIsWhatTheDatabaseAlreadyHeld(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 	old := seedSession(t, queries)
@@ -350,6 +361,7 @@ func TestSessionStateBaselineIsWhatTheDatabaseAlreadyHeld(t *testing.T) {
 // still treats what the table held as old. It cannot flood; it can only miss
 // the transition that arrived first, which is the fail-closed direction.
 func TestSessionStatePrimesItselfLazily(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 	old := seedSession(t, queries)
@@ -371,6 +383,7 @@ func TestSessionStatePrimesItselfLazily(t *testing.T) {
 // Unarchive leaves no residue, and it moves the baseline: filing the same
 // session away a second time is a second gesture.
 func TestSessionStateArchiveAgainAfterUnarchiveIsNews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries := primed(t)
 	sess := seedSession(t, queries)
@@ -391,6 +404,7 @@ func TestSessionStateArchiveAgainAfterUnarchiveIsNews(t *testing.T) {
 // Merged and archived are two facts with two owners, so one session can carry
 // both.
 func TestSessionStateWritesMergedAndArchivedSeparately(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries := primed(t)
 	sess := seedSession(t, queries)
@@ -419,6 +433,7 @@ func TestSessionStateWritesMergedAndArchivedSeparately(t *testing.T) {
 }
 
 func TestSessionStateIgnoresASnapshotWithNothingToSay(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := primed(t)
 
@@ -435,6 +450,7 @@ func TestSessionStateIgnoresASnapshotWithNothingToSay(t *testing.T) {
 }
 
 func TestLoopPausedIsTheServersOwnWords(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -462,6 +478,7 @@ func TestLoopPausedIsTheServersOwnWords(t *testing.T) {
 // approval" in one place cannot say something else in your ear, so the rule is
 // tested where it lives rather than twice at its call sites.
 func TestTurnNoticeRanksTheRuntimesFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	blocked := &fakeFacts{
@@ -514,6 +531,7 @@ func TestTurnNoticeRanksTheRuntimesFacts(t *testing.T) {
 // together. Moving the baseline under the lock is the claim: whichever
 // goroutine flips it writes, and the other sees a baseline that already agrees.
 func TestSessionStateWritesOnceUnderConcurrentPushes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := primed(t)
 

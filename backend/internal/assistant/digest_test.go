@@ -20,6 +20,7 @@ func mustTime(at string) time.Time {
 // broke, then what is owed a decision, then outcomes, then what sessions said.
 // One order, the same one the notices and the deck's band use.
 func TestDigestGroupsInTheNeedsYouOrder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := proposalWorld(t)
 
@@ -78,6 +79,7 @@ func TestDigestGroupsInTheNeedsYouOrder(t *testing.T) {
 // that found nothing answered the question, and leaving the mark behind would
 // make the next one repeat a window with nothing in it.
 func TestAnEmptyDigestIsOneSentence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, queries, _ := newTestService(t)
 
@@ -100,6 +102,7 @@ func TestAnEmptyDigestIsOneSentence(t *testing.T) {
 
 // The second digest covers what happened since the first.
 func TestASecondDigestCoversOnlyWhatIsNew(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	clock := &testClock{at: mustTime("2026-09-12T09:00:00Z")}
 	svc, _, _ := newTestService(t, WithClock(clock.now))
@@ -144,6 +147,7 @@ func TestASecondDigestCoversOnlyWhatIsNew(t *testing.T) {
 // The head can post one, and what it gets back tells it not to read the whole
 // thing out: the digest is already in front of the operator.
 func TestTheDigestVerbPostsAndSaysNotToRepeatIt(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	payload, err := svc.Invoke(context.Background(), VerbDigest, nil)

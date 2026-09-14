@@ -13,6 +13,7 @@ import (
 // The head stays up across turns, because a CLI's first connect costs thirty
 // to forty seconds and the operator is waiting on it.
 func TestHeadIsStartedOnceAndReused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "yes"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -33,6 +34,7 @@ func TestHeadIsStartedOnceAndReused(t *testing.T) {
 // A head that failed a turn is not trusted with the next one: the subprocess
 // may be gone, and a restart costs a connect rather than the conversation.
 func TestAFailedTurnStopsTheHead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{err: errors.New("the CLI died")}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -55,6 +57,7 @@ func TestAFailedTurnStopsTheHead(t *testing.T) {
 }
 
 func TestStopHeadIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -75,6 +78,7 @@ func TestStopHeadIsIdempotent(t *testing.T) {
 // The preamble is composed from the stores, and it is the whole of what a
 // fresh head knows.
 func TestHeadPreambleCarriesTheStores(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{orientation: "Three sessions, one waiting on you."}
 	head := &fakeHead{reply: "ok"}
@@ -125,6 +129,7 @@ func TestHeadPreambleCarriesTheStores(t *testing.T) {
 // News is the one push into a turn, and it arrives with the prompt rather than
 // in the preamble once the head is already up.
 func TestNewsRidesTheNextTurn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -164,6 +169,7 @@ func TestNewsRidesTheNextTurn(t *testing.T) {
 // The head's model comes from the state row, and empty means whatever a new
 // session would get: no family is hardcoded.
 func TestHeadModelComesFromTheStateRow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, queries, _ := newTestService(t, WithHeadManager(head))
@@ -186,6 +192,7 @@ func TestHeadModelComesFromTheStateRow(t *testing.T) {
 // subprocess ever sees, so a missing CLI would otherwise mark it seen for a head
 // that never existed and the next successful start would read none.
 func TestAFailedStartDoesNotConsumeTheNews(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -215,6 +222,7 @@ func TestAFailedStartDoesNotConsumeTheNews(t *testing.T) {
 // journal half dropped the whole call — after the marks had advanced, so it
 // could never be read again.
 func TestAMirroredCallReachesARunningHeadWithNoJournal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	clock := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
@@ -246,6 +254,7 @@ func TestAMirroredCallReachesARunningHeadWithNoJournal(t *testing.T) {
 // a completion, so it blocks until the whole turn budget expires — the operator
 // waits ten minutes for nothing.
 func TestIdleEvictionWaitsForATurnToFinish(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))
@@ -271,6 +280,7 @@ func TestIdleEvictionWaitsForATurnToFinish(t *testing.T) {
 // long turn runs on a background context, and a subprocess started after
 // shutdown outlives the process with nothing left to remove its credential.
 func TestCloseRefusesALaterTurn(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	head := &fakeHead{reply: "ok"}
 	svc, _, _ := newTestService(t, WithHeadManager(head))

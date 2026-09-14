@@ -89,6 +89,7 @@ func assertVerbTable(t *testing.T, svc *Service, want map[string]Tier) {
 // decision about its tier is the failure this guards: the tier is the whole
 // containment story, so it cannot be defaulted.
 func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	assertVerbTable(t, svc, baseVerbTiers())
 }
@@ -98,6 +99,7 @@ func TestVerbTableIsClosedAndEveryVerbHasATier(t *testing.T) {
 // real, so four verbs that answer "I have no memory" to every call would teach it
 // to stop asking — and would be four tool schemas every turn pays for.
 func TestMemoryVerbsExistOnlyWithAMemory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	off, _, _ := newTestService(t)
@@ -121,6 +123,7 @@ func TestMemoryVerbsExistOnlyWithAMemory(t *testing.T) {
 // The pull is the only way a fact reaches a turn, so the verb has to reach the
 // store and hand back the ids a confirm or a flag will need.
 func TestRecallPullsFactsWithTheirIds(t *testing.T) {
+	t.Parallel()
 	mem := &fakeMemory{found: []Fact{
 		{ID: "f1", Text: "they deploy on Fridays anyway", Category: memory.CategoryPreference,
 			Source: memory.SourceHuman},
@@ -146,6 +149,7 @@ func TestRecallPullsFactsWithTheirIds(t *testing.T) {
 }
 
 func TestRecallOnAnEmptyMemorySaysSo(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t, WithMemory(&fakeMemory{}))
 
 	payload, err := svc.Invoke(context.Background(), VerbRecall, map[string]any{"query": "anything"})
@@ -163,6 +167,7 @@ func TestRecallOnAnEmptyMemorySaysSo(t *testing.T) {
 // The provenance enum is the whole trust story of a written fact, and it maps
 // onto the store's own sources in one place.
 func TestRememberMapsProvenance(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tc := range []struct {
@@ -210,6 +215,7 @@ func TestRememberMapsProvenance(t *testing.T) {
 // guessed: an identity fact is pinned on the way in, and "the operator said it"
 // is the one claim in this store that outranks everything else.
 func TestRememberRefusesAnInventedCategoryOrProvenance(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	for _, tc := range []struct {
@@ -241,6 +247,7 @@ func TestRememberRefusesAnInventedCategoryOrProvenance(t *testing.T) {
 // guessed: global means "true everywhere", so filing a project's fact there is
 // the one mistake that cannot be seen from the answer.
 func TestRememberResolvesAProjectByName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{projects: []ProjectRow{
 		{ID: "p1", Name: "riff", Slug: "riff"},
@@ -277,6 +284,7 @@ func TestRememberResolvesAProjectByName(t *testing.T) {
 // Confirm and flag are the conversational outcome signal, and both are journaled
 // so the conversation carries a record of what moved.
 func TestConfirmAndFlagReachTheStoreAndTheJournal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
@@ -312,6 +320,7 @@ func TestConfirmAndFlagReachTheStoreAndTheJournal(t *testing.T) {
 
 // A flag with no reason is a review-queue row nobody can act on.
 func TestFlagMemoryNeedsAReason(t *testing.T) {
+	t.Parallel()
 	mem := &fakeMemory{}
 	svc, _, _ := newTestService(t, WithMemory(mem))
 
@@ -331,6 +340,7 @@ func TestFlagMemoryNeedsAReason(t *testing.T) {
 // nothing. A proposal is a claim that the facts were checked, and there is
 // nothing here to check them with.
 func TestUncontainedVerbsRefuseWithoutActions(t *testing.T) {
+	t.Parallel()
 	svc, queries, _ := newTestService(t)
 
 	for _, verb := range svc.Verbs() {
@@ -361,6 +371,7 @@ func TestUncontainedVerbsRefuseWithoutActions(t *testing.T) {
 // the log gets. Both halves matter: "an empty session and no log line" is the
 // same picture for five different causes.
 func TestToolHandlerStripsTheReason(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	payload := svc.ToolHandler(context.Background(), VerbMergeSession, nil)
@@ -378,6 +389,7 @@ func TestToolHandlerStripsTheReason(t *testing.T) {
 }
 
 func TestUnknownVerbIsRefusedNotPerformed(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	if _, err := svc.Invoke(context.Background(), "rm_rf", nil); !errors.Is(err, ErrUnknownVerb) {
@@ -392,6 +404,7 @@ func TestUnknownVerbIsRefusedNotPerformed(t *testing.T) {
 // Every read degrades to an answer rather than an error when nothing is wired,
 // which is the rule the directory has always had.
 func TestReadVerbsRefuseInWordsWithNothingWired(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 
 	for _, name := range []string{VerbOrientation, VerbListSessions, VerbFindSession,
@@ -408,6 +421,7 @@ func TestReadVerbsRefuseInWordsWithNothingWired(t *testing.T) {
 }
 
 func TestListSessionsNormalisesAnInventedFilter(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{sessions: []SessionRow{{ID: "s1", Name: "Reconnect Drops", ProjectName: "riff"}}}
 	svc, _, _ := newTestService(t, WithDirectory(dir))
 
@@ -427,6 +441,7 @@ func TestListSessionsNormalisesAnInventedFilter(t *testing.T) {
 
 // It ranks and never picks: two plausible candidates come back as two.
 func TestFindSessionNeverPicks(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{sessions: []SessionRow{
 		{ID: "s1", Name: "Voice Work", ProjectName: "riff"},
 		{ID: "s2", Name: "Voice Work", ProjectName: "agentique"},
@@ -448,6 +463,7 @@ func TestFindSessionNeverPicks(t *testing.T) {
 // An unknown percentage is not zero, and reporting it as one would be a number
 // nobody can check.
 func TestAllowancesDropsUnknownWindows(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t, WithAllowances(fakeAllowances{doc: usage.Document{
 		Agents: []usage.Agent{{Name: "Claude", Limits: []usage.Limit{
 			{Label: "Week", Percent: 0.42, Severity: "normal", ResetsAt: "2026-02-01T00:00:00Z"},
@@ -473,6 +489,7 @@ func TestAllowancesDropsUnknownWindows(t *testing.T) {
 // Dispatch is local-only: the report registry is local, so a remote run would
 // report into nothing.
 func TestRunPromptRefusesARemoteSession(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{sessions: []SessionRow{
 		{ID: "remote-1", Name: "Voice Work", ProjectName: "riff", MachineID: "laptop", MachineName: "laptop"},
 	}}
@@ -498,6 +515,7 @@ func TestRunPromptRefusesARemoteSession(t *testing.T) {
 // A dispatch follows the session, journals itself, and carries the reporting
 // instruction — the assistant follows everything it starts.
 func TestRunPromptFollowsJournalsAndReports(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{}
 	disp := &fakeDispatcher{delivery: DeliveryQueued}
@@ -535,6 +553,7 @@ func TestRunPromptFollowsJournalsAndReports(t *testing.T) {
 }
 
 func TestNoteIsNotableAndInTheJournal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := newTestService(t)
 
@@ -562,6 +581,7 @@ func TestNoteIsNotableAndInTheJournal(t *testing.T) {
 }
 
 func TestNoteRefusesNothing(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	payload, err := svc.Invoke(context.Background(), VerbNote, map[string]any{"text": "  "})
 	if err != nil {
@@ -574,6 +594,7 @@ func TestNoteRefusesNothing(t *testing.T) {
 
 // Creating names one project or asks. It never picks between two.
 func TestCreateSessionAsksWhenTheProjectIsAmbiguous(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{projects: []ProjectRow{
 		{ID: "p1", Name: "riff", Slug: "riff"},
 		{ID: "p2", Name: "riff tools", Slug: "riff-tools"},
@@ -594,6 +615,7 @@ func TestCreateSessionAsksWhenTheProjectIsAmbiguous(t *testing.T) {
 
 // A model nobody has is a question, and the answer names the ones that exist.
 func TestCreateSessionRefusesAnUnknownModel(t *testing.T) {
+	t.Parallel()
 	dir := &fakeDirectory{
 		projects:  []ProjectRow{{ID: "p1", Name: "riff", Slug: "riff"}},
 		createErr: &UnknownModelError{Spoken: "fable", Families: []string{"Opus", "Sonnet"}},
@@ -633,6 +655,7 @@ func (d *peeredDirectory) UnreachableMachines(context.Context) []string { return
 // A session on a paired machine is findable, and the refusal to act on it
 // names it and the machine — from the list, since the brief is local-only.
 func TestFindSessionReachesAPairedMachine(t *testing.T) {
+	t.Parallel()
 	dir := &peeredDirectory{fakeDirectory: &fakeDirectory{sessions: []SessionRow{
 		{ID: "local-1", Name: "Session Parking Feature", ProjectName: "Agentique", MachineID: "local"},
 		{ID: "zb-1", Name: "Plugin Testing", ProjectName: "seisiun", MachineID: "zbook-id", MachineName: "zbook"},
@@ -666,6 +689,7 @@ func TestFindSessionReachesAPairedMachine(t *testing.T) {
 // A sleeping machine is named in the answer, so its absence is not read as
 // "there is no such session".
 func TestListSessionsNamesAnUnreachableMachine(t *testing.T) {
+	t.Parallel()
 	dir := &peeredDirectory{
 		fakeDirectory: &fakeDirectory{sessions: []SessionRow{{ID: "local-1", Name: "x", MachineID: "local"}}},
 		unreachable:   []string{"zbook"},

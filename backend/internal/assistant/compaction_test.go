@@ -124,6 +124,7 @@ func entriesOfKind(t *testing.T, svc *Service, kind JournalKind) []JournalEntry 
 // summary has to carry forward — that it quotes agent-written text, and which
 // standing instructions the day spent — are on the row.
 func TestAFoldedDayKeepsItsUntrustedMarkAndItsPolicies(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 
 	// Two days, both well past the fortnight. The first holds a report (agent
@@ -202,6 +203,7 @@ func TestAFoldedDayKeepsItsUntrustedMarkAndItsPolicies(t *testing.T) {
 // Notable rows are exempt. `notable` is what says consolidation should look at
 // something, so folding one away deletes the entry the brain was going to read.
 func TestNotableRowsAreExemptFromTheFold(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := compactWorld(t)
 
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
@@ -231,6 +233,7 @@ func TestNotableRowsAreExemptFromTheFold(t *testing.T) {
 // boundary is a date rather than a timestamp, so the day the fortnight lands in
 // is not half-folded.
 func TestRecentDaysAreLeftAlone(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, clock := compactWorld(t)
 	now := clock.at
 
@@ -266,6 +269,7 @@ func TestRecentDaysAreLeftAlone(t *testing.T) {
 // summary: the summary that is already there is the one that was written from
 // those rows.
 func TestLeftoversAreDeletedWithoutASecondSummary(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
@@ -311,6 +315,7 @@ func TestLeftoversAreDeletedWithoutASecondSummary(t *testing.T) {
 // included, since a machine that cannot fold anything new must not spend its way
 // through the only compact record it has of its oldest days.
 func TestWithNoSummarizerNothingIsDeleted(t *testing.T) {
+	t.Parallel()
 	clock := &testClock{at: mustTime("2026-09-12T09:00:00Z")}
 	svc, _, _ := newTestService(t, WithClock(clock.now))
 
@@ -344,6 +349,7 @@ func TestWithNoSummarizerNothingIsDeleted(t *testing.T) {
 
 // A folded day is kept for ninety days and then goes too.
 func TestSummariesPastTheKeepWindowGo(t *testing.T) {
+	t.Parallel()
 	svc, _, clock := compactWorld(t)
 	now := clock.at
 
@@ -368,6 +374,7 @@ func TestSummariesPastTheKeepWindowGo(t *testing.T) {
 // One pass folds at most thirty days, OLDEST first, and says how many it did not
 // reach. Nothing is lost: the next pass finds them exactly as they were.
 func TestOnePassFoldsThirtyDaysOldestFirst(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 
 	// Forty consecutive days, all past the fortnight, written newest first so
@@ -421,6 +428,7 @@ func TestOnePassFoldsThirtyDaysOldestFirst(t *testing.T) {
 // A pass that did something journals ONE entry, naming the days and the rows.
 // That row is the only record afterwards that a day's entries went on purpose.
 func TestThePassJournalsItself(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := compactWorld(t)
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
 		Kind: JournalSessionFinished, SessionID: "s1", Summary: "old",
@@ -454,6 +462,7 @@ func TestThePassJournalsItself(t *testing.T) {
 // A summariser that will not answer folds nothing, and nothing is deleted for the
 // day it stopped on: every failure is before the delete.
 func TestASummariserThatFailsDeletesNothing(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 	summarizer.err = errors.New("no CLI")
 
@@ -498,6 +507,7 @@ func TestASummariserThatFailsDeletesNothing(t *testing.T) {
 // the state the rule exists for is a summariser that errors, and in it the
 // ninety-day retention must not run either.
 func TestAFailingSummariserDoesNotExpireOldSummaries(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, clock := compactWorld(t)
 	summarizer.err = errors.New("no CLI")
 
@@ -533,6 +543,7 @@ func TestAFailingSummariserDoesNotExpireOldSummaries(t *testing.T) {
 
 // The answer is clamped, because it is kept forever and read in a strip.
 func TestADaySummaryIsClamped(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 	summarizer.answer = strings.Repeat("x", maxDaySummaryRunes+200)
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
@@ -554,6 +565,7 @@ func TestADaySummaryIsClamped(t *testing.T) {
 // The prompt says what the lines are, because they are agent-written text about
 // repository content and the thing reading them is a model.
 func TestTheDayPromptQuotesUntrustedRowsAndRefusesInstructions(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
 		Kind: JournalReport, SessionID: "s1", Untrusted: true,
@@ -578,6 +590,7 @@ func TestTheDayPromptQuotesUntrustedRowsAndRefusesInstructions(t *testing.T) {
 // The trigger is once per LOCAL day: the first tick after midnight runs the pass,
 // and every tick after it that day does not.
 func TestTheTriggerRunsOncePerLocalDay(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	summarizer := &fakeSummarizer{answer: "a quiet day"}
 	svc, _, clock := heartbeatWorld(t, triager, WithSummarizer(summarizer))
@@ -632,6 +645,7 @@ func TestTheTriggerRunsOncePerLocalDay(t *testing.T) {
 // The trigger is independent of the gate: a machine where nothing has happened
 // still folds, which is the state a fortnight-old day is safest to fold in.
 func TestTheTriggerDoesNotNeedTheGateToOpen(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictAct + ": something"}
 	summarizer := &fakeSummarizer{answer: "a quiet day"}
 	svc, _, _ := heartbeatWorld(t, triager, WithSummarizer(summarizer))
@@ -669,6 +683,7 @@ func TestTheTriggerDoesNotNeedTheGateToOpen(t *testing.T) {
 // that, so those entries would be judged by nobody, once per local day, on
 // exactly the machines whose backlog makes a fold slow.
 func TestTheFoldRunsAfterTheTickHasJudged(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	summarizer := &fakeSummarizer{answer: "a quiet day"}
 	svc, _, _ := heartbeatWorld(t, triager, WithSummarizer(summarizer))
@@ -706,6 +721,7 @@ func TestTheFoldRunsAfterTheTickHasJudged(t *testing.T) {
 // A failing pass still stamps, so it is retried tomorrow rather than on every
 // tick for the rest of the day.
 func TestAFailingPassStillStampsTheDay(t *testing.T) {
+	t.Parallel()
 	triager := &fakeTriager{answer: VerdictNone}
 	summarizer := &fakeSummarizer{err: errors.New("no CLI")}
 	svc, _, clock := heartbeatWorld(t, triager, WithSummarizer(summarizer))
@@ -737,6 +753,7 @@ func TestAFailingPassStillStampsTheDay(t *testing.T) {
 // in-flight count reads `session_created` rows over that window, so folding one
 // away hands a standing instruction its budget back.
 func TestTheFoldBoundaryOutlivesTheBudgetsLookback(t *testing.T) {
+	t.Parallel()
 	if compactAfter < policyInFlightWindow {
 		t.Fatalf("compactAfter is %v and the budgets look back %v: a folded day would take rows "+
 			"an in-flight budget still counts", compactAfter, policyInFlightWindow)
@@ -756,6 +773,7 @@ func TestTheFoldBoundaryOutlivesTheBudgetsLookback(t *testing.T) {
 // and — the one that costs something — the policy ids a longer budget lookback
 // would come here for.
 func TestABusyDaysPayloadDescribesTheWholeDay(t *testing.T) {
+	t.Parallel()
 	db, queries := testutil.SetupDB(t)
 	svc, summarizer, _ := compactWorldOn(t, queries)
 
@@ -806,6 +824,7 @@ func TestABusyDaysPayloadDescribesTheWholeDay(t *testing.T) {
 // the lock both passes see an unfolded day, both pay for a summary, and the day
 // ends up with two sentences nothing afterwards reconciles.
 func TestASecondPassIsRefusedWhileOneIsRunning(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, _ := compactWorld(t)
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
 		Kind: JournalSessionFinished, SessionID: "s1", Summary: "old",
@@ -852,6 +871,7 @@ func TestASecondPassIsRefusedWhileOneIsRunning(t *testing.T) {
 // pass's retention sweep would delete it before the pass returned. Only a
 // machine working through a backlog older than ninety days gets here.
 func TestADayPastTheKeepWindowIsDeletedWithoutAModelCall(t *testing.T) {
+	t.Parallel()
 	svc, summarizer, clock := compactWorld(t)
 
 	past := clock.at.Add(-summaryRetention).Add(-48 * time.Hour)
@@ -891,6 +911,7 @@ func TestADayPastTheKeepWindowIsDeletedWithoutAModelCall(t *testing.T) {
 // gating the sweep on that left the keep window unenforced for as long as the
 // backlog lasted — which is exactly when the table is largest.
 func TestTheKeepWindowIsSweptWhenTheBudgetRanOut(t *testing.T) {
+	t.Parallel()
 	svc, _, clock := compactWorld(t)
 	stale := formatTime(clock.at.Add(-summaryRetention).Add(-24 * time.Hour))
 	happenedAt(t, svc, stale, journalWrite{Kind: JournalDaySummary, Summary: "long ago"})
@@ -910,6 +931,7 @@ func TestTheKeepWindowIsSweptWhenTheBudgetRanOut(t *testing.T) {
 // and is never what a notch led the reader to; the `compaction` row beside it is
 // the one that says something happened.
 func TestAFoldedDayDoesNotClaimAttention(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _ := compactWorld(t)
 	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{

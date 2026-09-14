@@ -12,6 +12,7 @@ import (
 // A policy needs a name, and its text is capped rather than truncated: storing
 // half an instruction is worse than refusing the save.
 func TestSavingAPolicyValidatesItsNameAndCapsItsText(t *testing.T) {
+	t.Parallel()
 	svc, _, _ := newTestService(t)
 	ctx := context.Background()
 
@@ -41,6 +42,7 @@ func TestSavingAPolicyValidatesItsNameAndCapsItsText(t *testing.T) {
 // An unset budget is the default, never zero: a client that omits a field must
 // not write a policy that can do nothing.
 func TestAnUnsetBudgetIsTheDefault(t *testing.T) {
+	t.Parallel()
 	svc, _, recorder := newTestService(t)
 	saved, err := svc.SavePolicy(context.Background(), Policy{Name: "nightly tests", Enabled: true})
 	if err != nil {
@@ -61,6 +63,7 @@ func TestAnUnsetBudgetIsTheDefault(t *testing.T) {
 // An edit is the same statement, and a delete pushes the row's absence on the
 // same event rather than as a second kind.
 func TestEditingAndDeletingAPolicy(t *testing.T) {
+	t.Parallel()
 	svc, _, recorder := newTestService(t)
 	ctx := context.Background()
 
@@ -97,6 +100,7 @@ func TestEditingAndDeletingAPolicy(t *testing.T) {
 // A policy that has created its day's sessions refuses the next one, and the
 // refusal names the budget and the count.
 func TestTheDayBudgetRefusesAndNamesTheCount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{projects: []ProjectRow{{ID: "p1", Name: "riff"}}}
 	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
@@ -140,6 +144,7 @@ func TestTheDayBudgetRefusesAndNamesTheCount(t *testing.T) {
 
 // The in-flight budget counts the policy's own sessions that are still live.
 func TestTheInFlightBudgetRefusesWhileItsSessionIsStillRunning(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{}
 	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
@@ -183,6 +188,7 @@ func TestTheInFlightBudgetRefusesWhileItsSessionIsStillRunning(t *testing.T) {
 // The ceiling is the backstop: it counts the sessions TABLE, so a journal entry
 // that never landed cannot widen what the assistant may start in a day.
 func TestTheAssistantsDayCeilingCountsTheSessionsTable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{}
 	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
@@ -218,6 +224,7 @@ func TestTheAssistantsDayCeilingCountsTheSessionsTable(t *testing.T) {
 // Without a policy the verbs are unbudgeted: the operator asked, in a
 // conversation they can read.
 func TestWithNoPolicyThereIsNoBudget(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{}
 	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
@@ -248,6 +255,7 @@ func TestWithNoPolicyThereIsNoBudget(t *testing.T) {
 // A name that is not a policy is refused rather than treated as no policy: the
 // fallback would be an unbudgeted action bought with an invented word.
 func TestAnInventedPolicyNameIsRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dir := &fakeDirectory{}
 	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
@@ -284,6 +292,7 @@ func TestAnInventedPolicyNameIsRefused(t *testing.T) {
 // A dispatch under a policy carries it to the turn, and the journal entry names
 // it — which is what the budgets count and what a person reads afterwards.
 func TestADispatchUnderAPolicyCarriesItAndIsJournaled(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dispatcher := &fakeDispatcher{}
 	dir := &fakeDirectory{sessions: []SessionRow{{ID: "s1", Name: "the retry fix", ProjectName: "riff"}}}
@@ -337,6 +346,7 @@ func TestADispatchUnderAPolicyCarriesItAndIsJournaled(t *testing.T) {
 
 // A dispatch the operator asked for carries no policy at all.
 func TestADispatchWithoutAPolicyCarriesNone(t *testing.T) {
+	t.Parallel()
 	dispatcher := &fakeDispatcher{}
 	dir := &fakeDirectory{sessions: []SessionRow{{ID: "s1", Name: "the retry fix"}}}
 	svc, _, _ := newTestService(t, WithDirectory(dir), WithDispatcher(dispatcher))
