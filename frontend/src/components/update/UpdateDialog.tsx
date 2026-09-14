@@ -198,12 +198,12 @@ function UpgradeAllAction({ steps }: { steps: BulkStep[] }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {steps.length >= 2 ? (
-        <span className="flex items-center gap-2">
-          <Button size="sm" disabled={starting} onClick={() => void start()}>
+        <span className="flex min-w-0 items-center gap-2">
+          <Button className="shrink-0" size="sm" disabled={starting} onClick={() => void start()}>
             {starting ? "Starting…" : `Upgrade all (${steps.length})`}
           </Button>
           {waiting > 0 ? (
-            <span className="truncate text-[10.5px] text-muted-foreground-faint">
+            <span className="min-w-0 text-[10.5px] leading-tight text-muted-foreground-faint">
               {waiting === steps.length ? "all" : waiting} busy — upgrade{waiting === 1 ? "s" : ""}{" "}
               when idle
             </span>
@@ -318,10 +318,13 @@ export function UpdateDialog({
           ))}
         </div>
 
-        <div className="flex items-start justify-between gap-3">
+        {/* min-w-0 for the same reason as the rows above: without it the
+            caption beside Upgrade all widened the grid track past a phone's
+            viewport and clipped every row. */}
+        <div className="flex min-w-0 items-start justify-between gap-3">
           <UpgradeAllAction steps={bulk} />
           <Button
-            className="ml-auto"
+            className="ml-auto shrink-0"
             size="sm"
             variant="ghost"
             disabled={busy}
