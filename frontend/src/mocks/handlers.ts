@@ -1,5 +1,5 @@
 import { HttpResponse, http } from "msw";
-import { MOCK_PROJECTS } from "./data";
+import { MOCK_PROJECTS, PROJECT_IDS } from "./data";
 import {
   MOCK_BRAIN_GRAPH,
   MOCK_BRAIN_STATUS,
@@ -12,6 +12,48 @@ import {
   MOCK_USAGE,
   MOCK_VOICE_SETTINGS,
 } from "./demo-data";
+
+/**
+ * web-2's home directory, for the folder project: the loose layout of someone
+ * who lets an agent make a directory per idea. Dotfiles are there so the
+ * composer's completion has something to leave out.
+ */
+const WEB_HOME_TREE: Record<string, [name: string, isDir: boolean][]> = {
+  "": [
+    [".bashrc", false],
+    [".config", true],
+    ["ideas", true],
+    ["nginx", true],
+    ["sites", true],
+    ["notes.md", false],
+    ["todo.txt", false],
+  ],
+  "ideas/": [
+    ["coffee-subscription.md", false],
+    ["plant-watering-bot", true],
+  ],
+  "nginx/": [["blog.example.com.conf", false]],
+  "sites/": [
+    ["blog", true],
+    ["coffee", true],
+  ],
+  "sites/blog/": [
+    ["posts", true],
+    ["index.html", false],
+    ["style.css", false],
+  ],
+  "sites/coffee/": [["index.html", false]],
+};
+
+function webHomeListing(dir: string) {
+  const key = dir === "" || dir.endsWith("/") ? dir : `${dir}/`;
+  return (WEB_HOME_TREE[key] ?? []).map(([name, isDir]) => ({
+    name,
+    isDir,
+    size: isDir ? 0 : 1024,
+    modTime: "2026-09-12T10:00:00Z",
+  }));
+}
 
 export const restHandlers = [
   http.get("/api/auth/status", () => {
@@ -39,9 +81,12 @@ export const restHandlers = [
     ]);
   }),
 
-  http.get("/api/projects/:id/files", ({ request }) => {
+  http.get("/api/projects/:id/files", ({ request, params }) => {
     const url = new URL(request.url);
     const subpath = url.searchParams.get("path") || "";
+    if (params.id === PROJECT_IDS.webHome) {
+      return HttpResponse.json({ path: subpath, entries: webHomeListing(subpath) });
+    }
     if (subpath === "") {
       return HttpResponse.json({
         path: "",

@@ -278,15 +278,24 @@ export function useAutocomplete({
 
 // --- Helpers ---
 
-interface Trigger {
+export interface Trigger {
   type: "@" | "/";
   start: number;
   query: string;
 }
 
-function detectTrigger(text: string, cursor: number): Trigger | null {
+/**
+ * The completion trigger the cursor is inside, if any: an `@` after whitespace
+ * or at the start, or a `/` command at the very start of the text.
+ *
+ * A `/` anywhere else is part of an `@` path (`@sites/blog/`), which folder
+ * completion reads one directory at a time — so it never ends the scan. It does
+ * disqualify a command: `/usr/bin` at the start is a path, not `/usr`.
+ */
+export function detectTrigger(text: string, cursor: number): Trigger | null {
   if (cursor === 0) return null;
 
+  let sawSlash = false;
   for (let i = cursor - 1; i >= 0; i--) {
     const ch = text[i];
 
@@ -300,8 +309,8 @@ function detectTrigger(text: string, cursor: number): Trigger | null {
     }
 
     if (ch === "/") {
-      if (i !== 0) return null;
-      return { type: "/", start: 0, query: text.slice(1, cursor) };
+      if (i === 0 && !sawSlash) return { type: "/", start: 0, query: text.slice(1, cursor) };
+      sawSlash = true;
     }
   }
 

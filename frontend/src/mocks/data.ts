@@ -31,6 +31,8 @@ const P = {
   agentkit: "aaa00005-0000-4000-8000-000000000005",
   codexcliGo: "aaa00006-0000-4000-8000-000000000006",
   mobilixPwa: "aaa00007-0000-4000-8000-000000000007",
+  // A plain folder, not a repository: a VPS home directory worked in directly.
+  webHome: "aaa00008-0000-4000-8000-000000000008",
 } as const;
 
 const S = {
@@ -53,6 +55,9 @@ const S = {
   sprintBoard: "ggg00002-0000-4000-8000-000000000002",
   // mobilix-pwa
   realtimeMap: "hhh00001-0000-4000-8000-000000000001",
+  // web-2 (folder project)
+  nginxBlog: "iii00001-0000-4000-8000-000000000001",
+  coffeeLanding: "iii00002-0000-4000-8000-000000000002",
   departureTimes: "hhh00002-0000-4000-8000-000000000002",
 } as const;
 
@@ -211,6 +216,29 @@ export const MOCK_PROJECTS: Project[] = [
     max_sessions: 25,
     created_at: daysAgo(80),
     updated_at: daysAgo(7),
+  },
+  {
+    // Named after the machine rather than the directory: seven VPS home
+    // directories would otherwise all be called "dev".
+    id: P.webHome,
+    name: "web-2",
+    path: "/home/dev",
+    slug: "web-2",
+    default_model: "sonnet",
+    default_permission_mode: "default",
+    default_system_prompt: "",
+    default_behavior_presets: "{}",
+    sort_order: 8,
+    favorite: 0,
+    pinned: 0,
+    remote_url: "",
+    kind: "folder",
+    color: "purple",
+    icon: "server",
+    folder: "",
+    max_sessions: 25,
+    created_at: daysAgo(14),
+    updated_at: hoursAgo(1),
   },
 ];
 
@@ -623,6 +651,52 @@ const MOBILIX_SESSIONS: SessionInfo[] = [
   },
 ];
 
+// web-2: a folder project — no worktree, no branch, no commits to count
+const WEB_HOME_SESSIONS: SessionInfo[] = [
+  {
+    id: S.nginxBlog,
+    projectId: P.webHome,
+    pinned: false,
+    pinOrder: 0,
+    name: "Serve the blog over nginx",
+    state: "idle",
+    connected: true,
+    model: "sonnet",
+    permissionMode: "default",
+    autoApproveMode: "fullAuto",
+    behaviorPresets: DEFAULT_PRESETS,
+    gitVersion: 1,
+    commitsAhead: 0,
+    commitsBehind: 0,
+    turnCount: 1,
+    totalCost: 0,
+    createdAt: hoursAgo(2),
+    updatedAt: hoursAgo(1),
+    lastQueryAt: hoursAgo(1.2),
+  },
+  {
+    id: S.coffeeLanding,
+    projectId: P.webHome,
+    pinned: false,
+    pinOrder: 0,
+    name: "Landing page for the coffee idea",
+    state: "running",
+    connected: true,
+    model: "opus",
+    permissionMode: "default",
+    autoApproveMode: "fullAuto",
+    behaviorPresets: DEFAULT_PRESETS,
+    gitVersion: 1,
+    commitsAhead: 0,
+    commitsBehind: 0,
+    turnCount: 1,
+    totalCost: 0,
+    createdAt: hoursAgo(0.3),
+    updatedAt: hoursAgo(0.02),
+    lastQueryAt: hoursAgo(0.02),
+  },
+];
+
 export const MOCK_SESSIONS: Record<string, SessionInfo[]> = {
   [P.agentique]: AGENTIQUE_SESSIONS,
   [P.webtickets]: WEBTICKETS_SESSIONS,
@@ -631,6 +705,7 @@ export const MOCK_SESSIONS: Record<string, SessionInfo[]> = {
   [P.agentkit]: AGENTKIT_SESSIONS,
   [P.codexcliGo]: CODEXCLI_SESSIONS,
   [P.mobilixPwa]: MOBILIX_SESSIONS,
+  [P.webHome]: WEB_HOME_SESSIONS,
 };
 
 // --- Project git status ---
@@ -1242,6 +1317,45 @@ const darkModeTurns: MockTurn[] = [
         "Dark mode implemented. The toggle persists to localStorage and respects `prefers-color-scheme` on first visit.",
       ),
       result(67000),
+    ],
+  },
+];
+
+const nginxBlogTurns: MockTurn[] = [
+  {
+    prompt: "put the blog in ~/sites/blog online at blog.example.com, with https",
+    events: [
+      text("I'll check what's in the folder and how nginx is set up on this box first."),
+      toolUse("Bash", { command: "ls ~/sites/blog && nginx -v" }, "command", "mock-tool-nb-01"),
+      toolResult("mock-tool-nb-01", "index.html  posts  style.css\nnginx version: nginx/1.24.0"),
+      toolUse(
+        "Write",
+        {
+          file_path: "/home/dev/nginx/blog.example.com.conf",
+          content: "server {\n  server_name blog.example.com;\n  root /home/dev/sites/blog;\n}",
+        },
+        "file_write",
+        "mock-tool-nb-02",
+      ),
+      toolResult("mock-tool-nb-02", "File written successfully."),
+      toolUse(
+        "Bash",
+        {
+          command:
+            "sudo ln -sf /home/dev/nginx/blog.example.com.conf /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx && sudo certbot --nginx -d blog.example.com --non-interactive",
+          description: "Enable the site and get a certificate",
+        },
+        "command",
+        "mock-tool-nb-03",
+      ),
+      toolResult(
+        "mock-tool-nb-03",
+        "nginx: configuration file /etc/nginx/nginx.conf test is successful\nSuccessfully deployed certificate for blog.example.com",
+      ),
+      text(
+        "The blog is live at https://blog.example.com. The site config lives in `~/nginx/blog.example.com.conf` and is linked into `/etc/nginx/sites-enabled`, so editing that one file and reloading nginx is all a change needs. Certbot renews the certificate on its own.",
+      ),
+      result(48000),
     ],
   },
 ];
@@ -1956,6 +2070,7 @@ export const MOCK_TURNS: Record<string, MockTurn[]> = {
   [S.imageGallery]: imageGalleryTurns,
   [S.schedulerTests]: schedulerTestsTurns,
   [S.queryOptimizer]: queryOptimizerTurns,
+  [S.nginxBlog]: nginxBlogTurns,
 };
 
 // --- Channels ---

@@ -828,8 +828,9 @@ In development the frontend opens its WebSocket straight at `:9201` rather than
 through the Vite proxy.
 
 `just dev-mock` is also the demo build: `frontend/src/mocks/` holds a whole
-invented world — seven projects, sessions in every state, transcripts with tool
-calls and a subagent fan-out, plus storage, subscription usage, scheduled loops,
+invented world — eight projects (one of them a plain folder rather than a
+repository), sessions in every state, transcripts with tool calls and a subagent
+fan-out, plus storage, subscription usage, scheduled loops,
 templates, teams and the brain. Every page renders without a server, and no real
 database is touched, which makes it the surface to screenshot or present from.
 Fixture content is the contract's shape, so a change to a wire type belongs in

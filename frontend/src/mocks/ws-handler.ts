@@ -54,6 +54,14 @@ function respondError(client: WsClientConnection, id: string, message: string) {
   client.send(JSON.stringify({ id, type: "response", error: { message } }));
 }
 
+/** The server's refusal for git on a plain folder, word for word. */
+const NOT_A_REPOSITORY = "not a git repository: the folder has no .git of its own";
+
+/** A mock project whose folder is not a repository (`kind: "folder"`). */
+function isMockFolder(projectId: unknown): boolean {
+  return MOCK_PROJECTS.find((proj) => proj.id === projectId)?.kind === "folder";
+}
+
 function push(client: WsClientConnection, type: string, payload: unknown) {
   // Validate push payloads against generated schemas where applicable.
   if (type === "session.state") {
@@ -778,14 +786,24 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
     }
 
     case "project.git-status": {
-      const status = MOCK_PROJECT_GIT_STATUS[p.projectId as string] ?? {
+      // A plain folder answers the zero status, as the server does.
+      const folderStatus = isMockFolder(p.projectId) && {
         projectId: p.projectId,
-        branch: "main",
-        hasRemote: true,
+        branch: "",
+        hasRemote: false,
         aheadRemote: 0,
         behindRemote: 0,
         uncommittedCount: 0,
       };
+      const status = folderStatus ||
+        MOCK_PROJECT_GIT_STATUS[p.projectId as string] || {
+          projectId: p.projectId,
+          branch: "main",
+          hasRemote: true,
+          aheadRemote: 0,
+          behindRemote: 0,
+          uncommittedCount: 0,
+        };
       respond(
         client,
         msg.id,
@@ -795,6 +813,14 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
     }
 
     case "session.create": {
+      if (p.worktree && isMockFolder(p.projectId)) {
+        respondError(
+          client,
+          msg.id,
+          `project is a plain folder, so its sessions cannot have a worktree: ${NOT_A_REPOSITORY}`,
+        );
+        break;
+      }
       const id = `mock-created-${++sessionCounter}`;
       const createResult = {
         sessionId: id,
@@ -1134,6 +1160,10 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
       break;
 
     case "project.tracked-files": {
+      if (isMockFolder(p.projectId)) {
+        respond(client, msg.id, { files: [] });
+        break;
+      }
       const trackedPayload = {
         files: [
           "README.md",
@@ -1275,7 +1305,8 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
     case "session.attention":
     case "project.fetch":
     case "project.push":
-      respond(client, msg.id);
+      if (isMockFolder(p.projectId)) respondError(client, msg.id, NOT_A_REPOSITORY);
+      else respond(client, msg.id);
       break;
 
     case "channel.list": {
