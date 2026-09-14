@@ -14,6 +14,7 @@ import { useFileDropTarget } from "~/hooks/useFileDrop";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { ACCEPTED_TYPES, type EffortLevel } from "~/lib/composer-constants";
 import type { ModelId, ProviderId } from "~/lib/session/actions";
+import { DICTATION_FAULT_COPY } from "~/lib/speech/dictation-fault";
 import { cn } from "~/lib/utils";
 import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AttachmentStrip } from "./composer/AttachmentStrip";
@@ -256,10 +257,24 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
               "h-8 w-8 max-md:h-10 max-md:w-10 rounded-lg flex items-center justify-center transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none touch-manipulation",
               speech.isListening
                 ? "text-destructive bg-destructive/10 mic-pulse"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
+                : speech.fault
+                  ? "text-muted-foreground/50 hover:bg-muted/80"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/80",
             )}
-            aria-label={speech.isListening ? "Stop dictation" : "Start dictation"}
-            title="Click to toggle, hold to dictate (Ctrl+Shift+M)"
+            // A mic that cannot work stays pressable, not `disabled`: pressing it
+            // is how the reason gets said, and a disabled button shows no title.
+            aria-label={
+              speech.isListening
+                ? "Stop dictation"
+                : speech.fault
+                  ? `Dictation unavailable: ${DICTATION_FAULT_COPY[speech.fault].title}`
+                  : "Start dictation"
+            }
+            title={
+              speech.fault && !speech.isListening
+                ? DICTATION_FAULT_COPY[speech.fault].title
+                : "Click to toggle, hold to dictate (Ctrl+Shift+M)"
+            }
           >
             {speech.isListening ? (
               <MicOff className="h-3.5 w-3.5" />

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { useSpeechRecognition } from "~/hooks/useSpeechRecognition";
+import { DICTATION_FAULT_COPY, type DictationFault } from "~/lib/speech/dictation-fault";
 
 interface UseComposerSpeechParams {
   /** Reads the current composer text (synchronous, ref-backed). */
@@ -11,6 +13,8 @@ interface UseComposerSpeechParams {
 export interface ComposerSpeech {
   isSupported: boolean;
   isListening: boolean;
+  /** Why dictation cannot work here, if known — drives the mic button's resting look. */
+  fault: DictationFault | null;
   /** Unconditional teardown — used by send before clearing. */
   forceStop: () => void;
   /** Click/keyboard toggle. */
@@ -57,6 +61,12 @@ export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams)
       },
       [setText],
     ),
+    // One id, so pressing a mic that cannot work replaces its toast rather than
+    // stacking another.
+    onFault: useCallback((fault: DictationFault) => {
+      const copy = DICTATION_FAULT_COPY[fault];
+      toast.error(copy.title, { id: "dictation-fault", description: copy.detail });
+    }, []),
   });
 
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,6 +144,7 @@ export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams)
   return {
     isSupported: speech.isSupported,
     isListening: speech.isListening,
+    fault: speech.fault,
     forceStop: speech.forceStop,
     toggle: speech.toggle,
     micHandlers: {

@@ -101,6 +101,9 @@ const { instances, FakeRecognition } = vi.hoisted(() => {
   return { instances, FakeRecognition };
 });
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { error: toastError } }));
+
 type Rec = InstanceType<typeof FakeRecognition>;
 
 /** The recognizers still holding the microphone. There must never be two. */
@@ -131,6 +134,7 @@ function mountComposerSpeech(initialText = "") {
 
 beforeEach(() => {
   instances.length = 0;
+  toastError.mockClear();
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
@@ -282,15 +286,46 @@ describe("when the span really is over", () => {
     expect(instances).toHaveLength(1);
   });
 
-  it("rides out a transient network error", () => {
+  it("rides out a network error once the service has answered", () => {
+    const { result } = mountComposerSpeech();
+    act(() => result.current.toggle());
+    const rec = newest();
+    act(() => rec.final("hello"));
+    act(() => rec.error("network"));
+    act(() => rec.end());
+
+    expect(result.current.isListening).toBe(true);
+    expect(instances).toHaveLength(2);
+    expect(result.current.fault).toBeNull();
+  });
+
+  it("names the fault when the service never answers (Brave's block)", () => {
+    // The field report: the mic lit for a few seconds while three sessions
+    // each failed with `network`, then went dark with no reason given.
     const { result } = mountComposerSpeech();
     act(() => result.current.toggle());
     const rec = newest();
     act(() => rec.error("network"));
     act(() => rec.end());
 
-    expect(result.current.isListening).toBe(true);
+    expect(result.current.isListening).toBe(false);
+    expect(instances).toHaveLength(1);
+    expect(result.current.fault).toBe("service-unreachable");
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
+
+  it("names Safari's switched-off Dictation, and retries on the next press", () => {
+    const { result } = mountComposerSpeech();
+    act(() => result.current.toggle());
+    act(() => newest().error("service-not-allowed"));
+    act(() => newest().end());
+    expect(result.current.fault).toBe("service-disabled");
+
+    // Turning Dictation on happens outside the page; the next press must try.
+    act(() => result.current.toggle());
     expect(instances).toHaveLength(2);
+    expect(result.current.isListening).toBe(true);
+    expect(result.current.fault).toBeNull();
   });
 
   it("does not restart after the operator stops it", () => {
@@ -301,6 +336,23 @@ describe("when the span really is over", () => {
 
     expect(result.current.isListening).toBe(false);
     expect(instances).toHaveLength(1);
+  });
+
+  it("refuses to take the microphone in a browser known to block the service", async () => {
+    const nav = navigator as unknown as { brave?: unknown };
+    nav.brave = { isBrave: () => Promise.resolve(true) };
+    try {
+      const { result } = mountComposerSpeech();
+      await act(async () => {});
+      expect(result.current.fault).toBe("browser-blocked");
+
+      act(() => result.current.toggle());
+      expect(instances).toHaveLength(0);
+      expect(result.current.isListening).toBe(false);
+      expect(toastError).toHaveBeenCalledTimes(1);
+    } finally {
+      delete nav.brave;
+    }
   });
 
   it("does not restart into an unmounted composer", () => {

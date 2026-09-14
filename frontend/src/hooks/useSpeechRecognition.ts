@@ -27,6 +27,12 @@
  * re-delivered words from landing twice.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type DictationFault,
+  faultForError,
+  type ProbeNavigator,
+  probeDictationFault,
+} from "~/lib/speech/dictation-fault";
 import { joinTranscript, reduceTranscriptParts } from "~/lib/speech-transcript";
 
 const SpeechRecognitionCtor =
@@ -77,6 +83,12 @@ interface UseSpeechRecognitionOptions {
   onBeforeStart?: () => void;
   /** Called when the span ends (user toggle, fatal error, or silence timeout). */
   onEnd?: () => void;
+  /**
+   * Called when dictation cannot work here: a start refused by a fault known
+   * beforehand, or a span ended by an error that names one. The caller says
+   * why; the hook only classifies.
+   */
+  onFault?: (fault: DictationFault) => void;
   /** BCP-47 language tag. Defaults to browser locale. */
   lang?: string;
 }
@@ -85,9 +97,20 @@ export function useSpeechRecognition({
   onTranscript,
   onBeforeStart,
   onEnd,
+  onFault,
   lang,
 }: UseSpeechRecognitionOptions) {
   const [isListening, setIsListening] = useState(false);
+
+  // Two sources, kept apart because they clear differently. The probe's answer
+  // holds until the browser says otherwise (a permission change); an attempt's
+  // answer holds only until the next attempt, since the one thing that fixes
+  // it — switching Dictation on, reconnecting — happens where we cannot see.
+  const [probedFault, setProbedFault] = useState<DictationFault | null>(null);
+  const [attemptFault, setAttemptFault] = useState<DictationFault | null>(null);
+  const probedFaultRef = useRef<DictationFault | null>(null);
+  // Whether the current span has heard anything at all; see faultForError.
+  const heardInSpanRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Synchronous mirror of isListening — immune to React batching. True for the
@@ -113,8 +136,24 @@ export function useSpeechRecognition({
   onBeforeStartRef.current = onBeforeStart;
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
+  const onFaultRef = useRef(onFault);
+  onFaultRef.current = onFault;
 
   const isSupported = !!SpeechRecognitionCtor;
+
+  useEffect(() => {
+    if (!SpeechRecognitionCtor || typeof navigator === "undefined") return;
+    let cancelled = false;
+    const apply = (fault: DictationFault | null) => {
+      if (cancelled) return;
+      probedFaultRef.current = fault;
+      setProbedFault(fault);
+    };
+    void probeDictationFault(navigator as unknown as ProbeNavigator, apply).then(apply);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Reset all state to "not listening". Shared by stop paths.
   const resetState = useCallback(() => {
@@ -190,6 +229,7 @@ export function useSpeechRecognition({
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (sessionIdRef.current !== mySession) return;
       sawResult = true;
+      heardInSpanRef.current = true;
       // The list is authoritative and complete on every event, so the transcript
       // is derived from it rather than accumulated here. See reduceTranscript
       // for why interim results must not be added to it.
@@ -236,7 +276,12 @@ export function useSpeechRecognition({
       // continues or runs out of its budget there — one rule, one place.
       if (event.error === "no-speech") return;
       console.warn("[speech]", event.error, event.message);
-      if (!FATAL_ERRORS.has(event.error)) return;
+      const fault = faultForError(event.error, heardInSpanRef.current);
+      if (!fault && !FATAL_ERRORS.has(event.error)) return;
+      if (fault) {
+        setAttemptFault(fault);
+        onFaultRef.current?.(fault);
+      }
       stop();
     };
 
@@ -252,6 +297,10 @@ export function useSpeechRecognition({
       recognition.onerror = null;
       recognition.onend = null;
       recognitionRef.current = null;
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setAttemptFault("mic-denied");
+        onFaultRef.current?.("mic-denied");
+      }
       endSpan();
     }
   }, [lang, stop, endSpan]);
@@ -259,6 +308,16 @@ export function useSpeechRecognition({
 
   const start = useCallback(() => {
     if (!SpeechRecognitionCtor || listeningRef.current) return;
+
+    // A fault known beforehand is reported instead of attempted: the attempt
+    // would take the microphone only to fail the same way.
+    const known = probedFaultRef.current;
+    if (known) {
+      onFaultRef.current?.(known);
+      return;
+    }
+    setAttemptFault(null);
+    heardInSpanRef.current = false;
 
     // Reclaim the microphone from a leftover instance: after stop() the previous
     // recognizer stays in the ref until its onend, so a fast re-click lands here
@@ -296,7 +355,10 @@ export function useSpeechRecognition({
     };
   }, []);
 
-  return { isListening, isSupported, start, stop, forceStop, toggle };
+  /** Why dictation cannot work here, if known; the probe outranks an attempt. */
+  const fault = probedFault ?? attemptFault;
+
+  return { isListening, isSupported, fault, start, stop, forceStop, toggle };
 }
 
 /**
