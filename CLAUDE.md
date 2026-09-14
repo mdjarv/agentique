@@ -743,6 +743,12 @@ session set reaps nothing, an unrecognised project is spared, a live session is
 never touched. `prune` opens the database read-only — a command that reports what
 it *would* delete must not migrate the live database to do it.
 
+**Storage is per machine and never summed.** The page shows one machine at a
+time (`?machine=`), every verb carries that machine's id, and an away machine
+shows its last reading with no verb offered. The footer meter stays this
+machine's; a reachable remote under the 3 GiB floor (`isLowDisk`, the one
+predicate every surface reads) adds a notch.
+
 `POST /api/storage/reclaim` re-plans server-side and intersects with the request,
 so a stale client narrows the set and never widens it. Reclamation never runs on
 a timer; the startup sweep stays orphans-only.
@@ -1271,9 +1277,11 @@ one; a client threshold is a guess about somebody else's limit.
 
 **`kind: "gauge"` is what stops disk pretending to be an allowance.** An
 allowance resets, so it may escalate and shows a countdown. A gauge is a level:
-a small disk at 88% is its normal state, not news, so it never escalates, never
-counts down, and shows its absolute figure. A permanent warning teaches the
-reader to ignore warnings.
+a small disk at 88% is its normal state, not news, so it never escalates on its
+height, never counts down, and shows its absolute figure. A permanent warning
+teaches the reader to ignore warnings. The exception is an absolute floor, not a
+percentage: under 3 GiB free the disk gauge turns amber, because that breaks the
+next install on any size of disk.
 
 Today's tokens come from agentique's own `result` events, not a JSONL scan — it
 ran those turns, and it can answer for every provider rather than the one that

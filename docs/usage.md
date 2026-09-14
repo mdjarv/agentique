@@ -253,8 +253,13 @@ in place.
 - **Scale is decided per payload, not per value.**
 - **Windows are named from `kind` or a duration, never from a model name.**
 - **Unknown is not zero.** A negative percent is filtered everywhere.
-- **A gauge never escalates and never counts down**, and it is the link to the
-  page it is a level of.
+- **A gauge never escalates on its height and never counts down**, and it is the
+  link to the page it is a level of. The one exception is the disk floor: under
+  3 GiB free (`LOW_DISK_BYTES`, `lib/storage/fleet.ts`) the disk gauge turns
+  amber, because an absolute shortfall breaks the next install on any size of
+  disk. The client judges it from the machine's own byte counts and passes it
+  as an explicit severity, which is the only thing `limitTier` lets escalate a
+  gauge.
 - **A failed refresh never blanks anything.**
 - **A transport failure is not an HTTP status.**
 - **A cached percentage expires on its window, not on a clock.**

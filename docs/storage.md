@@ -239,6 +239,42 @@ subset: it reclaims nothing that still has a session row. Nothing runs on a time
 — reclaiming is something a person chose, and the page's reclaimable figure is
 what makes the growth visible instead.
 
+## More than one machine
+
+Every paired machine answers `/api/storage/*` for itself, and the client asks
+each one (`apiFetch` with the machine id) rather than the server proxying. The
+wire needed no change: a remote's outbound bearer already reaches these routes,
+and reclaim re-plans on the machine that owns the sessions.
+
+**Nothing is summed across machines.** Two volumes are not one volume: freeing
+space on one does nothing for the other, and a bulk verb spanning two would
+partly succeed and partly fail. So the page shows **one machine at a time**,
+chosen from a rail (desktop) or a picker that opens the same list in a sheet
+(phone), and `?machine=<id>` records the choice. The page body is keyed by
+machine, so a selection or an open dialog never carries over to another
+machine's rows. Every verb carries the machine's id.
+
+The rail lists this machine first and the rest in catalog order, never by
+free space: a list that re-sorts itself moves a row out from under the pointer
+when a reclaim lands. Each row shows free space in words and a level bar.
+
+**An away machine keeps its last reading and offers no verb.** The page says
+how old the reading is, and every button that would send a request to the
+machine is absent rather than disabled-with-a-spinner.
+
+**The floor.** Below 3 GiB free a disk is low (`isLowDisk`,
+`lib/storage/fleet.ts`), whatever its size, and that one predicate colours the
+rail's bars, the footer meter and the footer's notch, so no two surfaces can
+disagree about which machine is low. An away machine is never called low: a
+warning about a disk nothing here can act on is a claim with nothing behind it.
+
+**The footer stays this machine's.** The disk meter is this machine's level
+(amber below the floor). A reachable remote below the floor adds a notch at
+the meter's corner, and the tooltip lists every machine's free space. A click
+leads to this machine when it is low itself, else to the first low remote.
+Disk readings are polled every two minutes for this machine and every
+connected remote (`startDiskPolling`), and at once when a remote connects.
+
 ## Non-goals
 
 - **Deduplicating `node_modules`.** No reflink on ext4, npm's cache is already
