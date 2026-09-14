@@ -6,6 +6,7 @@
  * the dialog works whether or not the machine is currently reachable.
  */
 import { useEffect, useState } from "react";
+import { IconGrid } from "~/components/icons/IconGrid";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -17,8 +18,10 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { DEFAULT_MACHINE_ICON, MACHINE_ICONS } from "~/lib/machines/icons";
-import { cn } from "~/lib/utils";
+import { iconGroupsFor } from "~/lib/icon-catalog";
+import { DEFAULT_MACHINE_ICON } from "~/lib/machines/icons";
+
+const MACHINE_GROUPS = iconGroupsFor("machine");
 
 export interface MachineIdentityDraft {
   label: string;
@@ -92,27 +95,15 @@ export function MachineIdentityDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="machine-icon">Icon</Label>
-            <div id="machine-icon" className="flex flex-wrap gap-1.5">
-              {MACHINE_ICONS.map(({ id, icon: Icon, label: name }) => (
-                <button
-                  key={id}
-                  type="button"
-                  title={name}
-                  aria-label={name}
-                  aria-pressed={icon === id}
-                  onClick={() => setIcon(icon === id ? "" : id)}
-                  className={cn(
-                    "flex size-9 cursor-pointer items-center justify-center rounded-md border transition-colors",
-                    icon === id
-                      ? "border-primary/60 bg-primary/15 text-primary"
-                      : "border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                  )}
-                >
-                  <Icon className="size-4" />
-                </button>
-              ))}
-            </div>
+            <Label>Icon</Label>
+            <IconGrid
+              groups={MACHINE_GROUPS}
+              value={icon}
+              onSelect={setIcon}
+              clearTitle="None (platform or default glyph)"
+              clearGlyph={<DEFAULT_MACHINE_ICON className="size-4" />}
+              className="h-64 rounded-md border border-border/60 p-2"
+            />
             <span className="text-[11.5px] text-muted-foreground-faint">
               Unset falls back to the generic <DEFAULT_MACHINE_ICON className="inline size-3" />{" "}
               glyph.

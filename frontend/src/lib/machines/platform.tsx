@@ -16,7 +16,9 @@
  * dialog's picker grid.
  */
 import { SiApple, SiLinux } from "@icons-pack/react-simple-icons";
+import { dynamicIconImports } from "lucide-react/dynamic";
 import type { ComponentType } from "react";
+import { useProjectIcon } from "~/hooks/useProjectIcon";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 
 export type Platform = "linux" | "darwin" | "windows";
@@ -89,10 +91,37 @@ export function platformGlyph(raw: string | undefined | null): PlatformGlyph | n
  * wins (presentation outranks fact — it is the name they gave the box), the
  * platform mark stands in where they picked nothing, and the generic server
  * glyph remains the floor for machines whose OS is unknown too.
+ *
+ * The pickers offer every lucide icon, most of which are not in the static
+ * registry, so an icon that has not loaded yet resolves to a component that
+ * draws the fallback and swaps itself in when the icon arrives. That component
+ * is cached per (icon, platform), because callers render the returned value as
+ * a component type and a fresh one per call would remount on every render.
  */
 export function resolveMachineGlyph(
   iconId: string | undefined,
   platformOs: string | undefined,
 ): PlatformGlyph {
-  return getMachineIcon(iconId ?? "") ?? platformGlyph(platformOs) ?? DEFAULT_MACHINE_ICON;
+  const fallback = platformGlyph(platformOs) ?? DEFAULT_MACHINE_ICON;
+  if (!iconId) return fallback;
+  const known = getMachineIcon(iconId);
+  if (known) return known;
+  if (!(iconId in dynamicIconImports)) return fallback;
+  const key = `${iconId}|${platformOs ?? ""}`;
+  let glyph = lazyGlyphs.get(key);
+  if (!glyph) {
+    glyph = lazyMachineGlyph(iconId, fallback);
+    lazyGlyphs.set(key, glyph);
+  }
+  return glyph;
+}
+
+const lazyGlyphs = new Map<string, PlatformGlyph>();
+
+function lazyMachineGlyph(iconId: string, fallback: PlatformGlyph): PlatformGlyph {
+  function LazyMachineGlyph({ className }: { className?: string }) {
+    const Icon = useProjectIcon(iconId) ?? fallback;
+    return <Icon className={className} />;
+  }
+  return LazyMachineGlyph;
 }
