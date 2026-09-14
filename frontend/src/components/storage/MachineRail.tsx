@@ -36,7 +36,7 @@ export function MachineRail({
   return (
     <nav
       aria-label="Machines"
-      className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/60 p-2"
+      className="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/60 p-2"
     >
       {machines.map((m) => (
         <MachineRow key={m.key} machine={m} selected={m.key === selected} />
@@ -67,7 +67,9 @@ export function MachinePicker({
         type="button"
         onClick={() => setOpen(true)}
         aria-label={`Machine: ${current.label}${elsewhereLow ? " — another machine is low on disk" : ""}`}
-        className="relative mx-3 mt-3 flex items-center gap-2 rounded-lg border bg-card/40 px-3 py-2 text-left"
+        // Full width on the page's own 16px gutter, so it reads as the head of
+        // the column below rather than a chip floating above it.
+        className="relative mx-4 mt-4 flex w-[calc(100%-2rem)] items-center gap-2 rounded-lg border bg-card/40 px-3 py-2 text-left"
       >
         <MachineIcon icon={current.icon} />
         <span className="min-w-0 flex-1 truncate text-sm text-foreground-bright">
@@ -114,7 +116,9 @@ function MachineRow({
   onSelect?: () => void;
 }) {
   const disk = machine.disk;
-  const low = isLowDisk(disk);
+  // An away machine's bar stays neutral: its last reading is shown, but a
+  // warning about a disk nothing here can act on is a claim with nothing behind it.
+  const low = machine.online && isLowDisk(disk);
   const pct = disk ? Math.min(Math.max(disk.usagePercent, 0), 100) : 0;
   return (
     <Link

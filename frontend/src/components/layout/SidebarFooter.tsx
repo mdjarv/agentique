@@ -225,21 +225,29 @@ export function SidebarFooter() {
 function DiskTooltip({ machines }: { machines: StorageMachine[] }) {
   return (
     <div className="flex min-w-44 flex-col gap-1 py-0.5">
-      {machines.map((m) => (
-        <div
-          key={m.key}
-          className={cn(
-            "flex items-baseline justify-between gap-4",
-            !m.online && "opacity-60",
-            m.online && isLowDisk(m.disk) && "text-warning",
-          )}
-        >
-          <span className="truncate">{m.label}</span>
-          <span className="shrink-0 font-mono text-[10px] tabular-nums">
-            {!m.online ? "away" : m.disk ? `${formatBytes(m.disk.freeBytes)} free` : "…"}
-          </span>
-        </div>
-      ))}
+      {machines.map((m) => {
+        const low = m.online && isLowDisk(m.disk);
+        return (
+          <div
+            key={m.key}
+            className={cn(
+              "flex items-center justify-between gap-4",
+              !m.online && "opacity-60",
+              low && "font-semibold",
+            )}
+          >
+            {/* A dot rather than warning-coloured text: the tooltip's ground is
+                the inverse of the page's, where amber text does not read. */}
+            <span className="flex min-w-0 items-center gap-1.5">
+              {low && <span className="size-1.5 shrink-0 rounded-full bg-warning" />}
+              <span className="truncate">{m.label}</span>
+            </span>
+            <span className="shrink-0 font-mono text-[10px] tabular-nums">
+              {!m.online ? "away" : m.disk ? `${formatBytes(m.disk.freeBytes)} free` : "…"}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
