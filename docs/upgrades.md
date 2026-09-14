@@ -56,7 +56,11 @@ transport carrying both is the part that has to be trustworthy. Releases are not
 signed, which is the remaining gap.
 
 `?refresh=1` forces a check instead of reading the hourly cache; without it the
-request never touches the network. `checkedAt` is stamped on failure too, so a
+request never touches the network. It re-checks everything the status reports —
+the release, the checkout, the staged binary and the CLIs — and **opening the
+Versions dialog sends it to every machine**. Opening it is asking "what is true
+now", and a dialog that answers from an hour-old cache shows a machine as
+current right after somebody installed over it. `checkedAt` is stamped on failure too, so a
 stale answer can be dated. "As of 2h ago" is information; "unknown" is not.
 
 The endpoint is off entirely when `[update] disabled` is set. `[update] api-url`
@@ -291,10 +295,19 @@ refuses to set `behind` on one, and the question that machine actually has is a
 different question: **is the server running what I wrote.**
 
 That one is answerable offline, from a checkout already on disk. `[update]
-source-dir` names it; unset leaves the channel off entirely, which is the state
-on every machine that only installs releases. `internal/update/source.go` reads
-it on the same hourly tick as the release check, never fetches, and never writes
-to the checkout.
+source-dir` names it. `internal/update/source.go` reads it on the same hourly
+tick as the release check, never fetches, and never writes to the checkout.
+
+**Half of the question needs no checkout.** "The binary at the install path is
+not the one running" is what `just install` without a restart leaves behind, and
+seeing it takes the binary's `--version`, not git. So every **local** build is
+watched for a staged binary whether or not `source-dir` is set; unset only
+removes the branch verdict. A paired machine built by hand and never configured
+used to sit on an installed-but-not-running build with nothing anywhere saying
+so. With no branch to compare against, the row says "another build is
+installed" rather than "newer": the server cannot prove the direction, and a
+restart runs what the operator put there either way. A release install is not
+watched at all — its updates come from the release row.
 
 ### The build has to say it is a local build
 
@@ -416,8 +429,15 @@ accepted the cost is not asked twice by a different code path.
 ### Knowing and acting are separate, here too
 
 The same split the CLI rows draw (C4). The verdict is read-only and safe
-everywhere, so it ships on. The button compiles in the operator's own checkout
-and restarts the service, so it waits for `[update] source-apply`, default off.
+everywhere, so it ships on. The rebuild button compiles in the operator's own
+checkout and restarts the service, so it waits for `[update] source-apply`,
+default off.
+
+**Restart-only does not wait for it.** It compiles nothing and touches no
+checkout; it restarts into a binary already installed, which is the cost a
+release apply carries with no flag at all. It still goes through the drain gate
+like every restart. `Applier.SetSource(src, build)` carries the two verbs
+separately for that reason.
 
 ## Claude and Codex CLIs
 
@@ -547,6 +567,7 @@ starts calling a shared-tree rewrite self-managed.
 | S5 | Restart-only is its own verb | "The binary on disk is newer than the process" is a real state with a two-second fix; charging a rebuild for it would be wrong. |
 | S6 | Both channels show, neither wins | Different claims, different costs. Picking one for the operator hides a true statement. |
 | S7 | The cheapest COMPLETE answer wins | A staged binary built from the head needs only a restart, so it outranks a rebuild that would recompile the identical commit. A staged binary the branch has moved past is itself stale, so there the rebuild wins. `stagedIsCurrent` is the server's answer; the client does no version arithmetic. |
+| S8 | A staged binary is watched on every local build, and restarting into it needs no `source-apply` | Seeing it takes `--version`, not a checkout, and restarting compiles nothing — gating either on the checkout left a hand-built paired machine silent on an install that never ran. |
 | C1 | The target is the binary agentique spawns | Anything else describes a binary nobody here executes. |
 | C2 | claudecli-go owns the claude command | Detection already exists there, read-only and network-free. |
 | C3 | codexcli-go owns the codex command | Its own report beats our inference. |
@@ -573,7 +594,8 @@ starts calling a shared-tree rewrite self-managed.
 - **V2, tell.** The footer mark and the dialog, fanned out across machines.
   `useUpdateChecks` re-reads every machine's cached answer on a 15-minute beat and
   immediately when the catalog changes; the servers do the hourly GitHub check and
-  the client only re-reads. Nothing about it persists, and nothing can be waved
+  the client only re-reads — except on opening the dialog, which forces a
+  re-check on every machine. Nothing about it persists, and nothing can be waved
   away.
 - **V3, apply.** Preflight, download, verify, replace, restart, plus
   reconnect-and-confirm, per-phase progress, cancel through verification, and

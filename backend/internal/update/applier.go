@@ -86,6 +86,9 @@ type Applier struct {
 	// Nil on every machine with no [update] source-dir configured, which
 	// leaves the source channel off rather than half-present.
 	source *SourceChecker
+	// sourceBuild enables compiling from that checkout ([update]
+	// source-apply). A restart into a staged binary needs only source.
+	sourceBuild bool
 
 	// The gate's backstop ticker, kept off the main mutex so a fire attempt
 	// can stop it without deadlocking on itself.

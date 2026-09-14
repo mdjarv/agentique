@@ -36,9 +36,23 @@ function status(over: Partial<UpdateStatus> = {}): UpdateStatus {
 }
 
 describe("sourceVerdict", () => {
-  it("renders nothing when no checkout is configured", () => {
+  it("renders nothing when no checkout is configured and nothing is staged", () => {
     expect(sourceVerdict(undefined).token).toBe("off");
     expect(sourceVerdict(src({ dir: "" })).token).toBe("off");
+  });
+
+  // `just install` without a restart, on a machine that names no checkout: the
+  // server still sees the install path, and a restart is the whole answer. It
+  // cannot prove the binary is newer, so it does not say so.
+  it("offers a restart for a staged binary with no checkout configured", () => {
+    const v = sourceVerdict(
+      src({ dir: "", staged: true, installedVersion: "v0.7.1-2-gba74bab", ahead: 3 }),
+    );
+    expect(v.token).toBe("staged");
+    expect(v.action).toEqual({ label: "Restart to finish", kind: "restart" });
+    expect(v.text).not.toContain("newer");
+    expect(v.attention).toBe(true);
+    expect(sourceVerdict(src({ dir: "", origin: "release", staged: true })).token).toBe("off");
   });
 
   it("offers a rebuild when the branch has moved and the machine can build it", () => {

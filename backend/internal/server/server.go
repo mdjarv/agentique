@@ -554,27 +554,31 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// a binary — the one check on detection being right.
 		mgr.SetOnCLIVersion(updateCLIs.RecordRan)
 
-		// The source channel (docs/upgrades.md). Off unless a checkout is
-		// named: a machine that only installs releases has nothing to compare
-		// against, and half a channel is worse than none.
-		if cfg.Update.SourceDir != "" {
+		// The source channel (docs/upgrades.md). Two questions share one
+		// watcher. "Is the binary at the install path the one running" needs no
+		// checkout — `just install` without a restart leaves exactly that — so
+		// any local build is watched for it. "Has the branch moved" needs a
+		// named checkout. A release install answers neither: its updates come
+		// from the release channel.
+		origin := update.BuildOrigin(cfg.BuildOrigin)
+		if cfg.Update.SourceDir != "" || origin == update.OriginLocal {
 			updateSource = update.NewSourceChecker(update.SourceOptions{
 				Dir:         cfg.Update.SourceDir,
 				Branch:      cfg.Update.SourceBranch,
 				BuiltFrom:   cfg.Commit,
-				Origin:      update.BuildOrigin(cfg.BuildOrigin),
+				Origin:      origin,
 				Version:     cfg.Version,
 				InstallPath: installPathOrEmpty(),
 				Interval:    interval,
 			})
 			// Knowing and acting are separate questions, the same split the CLI
-			// rows draw. The verdict is read-only and safe everywhere; the
-			// button compiles in the operator's checkout and restarts the
-			// service, so it waits for [update] source-apply.
-			if cfg.Update.SourceApply {
-				applier.SetSource(updateSource)
-			} else {
-				slog.Info("update: source channel is reporting only — set [update] source-apply to enable the button",
+			// rows draw. Restarting into a staged binary compiles nothing and
+			// costs what a release apply costs, so it is always attached; the
+			// build compiles in the operator's checkout, so it waits for
+			// [update] source-apply.
+			applier.SetSource(updateSource, cfg.Update.SourceApply)
+			if cfg.Update.SourceDir != "" && !cfg.Update.SourceApply {
+				slog.Info("update: source channel is reporting only — set [update] source-apply to enable the rebuild button",
 					"dir", cfg.Update.SourceDir)
 			}
 		}

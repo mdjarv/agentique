@@ -55,13 +55,28 @@ const NOTHING: SourceVerdict = { token: "off", text: "", attention: false };
  * one commit short and asking again.
  */
 export function sourceVerdict(source: UpdateSourceStatus | undefined): SourceVerdict {
-  if (!source?.dir) return NOTHING;
-
   // A binary this checkout did not produce has no source verdict, and the row
   // renders nothing rather than explaining itself. Someone who installed a
   // release does not need a line about a channel that will never apply to them
   // — their updates come from the release row directly above.
-  if (source.origin !== "local") return NOTHING;
+  if (source?.origin !== "local") return NOTHING;
+
+  // No checkout named. The server still watches the install path, because a
+  // binary installed without a restart needs no checkout to notice — but with
+  // no branch to compare against it cannot say the binary is NEWER, only that
+  // it is not the one running. Anything else about a branch is not ours to say.
+  if (!source.dir) {
+    if (!source.staged) return NOTHING;
+    return {
+      token: "staged",
+      text: "another build is installed",
+      detail: source.installedVersion
+        ? `${source.installedVersion} — restart to run it`
+        : "restart to run it",
+      action: { label: "Restart to finish", kind: "restart" },
+      attention: true,
+    };
+  }
 
   if (source.staged && source.stagedIsCurrent) {
     return {

@@ -105,8 +105,8 @@ const (
 
 // SourceOptions configures a SourceChecker.
 type SourceOptions struct {
-	// Dir is the checkout to watch. Required — an unset source-dir means the
-	// channel is simply off, and nothing here runs.
+	// Dir is the checkout to watch. Empty still watches the install path for a
+	// staged binary — that needs no checkout — and reports no branch verdict.
 	Dir string
 	// Origin is how the running binary was built. Only OriginLocal produces a
 	// verdict: a downloaded binary's version is the release channel's business,

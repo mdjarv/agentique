@@ -24,6 +24,10 @@ var (
 	// ErrSourceNotReady means the checkout cannot be built from as it stands —
 	// dirty, on another branch, or already in step.
 	ErrSourceNotReady = errors.New("the source checkout is not in a state to build from")
+	// ErrSourceBuildOff means a checkout is watched but building from it is not
+	// enabled ([update] source-apply). A restart into a staged binary is still
+	// allowed — it compiles nothing.
+	ErrSourceBuildOff = errors.New("rebuilding from source is switched off here — set [update] source-apply")
 	// ErrNothingStaged is a restart-only apply with nothing waiting at the
 	// install path.
 	ErrNothingStaged = errors.New("the installed binary is already the one running")
@@ -38,27 +42,34 @@ const buildIdleTimeout = 30 * time.Minute
 // buildIdlePoll is how often the post-build wait re-asks the turn registry.
 const buildIdlePoll = 5 * time.Second
 
-// SetSource attaches the checkout this applier may build from. Nil leaves the
-// source channel off, which is the state on every machine that has not
-// configured one.
-func (a *Applier) SetSource(src *SourceChecker) {
+// SetSource attaches the source watcher. It carries two verbs with different
+// costs, so they are enabled separately: restarting into a binary already
+// staged at the install path compiles nothing and costs what a release apply
+// costs, so it follows the watcher; building compiles in the operator's
+// checkout, so it waits for `build` ([update] source-apply). Nil leaves both
+// off.
+func (a *Applier) SetSource(src *SourceChecker, build bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.source = src
+	a.sourceBuild = build
 }
 
-func (a *Applier) sourceChecker() *SourceChecker {
+func (a *Applier) sourceChecker() (*SourceChecker, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.source
+	return a.source, a.sourceBuild
 }
 
 // PreflightSource proves a source build could run here and resolves what it
 // would produce. Every refusal is a sentence a row can render.
 func (a *Applier) PreflightSource() (*plan, error) {
-	src := a.sourceChecker()
-	if src == nil {
+	src, build := a.sourceChecker()
+	if src == nil || src.Dir() == "" {
 		return nil, ErrNoSource
+	}
+	if !build {
+		return nil, ErrSourceBuildOff
 	}
 	st := src.Status()
 	if st.CheckError != "" {
@@ -89,10 +100,10 @@ func (a *Applier) PreflightSource() (*plan, error) {
 }
 
 // PreflightRestart proves there is a binary at the install path that the
-// running process is not. It installs nothing, so it needs no toolchain and no
-// checkout — only somewhere to restart into.
+// running process is not. It installs nothing, so it needs no toolchain, no
+// checkout and no [update] source-apply — only somewhere to restart into.
 func (a *Applier) PreflightRestart() (*plan, error) {
-	src := a.sourceChecker()
+	src, _ := a.sourceChecker()
 	if src == nil {
 		return nil, ErrNoSource
 	}

@@ -87,13 +87,12 @@ func (h *Handler) decorate(st *Status) {
 		case err == nil:
 			st.Source.Buildable = true
 			st.Source.Blocker = ""
-		case errors.Is(err, ErrNoSource):
-			// We are HERE because a checkout is configured — h.Source is what
-			// produced st.Source. So the applier not having one means only that
-			// the button is switched off, and saying "no source checkout is
-			// configured" would contradict the row it sits in.
+		case errors.Is(err, ErrNoSource), errors.Is(err, ErrSourceBuildOff):
+			// The watcher's own blocker says it better when it has one ("no
+			// source checkout is configured" on a local build watched only for
+			// a staged binary); otherwise the refusal is the sentence.
 			if st.Source.Blocker == "" {
-				st.Source.Blocker = "rebuilding from source is switched off here — set [update] source-apply"
+				st.Source.Blocker = err.Error()
 			}
 		default:
 			// Not an error to shout about: a clean checkout in step with the
