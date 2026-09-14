@@ -384,9 +384,11 @@ The directory's lists are **uncut**. Every caller bounds what it says and also
 matches over what it is given, so a cut in the directory made the thirteenth
 session unfindable rather than unlisted.
 
-What is still unbuilt is server-to-server **follow**: pushes from a paired
-machine rather than a pull on demand. Until it exists, machine reachability is
-not a journal fact, so the journal carries no machine-away entries.
+Acting on a peer — create, send, follow, proposals — and each machine's own
+health reports are designed in [peers.md](peers.md) (one assistant decides, the
+owning machine guards; a model-free steward on every machine) and not built.
+Until they are, create and dispatch on a remote refuse naming the machine, and
+the journal carries no machine-away entries.
 
 ## Security
 

@@ -111,10 +111,11 @@ are in CLAUDE.md.
 
 The five milestones shipped; these are the things they named and did not build.
 A **messaging gateway** as another transport, so the thread is reachable from
-outside the app. A **server-to-server subscription** from the primary to each
-paired machine, which is what would make a remote session's facts the
-assistant's own rather than a view the browser feeds it — until it exists,
-create and dispatch on a remote refuse, and the journal carries no
+outside the app. **Acting on paired machines**, designed in
+[docs/peers.md](docs/peers.md): the owner-guarded `/api/peer/*` surface, a
+sequenced stream per peer feeding the journal, and a model-free steward on
+every machine reporting findings. Listing already reaches peers; until the
+rest lands, create and dispatch on a remote refuse, and the journal carries no
 machine-away entries. The **scheduler absorbing the heartbeat**, once
 `schedules` grows a target kind and stops being session-shaped. And a **budget
 that reads a folded day**: M5's summaries already carry every standing
