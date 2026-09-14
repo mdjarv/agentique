@@ -63,6 +63,17 @@ func TestDictationProbeLive(t *testing.T) {
 	t.Logf("reference: %s", strings.Join(script, " "))
 	t.Logf("audio: %.1fs at %d Hz", float64(len(pcm))/2/InputSampleRate, InputSampleRate)
 
+	// The same speech as a WAV, for driving a browser's fake microphone
+	// (--use-file-for-fake-audio-capture) through the real dictation path.
+	if path := os.Getenv("AGENTIQUE_DICTATION_PROBE_WAV"); path != "" {
+		padded := append(append([]byte(nil), pcm...), silence(3*time.Second)...)
+		if err := os.WriteFile(path, wav(padded, InputSampleRate), 0o600); err != nil {
+			t.Fatalf("write wav: %v", err)
+		}
+		t.Logf("wrote %s; skipping the variants", path)
+		return
+	}
+
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: key, Backend: genai.BackendGeminiAPI})
 	if err != nil {
 		t.Fatalf("client: %v", err)

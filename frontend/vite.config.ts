@@ -128,6 +128,14 @@ export default defineConfig({
       },
     }),
     proxy: {
+      // The voice sockets (the call and dictation) are WebSockets under /api/,
+      // which the plain /api entry below does not upgrade. Listed first: the
+      // proxy matches entries in order.
+      "/api/voice/": {
+        target: backendOrigin,
+        ws: true,
+        secure: false,
+      },
       "/api": {
         target: backendOrigin,
         secure: false,
