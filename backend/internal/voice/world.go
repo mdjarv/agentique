@@ -292,6 +292,46 @@ func (c *call) localRow(ctx context.Context, sessionID string) (assistant.Sessio
 	return c.directory.SessionBrief(ctx, sessionID)
 }
 
+// reachRow finds a session wherever it runs, with what can be done with it from
+// here (docs/peers.md): the directory's own lookup first — this machine, then a
+// paired machine that answered — and the best description the call has
+// otherwise, which acts on nothing.
+//
+// A call with no directory is the single-session call, which knows one local
+// session.
+func (c *call) reachRow(ctx context.Context, sessionID string) assistant.SessionRow {
+	if sessionID == "" {
+		return assistant.SessionRow{}
+	}
+	if c.directory == nil {
+		return assistant.SessionRow{ID: sessionID, Reach: assistant.ReachLocal}
+	}
+	if loc, ok := c.directory.(assistant.Locator); ok {
+		if row, found := loc.Locate(ctx, sessionID); found {
+			return row
+		}
+	} else if row, local := c.directory.SessionBrief(ctx, sessionID); local {
+		row.Reach = assistant.ReachLocal
+		return row
+	}
+	row := c.bestKnownRow(ctx, sessionID)
+	row.Reach = assistant.ReachView
+	return row
+}
+
+// reachSentence says why work cannot start in a session, for a refusal the
+// listener hears.
+func reachSentence(row assistant.SessionRow) string {
+	switch row.Reach {
+	case assistant.ReachPeerOff:
+		return fmt.Sprintf("%s runs on %s, which does not accept work from other machines", assistant.DisplayFor(row), machineWords(row))
+	case assistant.ReachPeerOld:
+		return fmt.Sprintf("%s runs on %s, whose release is too old to take work from another machine", assistant.DisplayFor(row), machineWords(row))
+	default:
+		return fmt.Sprintf("%s runs on %s, which this server cannot reach", assistant.DisplayFor(row), machineWords(row))
+	}
+}
+
 // isLocal reports whether this machine owns the session.
 func (c *call) isLocal(ctx context.Context, sessionID string) bool {
 	_, ok := c.localRow(ctx, sessionID)

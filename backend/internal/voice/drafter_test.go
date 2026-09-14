@@ -174,13 +174,14 @@ func TestSystemInstructionDefersCreationToTheOneYes(t *testing.T) {
 	for _, want := range []string{
 		ToolListProjects,
 		ToolCreateSession,
-		"not until they have said yes",     // nothing exists before consent
-		"settings are stated, never asked", // no defaults question of its own
-		"one read-back covers all of it",   // project, settings and prompt in one breath
-		"new* session",                     // the read-back says it is a new one
-		"immediately",                      // create then send, without a pause
-		"never pick",                       // an ambiguous project is asked about
-		"created on this machine only",     // a remote project cannot host one
+		"not until they have said yes",                  // nothing exists before consent
+		"settings are stated, never asked",              // no defaults question of its own
+		"one read-back covers all of it",                // project, settings and prompt in one breath
+		"new* session",                                  // the read-back says it is a new one
+		"immediately",                                   // create then send, without a pause
+		"never pick",                                    // an ambiguous project is asked about
+		"created on the machine that holds the project", // where a new session goes
+		"pass it as `machine`",                          // the same project on two machines is asked
 	} {
 		if !strings.Contains(got, strings.ToLower(want)) {
 			t.Errorf("system instruction is missing %q", want)

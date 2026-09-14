@@ -782,3 +782,59 @@ func TestDeliveryAfterTheCallClosesIsHarmless(t *testing.T) {
 	c.toolSummarizeSession(context.Background(), map[string]any{"session_id": "s1"})
 	waitPending(t, c, 0)
 }
+
+// locatingDirectory is the server's directory as a call sees it since paired
+// machines can be acted on: Locate answers a paired machine's session with the
+// reach its owner allows.
+type locatingDirectory struct {
+	*fakeDirectory
+	remote map[string]assistant.SessionRow
+}
+
+func (d *locatingDirectory) Locate(ctx context.Context, id string) (assistant.SessionRow, bool) {
+	if row, ok := d.remote[id]; ok {
+		return row, true
+	}
+	row, ok := d.SessionBrief(ctx, id)
+	row.Reach = assistant.ReachLocal
+	return row, ok
+}
+
+// A paired machine that takes work is as reachable from a call as this one; a
+// paired machine that does not is refused in words naming it.
+func TestPeerSessionsCanBeWorkedInWhenTheirMachineAccepts(t *testing.T) {
+	base := directoryWithTwo()
+	dir := &locatingDirectory{fakeDirectory: base, remote: map[string]assistant.SessionRow{
+		"zb1": {ID: "zb1", Name: "Plugin Testing", ProjectName: "seisiun", MachineID: "zbook-id", MachineName: "zbook",
+			Reach: assistant.ReachPeer},
+		"zb2": {ID: "zb2", Name: "Reel Import", ProjectName: "seisiun", MachineID: "zbook-id", MachineName: "zbook",
+			Reach: assistant.ReachPeerOff},
+	}}
+	base.rows = append(base.rows, dir.remote["zb1"], dir.remote["zb2"])
+	disp := &recordingDispatcher{}
+	c := newToolCall(dir, disp, "")
+	c.toolListSessions(context.Background(), map[string]any{"filter": assistant.FilterAll})
+
+	focused := c.toolFocusSession(context.Background(), map[string]any{"session_id": "zb1"})
+	if can, _ := focused["can_start_work"].(bool); !can {
+		t.Fatalf("a session on a machine that accepts work = %v", focused)
+	}
+	run := c.runTool(ToolCallEvent{Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "load the bodhran sample", "target": "Plugin Testing", "stay_on_line": true,
+	}})
+	if _, refused := run["error"]; refused {
+		t.Fatalf("dispatch to a paired machine that accepts work was refused: %v", run)
+	}
+	if got := disp.dispatches(); len(got) != 1 || got[0].session != "zb1" {
+		t.Fatalf("dispatches = %+v", got)
+	}
+
+	c.toolFocusSession(context.Background(), map[string]any{"session_id": "zb2"})
+	run = c.runTool(ToolCallEvent{Name: ToolRunPrompt, Args: map[string]any{
+		"prompt": "x", "target": "Reel Import", "stay_on_line": true,
+	}})
+	msg, _ := run["error"].(string)
+	if !strings.Contains(msg, "zbook") || !strings.Contains(msg, "does not accept work") {
+		t.Fatalf("refusal = %q, want it to name zbook and why", msg)
+	}
+}

@@ -794,14 +794,12 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 	// A session on another machine can be looked at from here and nothing more:
 	// dispatch goes through *this* server's session service, and that CLI, that
 	// worktree and that transcript are somewhere else.
-	row, local := c.localRow(ctx, target)
-	if !local {
-		if known, ok := c.lookupRow(ctx, target); ok {
-			row = known
-		}
-		return refuse("not-local", fmt.Sprintf("%s runs on %s, so work cannot be started there "+
-			"from this call. Tell the user that, and offer to hand this to a session on this "+
-			"machine instead.", assistant.DisplayFor(row), machineWords(row)))
+	// Wherever it runs (docs/peers.md): a paired machine that accepts work is
+	// as reachable from a call as this one, and its own guard judges the send.
+	row := c.reachRow(ctx, target)
+	if !row.Reach.CanAct() {
+		return refuse("not-reachable", reachSentence(row)+", so work cannot be started there from "+
+			"this call. Tell the user that, and offer to hand this to a session that can take it.")
 	}
 
 	prompt = strings.TrimSpace(prompt)
@@ -844,6 +842,10 @@ func (c *call) dispatchPrompt(ctx context.Context, target, prompt string, stayOn
 		// Nothing is running there, so leave the call as it was found.
 		if !wasFollowing {
 			c.unfollow(target)
+		}
+		var refused *assistant.RefusedError
+		if errors.As(err, &refused) {
+			return refuse("dispatch-refused:"+refused.Reason, "That was not sent: "+refused.Say+". Say so plainly.")
 		}
 		return refuse("dispatch-failed", "That could not be sent.")
 	}

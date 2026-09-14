@@ -195,9 +195,11 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString(fmt.Sprintf("I will use it later\" — that IS their yes. Confirm the project by name, call `%s` ",
 		ToolCreateSession))
 	b.WriteString("with no prompt, and tell them it is there.\n\n")
-	b.WriteString("A new session is created on this machine only. If the project they name lives on ")
-	b.WriteString("another machine, say so and say a session has to be started there; do not create ")
-	b.WriteString("something somewhere else and call it the same thing.\n\n")
+	b.WriteString("A new session is created on the machine that holds the project: this one, or a ")
+	b.WriteString("paired machine that accepts work from here. When the same project is on two ")
+	b.WriteString("machines, ask which and pass it as `machine`, and name the machine in the ")
+	b.WriteString("read-back. If its machine does not take work, say so; do not create something ")
+	b.WriteString("somewhere else and call it the same thing.\n\n")
 
 	// Help is instruction, not a tool. What it answers is static content this
 	// text already holds, so a tool call would buy nothing and cost a pause —
@@ -212,7 +214,8 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString("true:\n\n")
 	b.WriteString("You CAN: say what needs their attention; list their sessions and find one by ")
 	b.WriteString("name; switch to it, which moves their screen too; say what a session has been ")
-	b.WriteString("doing; start a new session in a project on this machine; work out a prompt and ")
+	b.WriteString("doing; start a new session in a project on this machine or a paired machine that ")
+	b.WriteString("takes work; work out a prompt and ")
 	b.WriteString("hand it to whichever session you are on; relay progress while it runs; say what ")
 	b.WriteString("the assistant has proposed and is waiting on them for, and pass on their yes or ")
 	b.WriteString("no to it; and end the call when they say they are done.\n\n")
@@ -220,8 +223,9 @@ func SystemInstruction(brief Briefing) string {
 	b.WriteString("- **Approve anything.** There is no approving by voice. A session that is stuck ")
 	b.WriteString("waiting for approval needs them at a screen — say that, do not offer to unblock ")
 	b.WriteString("it.\n")
-	b.WriteString("- **Start work on another machine's sessions.** You can see them and talk about ")
-	b.WriteString("them, and that is all.\n")
+	b.WriteString("- **Start work on a machine that does not take it.** Another machine's sessions ")
+	b.WriteString("take work only when that machine accepts it; each session and project says ")
+	b.WriteString("whether it can.\n")
 	b.WriteString("- **Delete, archive, merge, rename or commit anything of your own accord.** None ")
 	b.WriteString("of that is yours to do. Where the assistant has already put one of those to them ")
 	b.WriteString("as a proposal, you can say what it is and carry their answer — nothing more.\n")
@@ -564,8 +568,9 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 		},
 		{
 			Name: ToolListProjects,
-			Description: "List the repositories on this machine that a new session could be " +
-				"created in, most recently worked in first. Pass what the user called the project " +
+			Description: "List the repositories a new session could be created in, on this " +
+				"machine and on paired machines, most recently worked in first; each says its machine " +
+				"and whether a session can be created there. Pass what the user called the project " +
 				"as query to narrow it; spoken names arrive mangled, so pass what you heard. The " +
 				"result is for you to choose from out loud, never to read out item by item.",
 			Parameters: &genai.Schema{
@@ -597,6 +602,11 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 						Description: "The project id exactly as " + ToolListProjects + " returned " +
 							"it, when you have one. Never invent one; say the name in `project` " +
 							"instead.",
+					},
+					"machine": {
+						Type: genai.TypeString,
+						Description: "Which machine, when they said one or the same project is on " +
+							"more than one. Leave it out otherwise.",
 					},
 					"model": {
 						Type: genai.TypeString,
@@ -684,13 +694,14 @@ func toolDeclarations() []*genai.FunctionDeclaration {
 	}
 }
 
-const createSessionDescription = "Create a new session in a project on this machine, switch the " +
+const createSessionDescription = "Create a new session in a project, on this machine or a paired " +
+	"machine that takes work, switch the " +
 	"user's screen to it, and start it on a prompt. Call it only after they have said yes to the " +
 	"read-back, and pass the prompt they agreed to as `prompt` in THIS call — creating and " +
 	"sending are one call, and a session made without the prompt sits there empty. Leave `prompt` " +
 	"out only when they asked for an empty session to use later. The result is the confirmation " +
 	"to speak immediately. The project id must come from " + ToolListProjects + "; never invent " +
-	"one. Projects on other machines cannot host a session created from this call."
+	"one. A project on a paired machine that does not take work cannot host one."
 
 const listProposalsDescription = "List the things the assistant has proposed and is waiting for " +
 	"the user to accept or decline — a merge, an archive, a delete, and the rest of what it is not " +

@@ -150,12 +150,9 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 			"Call "+ToolListSessions+" or "+ToolFindSession+" and use an id from the result.")
 	}
 
-	// One lookup answers both questions: what to call it, and whether this
-	// machine owns it.
-	row, local := c.localRow(ctx, sessionID)
-	if !local {
-		row = c.bestKnownRow(ctx, sessionID)
-	}
+	// One lookup answers both questions: what to call it, and whether work can
+	// start there from this call.
+	row := c.reachRow(ctx, sessionID)
 
 	c.setFocus(sessionID)
 	c.offer(row)
@@ -170,11 +167,10 @@ func (c *call) toolFocusSession(ctx context.Context, args map[string]any) map[st
 	out["note"] = fmt.Sprintf("Confirm out loud that you are now on %q before you do anything else.",
 		assistant.DisplayFor(row))
 
-	if !local {
+	if !row.Reach.CanAct() {
 		out["can_start_work"] = false
-		out["note"] = fmt.Sprintf("You are looking at %q, which runs on %s. You can talk about it, "+
-			"but work cannot be started there from this call — say that plainly if they ask for any.",
-			assistant.DisplayFor(row), machineWords(row))
+		out["note"] = fmt.Sprintf("You are looking at it, but %s. You can talk about it; work cannot "+
+			"be started there from this call — say that plainly if they ask for any.", reachSentence(row))
 		return out
 	}
 
@@ -212,16 +208,17 @@ func (c *call) toolSummarizeSession(ctx context.Context, args map[string]any) ma
 			"Call "+ToolListSessions+" or "+ToolFindSession+" first.")
 	}
 
-	row, local := c.localRow(ctx, sessionID)
-	if !local {
-		row = c.bestKnownRow(ctx, sessionID)
-	}
+	row := c.reachRow(ctx, sessionID)
 	label := assistant.DisplayFor(row)
 
-	if !local {
-		return refuse("summary-not-local", fmt.Sprintf("%s runs on %s, and its transcript is not on "+
-			"this machine, so I cannot summarise it from here. Say that, and offer to switch to "+
-			"something local instead.", label, machineWords(row)))
+	// A paired machine's transcript is read over its peer surface, which a
+	// machine that has not opted into actions still serves: reading is not
+	// acting.
+	switch row.Reach {
+	case assistant.ReachLocal, assistant.ReachPeer, assistant.ReachPeerOff:
+	default:
+		return refuse("summary-not-reachable", fmt.Sprintf("%s runs on %s, and its transcript cannot "+
+			"be read from this server, so I cannot summarise it. Say that.", label, machineWords(row)))
 	}
 	if summary, ok := c.cachedSummary(sessionID); ok {
 		if summary == "" {
@@ -310,11 +307,9 @@ func (c *call) summarizeAsync(ctx context.Context, sessionID, label string, anno
 // and past a handful nobody is choosing, they are being read a directory.
 const maxSpokenProjects = 6
 
-// toolListProjects answers "where could this go".
-//
-// Local projects only, because that is what "could a session be created here"
-// means: creation goes through this server's session service, and a repository
-// checked out on another machine is somewhere else entirely.
+// toolListProjects answers "where could this go": this machine's projects and
+// every paired machine's, each saying its machine and whether a session can be
+// created there from this call (docs/peers.md).
 func (c *call) toolListProjects(ctx context.Context, args map[string]any) map[string]any {
 	if c.directory == nil {
 		return refuse("no-directory", "I cannot see the projects on this machine from this call — "+
@@ -498,6 +493,9 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (a
 	}
 
 	rows := c.directory.ListProjects(ctx)
+	if machine := strings.TrimSpace(stringArg(args, "machine")); machine != "" {
+		rows = projectsOnMachine(rows, machine)
+	}
 	if len(rows) == 0 {
 		return assistant.ProjectRow{}, targetJudgement{Reason: "no-projects",
 			Say: "There are no projects on this machine, so there is nowhere to create a session. " +
@@ -511,13 +509,20 @@ func (c *call) resolveCreateProject(ctx context.Context, args map[string]any) (a
 			Say: fmt.Sprintf("Nothing on this machine is called %q, and nothing has been created. Ask "+
 				"them to say the project another way, or offer to read out the few there are.", spoken)}
 	case 1:
+		project := matched[0]
+		if project.Reach != assistant.ReachView && !project.Reach.CanAct() {
+			return assistant.ProjectRow{}, targetJudgement{Reason: "project-not-reachable",
+				Say: fmt.Sprintf("%s is on %s, which does not take new sessions from this server. Nothing "+
+					"has been created. Say so.", project.DisplayName(), project.MachineName)}
+		}
 		// Now the server has named it, so everything guarding on that is satisfied.
-		c.offerProjects(matched[0])
-		return matched[0], targetJudgement{OK: true}
+		c.offerProjects(project)
+		return project, targetJudgement{OK: true}
 	default:
 		return assistant.ProjectRow{}, targetJudgement{Reason: "project-ambiguous",
 			Say: fmt.Sprintf("More than one project could be %q — %s. Nothing has been created: ask "+
-				"which they mean and never choose for them.", spoken, spokenProjectList(matched))}
+				"which they mean, and on which machine when it is the same one on two, and never "+
+				"choose for them. Pass the machine as `machine`.", spoken, spokenProjectList(matched))}
 	}
 }
 
@@ -529,7 +534,11 @@ func spokenProjectList(rows []assistant.ProjectRow) string {
 		if len(names) == maxSpokenProjects {
 			break
 		}
-		names = append(names, row.DisplayName())
+		name := row.DisplayName()
+		if row.Reach.Remote() && row.MachineName != "" {
+			name += " on " + row.MachineName
+		}
+		names = append(names, name)
 	}
 	return assistant.SpokenList(names)
 }
@@ -557,6 +566,12 @@ func (c *call) projectPayloads(rows []assistant.ProjectRow) []map[string]any {
 		if row.LastActivity != "" {
 			payload["last_activity"] = row.LastActivity
 		}
+		if row.MachineName != "" {
+			payload["machine"] = row.MachineName
+		}
+		// A project a session cannot be created in is still listed, so "that
+		// is on zbook, which does not take work" can be said instead of nothing.
+		payload["can_create_here"] = row.Reach == assistant.ReachView || row.Reach.CanAct()
 		out = append(out, payload)
 	}
 	return out
@@ -616,6 +631,23 @@ func attentionPhrase(attention string) string {
 	default:
 		return attention
 	}
+}
+
+// projectsOnMachine narrows projects to the machine the operator named; "here"
+// and "this machine" are this one.
+func projectsOnMachine(rows []assistant.ProjectRow, spoken string) []assistant.ProjectRow {
+	want := strings.ToLower(strings.TrimSpace(spoken))
+	local := want == "here" || want == "this machine" || want == "this one" || want == "local"
+	var out []assistant.ProjectRow
+	for _, row := range rows {
+		switch {
+		case local && !row.Reach.Remote():
+			out = append(out, row)
+		case !local && row.MachineName != "" && strings.EqualFold(row.MachineName, want):
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // machineWords names the machine a session runs on, for a sentence that has to
