@@ -8,17 +8,26 @@
  * all the conversation would show a reply to a question that is not there.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantConversation } from "~/components/assistant/AssistantConversation";
-import type { AssistantMessage } from "~/lib/assistant/wire";
+import { buildTimeline } from "~/lib/assistant/timeline";
+import type { AssistantJournalEntry, AssistantMessage } from "~/lib/assistant/wire";
 
 // The markdown renderer is a whole pipeline and not the subject.
 vi.mock("~/components/chat/Markdown", () => ({
   Markdown: ({ content }: { content: string }) => <p>{content}</p>,
 }));
 
+vi.mock("~/components/assistant/use-session-label", () => ({
+  useSessionLabel: (id?: string) => (id ? "Fix the loader" : undefined),
+}));
+
 afterEach(cleanup);
+
+function asItems(messages: AssistantMessage[], journal: AssistantJournalEntry[] = []) {
+  return buildTimeline({ messages, journal, proposals: [], unseenOnArrival: 0 });
+}
 
 // The shape the server actually writes: the verdict sentence on the first line,
 // then the window the head was woken with. A fixture of one line hid the bug
@@ -44,7 +53,7 @@ const REPLY: AssistantMessage = {
 
 describe("AssistantConversation", () => {
   it("renders the heartbeat's note as a quiet divider with its sentence and time", () => {
-    render(<AssistantConversation messages={[NOTICE]} streaming={null} />);
+    render(<AssistantConversation items={asItems([NOTICE])} streaming={null} />);
     // The verdict sentence, and NOT the window under it: a rule across the
     // column holds one line, and the whole wake-up is sixty journal lines long.
     expect(screen.getByText(VERDICT)).toBeInTheDocument();
@@ -60,7 +69,7 @@ describe("AssistantConversation", () => {
   });
 
   it("renders the head's heartbeat reply as an ordinary bubble with a mark", () => {
-    render(<AssistantConversation messages={[NOTICE, REPLY]} streaming={null} />);
+    render(<AssistantConversation items={asItems([NOTICE, REPLY])} streaming={null} />);
     expect(screen.getByText(REPLY.text as string)).toBeInTheDocument();
     expect(screen.getByLabelText("Said by the heartbeat")).toBeInTheDocument();
   });
@@ -68,7 +77,7 @@ describe("AssistantConversation", () => {
   it("leaves an ordinary turn unmarked", () => {
     render(
       <AssistantConversation
-        messages={[{ id: "m3", role: "assistant", text: "hello" }]}
+        items={asItems([{ id: "m3", role: "assistant", text: "hello" }])}
         streaming={null}
       />,
     );
@@ -78,10 +87,41 @@ describe("AssistantConversation", () => {
   it("still draws the divider for a note whose text a peer did not send", () => {
     render(
       <AssistantConversation
-        messages={[{ id: "m4", role: "system", kind: "heartbeat" }]}
+        items={asItems([{ id: "m4", role: "system", kind: "heartbeat" }])}
         streaming={null}
       />,
     );
     expect(screen.getByText(/heartbeat woke the assistant/i)).toBeInTheDocument();
+  });
+
+  // A finished session's summary is its agent's whole closing message. The
+  // strip printed it whole; the timeline prints one line and opens on a press.
+  it("renders a journal row as one line that opens in place", () => {
+    const closing = "The loader was already failing on main. I fixed the retry and the tests pass.";
+    render(
+      <AssistantConversation
+        items={asItems(
+          [{ id: "m5", role: "assistant", text: "on it", createdAt: "2026-09-12T08:00:00Z" }],
+          [
+            {
+              id: 1,
+              kind: "session_finished",
+              sessionId: "s1",
+              summary: closing,
+              untrusted: true,
+              at: "2026-09-12T08:05:00Z",
+            },
+          ],
+        )}
+        streaming={null}
+      />,
+    );
+    const row = screen.getByRole("button", { expanded: false });
+    expect(row).toHaveTextContent("Fix the loader");
+    expect(screen.queryByRole("blockquote")).toBeNull();
+    fireEvent.click(row);
+    // Opened, an agent's words are a quotation with a caption, never plain text.
+    expect(screen.getByText(closing).tagName).toBe("BLOCKQUOTE");
+    expect(screen.getByText("finished, quoted")).toBeInTheDocument();
   });
 });

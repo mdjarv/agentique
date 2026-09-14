@@ -12,7 +12,7 @@
  * the server's own reading of git and the runtime, printed as facts. The
  * **rationale** is the assistant's sentence, which means it is model-written
  * text about untrusted repository content: it is quoted and attributed, never
- * set as the server's claim, on the same rule the strip applies to a report.
+ * set as the server's claim, on the same rule the timeline applies to a report.
  *
  * Accepting re-checks the facts server-side before anything happens, so what
  * comes back is the interesting part: `stale` means the branch moved under the
@@ -39,15 +39,9 @@ import { useAssistantStore } from "~/stores/assistant-store";
 
 interface ProposalCardProps {
   proposal: AssistantProposal;
-  /**
-   * Called with the proposal's id once a decision has landed. The thread uses
-   * it to keep the card on screen after it has left the open list — the answer
-   * to a press has to be readable where the press happened.
-   */
-  onDecided?: (id: string) => void;
 }
 
-export function ProposalCard({ proposal, onDecided }: ProposalCardProps) {
+export function ProposalCard({ proposal }: ProposalCardProps) {
   const ws = useWebSocket();
   const [pending, setPending] = useState<"accept" | "decline" | null>(null);
   const open = isOpenProposal(proposal.status);
@@ -65,7 +59,6 @@ export function ProposalCard({ proposal, onDecided }: ProposalCardProps) {
       // its outcome when a broadcast arrives looks broken on a slow socket.
       const decided = await decideRpc(ws, id, accept);
       useAssistantStore.getState().applyProposal(decided);
-      onDecided?.(id);
     } catch (err) {
       toast.error(getErrorMessage(err, "The assistant could not record that"));
     } finally {

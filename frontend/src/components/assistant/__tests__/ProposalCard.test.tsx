@@ -78,14 +78,12 @@ describe("ProposalCard", () => {
   });
 
   it("accepts through the op and renders the outcome in place", async () => {
-    const onDecided = vi.fn();
-    render(<ProposalCard proposal={proposal()} onDecided={onDecided} />);
+    render(<ProposalCard proposal={proposal()} />);
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
     expect(decide).toHaveBeenCalledWith({}, "p1", true);
-    await waitFor(() => expect(onDecided).toHaveBeenCalledWith("p1"));
     // The answer goes into the store, so every surface reads the same row.
-    expect(useAssistantStore.getState().proposals[0]?.status).toBe("accepted");
+    await waitFor(() => expect(useAssistantStore.getState().proposals[0]?.status).toBe("accepted"));
   });
 
   it("declines through the same op with accept false", async () => {

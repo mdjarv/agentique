@@ -43,10 +43,10 @@ export const EMPTY_POLICIES: AssistantPolicy[] = [];
  * A tick that woke up, looked and decided nothing (`heartbeat`) is not a claim
  * on anybody's attention; what it *did* has its own entry beside it. A folded
  * day (`day_summary`) is not one either, for the opposite reason: it is stamped
- * at the day it is about, so it sorts below everything the strip renders and a
+ * at the day it is about, so it sorts below everything the thread renders and a
  * fold of thirty days would claim thirty unread things with nothing new to look
  * at. The `compaction` row that records the fold is the news, and it counts.
- * Both stay readable in the strip and on the journal page either way.
+ * Neither is drawn in the thread's timeline (`buildTimeline` leaves both out).
  */
 function claimsAttention(entry: AssistantJournalEntry): boolean {
   return entry.kind !== HEARTBEAT_KIND && entry.kind !== DAY_SUMMARY_KIND;
@@ -262,7 +262,7 @@ function openOf(all: AssistantProposal[], previous: AssistantProposal[]): Assist
 interface AssistantState {
   /** The conversation, oldest first. */
   messages: AssistantMessage[];
-  /** The journal, oldest first. The strip reads the tail of it. */
+  /** The journal, oldest first. The thread merges it into its timeline. */
   journal: AssistantJournalEntry[];
   /**
    * Proposals, open first then newest first — decided ones included, because a
@@ -301,7 +301,7 @@ interface AssistantState {
   /**
    * How the page tells the server it has looked, installed while it is on
    * screen. A journal push that lands then is acknowledged through this, so
-   * the stamp keeps pace with the strip without the page polling its own
+   * the stamp keeps pace with the timeline without the page polling its own
    * store. Null when no thread is mounted.
    */
   look: (() => void) | null;

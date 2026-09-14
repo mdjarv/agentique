@@ -1,14 +1,28 @@
 import { HeartPulse, Phone, Sparkles, User } from "lucide-react";
 import { memo } from "react";
+import { ProposalCard } from "~/components/assistant/ProposalCard";
+import {
+  EventFold,
+  EventRow,
+  TIMELINE_INDENT,
+  UnseenDivider,
+} from "~/components/assistant/TimelineEvents";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { type AssistantMessage, isHeartbeatNotice, isHeartbeatReply } from "~/lib/assistant/wire";
+import { clockTime, type TimelineItem } from "~/lib/assistant/timeline";
+import {
+  type AssistantMessage,
+  isHeartbeatNotice,
+  isHeartbeatReply,
+  isOpenProposal,
+} from "~/lib/assistant/wire";
 import { cn } from "~/lib/utils";
 
 /**
- * The conversation: the operator's turns and the assistant's, in the order they
- * were said.
+ * The thread's one timeline: the operator's turns and the assistant's, the
+ * journal's news and the proposal cards, in the order they happened
+ * (`buildTimeline` decides the order and what folds).
  *
  * Built here rather than reusing `ChannelPanel`'s timeline, which is a
  * channel's rendering and says so — per-member colours, a member's live status
@@ -23,30 +37,82 @@ import { cn } from "~/lib/utils";
  * it back. A turn the heartbeat started carries `kind: "heartbeat"`, and the
  * pair it arrives as renders as two different things: the server's note is a
  * divider (nobody said it), the head's reply an ordinary bubble with a mark.
+ *
+ * Everything that is not a turn sits in the bubbles' text column, so the eye
+ * reads the avatars as the speakers and the indented lines as what happened
+ * around them. A proposal card carries `data-proposal-id`, which is how the
+ * page finds it to scroll to and to tell whether it is on screen.
  */
 
 interface AssistantConversationProps {
-  messages: AssistantMessage[];
+  items: TimelineItem[];
   /** The head's reply in progress, or null. Rendered as the last turn. */
   streaming: string | null;
 }
 
 export const AssistantConversation = memo(function AssistantConversation({
-  messages,
+  items,
   streaming,
 }: AssistantConversationProps) {
   return (
     <div className="flex flex-col gap-4 px-3 py-4 md:px-6">
-      {messages.map((message, index) => {
-        const key = message.id ?? `${message.createdAt ?? ""}-${index}`;
-        // The heartbeat's own note is not a turn anybody took, so it is not a
-        // bubble. Everything else, the head's reply to it included, is.
-        if (isHeartbeatNotice(message)) return <HeartbeatDivider key={key} message={message} />;
-        return <MessageRow key={key} message={message} />;
-      })}
+      {items.map((item) => (
+        <TimelineRow key={item.key} item={item} />
+      ))}
       {streaming !== null && <StreamingRow text={streaming} />}
     </div>
   );
+});
+
+const TimelineRow = memo(function TimelineRow({ item }: { item: TimelineItem }) {
+  switch (item.type) {
+    case "message":
+      // The heartbeat's own note is not a turn anybody took, so it is not a
+      // bubble. Everything else, the head's reply to it included, is.
+      return isHeartbeatNotice(item.message) ? (
+        <HeartbeatDivider message={item.message} />
+      ) : (
+        <MessageRow message={item.message} />
+      );
+    case "digest":
+      return (
+        <div className="flex flex-col gap-1">
+          <MessageRow message={item.message} />
+          {item.entries.length > 0 && (
+            <div className={TIMELINE_INDENT}>
+              <EventFold
+                entries={item.entries}
+                label={`Based on ${item.entries.length} ${item.entries.length === 1 ? "update" : "updates"}`}
+              />
+            </div>
+          )}
+        </div>
+      );
+    case "event":
+      return (
+        <ul className={cn("-my-2", TIMELINE_INDENT)}>
+          <EventRow entry={item.entry} />
+        </ul>
+      );
+    case "fold":
+      return (
+        <div className={cn("-my-2", TIMELINE_INDENT)}>
+          <EventFold entries={item.entries} />
+        </div>
+      );
+    case "proposal":
+      return (
+        <div
+          className={cn(TIMELINE_INDENT, "max-w-3xl")}
+          data-proposal-id={item.proposal.id}
+          data-proposal-open={isOpenProposal(item.proposal.status) ? "" : undefined}
+        >
+          <ProposalCard proposal={item.proposal} />
+        </div>
+      );
+    case "unseen":
+      return <UnseenDivider />;
+  }
 });
 
 /**
@@ -102,19 +168,6 @@ function firstLine(text: string): string {
   return (end === -1 ? text : text.slice(0, end)).trim();
 }
 
-/**
- * The local clock time of a wire stamp, or "" when it cannot be read.
- *
- * Empty rather than a guess: a divider with no time still says what happened,
- * where "Invalid Date" says the app is broken.
- */
-function clockTime(iso?: string): string {
-  if (!iso) return "";
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return "";
-  return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
 const MessageRow = memo(function MessageRow({ message }: { message: AssistantMessage }) {
   const fromUser = message.role === "user";
   return (
@@ -128,7 +181,7 @@ const MessageRow = memo(function MessageRow({ message }: { message: AssistantMes
       </Avatar>
       <div
         className={cn(
-          "min-w-0 rounded-lg border px-3 py-2 text-sm",
+          "min-w-0 overflow-x-auto rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]",
           fromUser
             ? "max-w-[75%] max-md:max-w-full bg-primary/10 border-primary/15"
             : "flex-1 bg-agent/5 border-agent/15",
@@ -145,7 +198,7 @@ const MessageRow = memo(function MessageRow({ message }: { message: AssistantMes
 /**
  * Said without being asked. The bubble is ordinary — the head's reply to a
  * heartbeat is the same voice saying the same kind of thing — and only this small
- * word says it was not a reply to the operator. The same mark the strip's
+ * word says it was not a reply to the operator. The same mark the timeline's
  * `heartbeat` journal entries wear, so one picture means one thing.
  */
 function HeartbeatMark() {

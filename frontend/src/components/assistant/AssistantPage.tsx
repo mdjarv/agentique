@@ -1,19 +1,22 @@
-import { type UIEvent, useCallback, useEffect, useRef } from "react";
+import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssistantComposer } from "~/components/assistant/AssistantComposer";
 import { AssistantConversation } from "~/components/assistant/AssistantConversation";
 import { AssistantThreadHeader } from "~/components/assistant/AssistantHeader";
-import { AssistantProposals } from "~/components/assistant/AssistantProposals";
-import { AssistantUpdatesStrip } from "~/components/assistant/AssistantUpdatesStrip";
+import { AssistantPinnedProposals } from "~/components/assistant/AssistantPinnedProposals";
 import { HaloOrb } from "~/components/voice/HaloOrb";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { history, journal, markSeen as markSeenRpc, say } from "~/lib/assistant/rpc";
+import { buildTimeline } from "~/lib/assistant/timeline";
+import type { AssistantProposal } from "~/lib/assistant/wire";
 import { getErrorMessage } from "~/lib/utils";
 import {
   selectAssistantError,
   selectAssistantJournal,
   selectAssistantLoaded,
   selectAssistantMessages,
+  selectAssistantOpenProposals,
+  selectAssistantProposals,
   selectAssistantReplying,
   selectAssistantStreaming,
   useAssistantStore,
@@ -24,19 +27,27 @@ import { useFeatureStore } from "~/stores/feature-store";
  * The thread — `/assistant`, the page the rail's assistant row opens.
  *
  * A TRANSPORT, not a head: it brings no model. It renders the shared
- * conversation, forwards the operator's text to the core's own head, and pins
- * what happened while nobody was looking above it. Everything that decides
- * anything — refusals, tiers, budgets — is in `internal/assistant`, where the
- * call hits the same rules.
+ * conversation with the journal's news and the proposal cards merged into it,
+ * and forwards the operator's text to the core's own head. Everything that
+ * decides anything — refusals, tiers, budgets — is in `internal/assistant`,
+ * where the call hits the same rules.
  *
- * Mobile renders this page, not a variant of it: the strip, the conversation
- * and the composer are one column at every width, and the composer goes flush
- * to the edges on a phone the way a session's does.
+ * **One scroll.** The page is a header, one timeline and the composer. News and
+ * cards used to be bands above the conversation, each scrolling on its own, and
+ * the conversation got what was left (design round 2026-09-14). What must stay
+ * in view whatever the scroll — an open proposal — is pinned above the composer
+ * while its card is out of sight, the way a session pins an approval.
+ *
+ * Mobile renders this page, not a variant of it: the same column at every
+ * width, with the composer and the pin flush to the edges on a phone the way a
+ * session's are.
  */
 export function AssistantPage() {
   const ws = useWebSocket();
   const messages = useAssistantStore(selectAssistantMessages);
   const entries = useAssistantStore(selectAssistantJournal);
+  const proposals = useAssistantStore(selectAssistantProposals);
+  const openProposals = useAssistantStore(selectAssistantOpenProposals);
   const streaming = useAssistantStore(selectAssistantStreaming);
   const replying = useAssistantStore(selectAssistantReplying);
   const loaded = useAssistantStore(selectAssistantLoaded);
@@ -46,6 +57,16 @@ export function AssistantPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+
+  // How much was unseen when the reader arrived, read once before the look
+  // below zeroes it: the divider marks where this visit's news starts, and a
+  // push landing while the page is open is not a reason to move it.
+  const [unseenOnArrival] = useState(() => useAssistantStore.getState().unseen);
+
+  const items = useMemo(
+    () => buildTimeline({ messages, journal: entries, proposals, unseenOnArrival }),
+    [messages, entries, proposals, unseenOnArrival],
+  );
 
   // The conversation and the look, on arrival. Both are cheap and bounded, and
   // the look is what the page pins at its top, so it is not deferred behind the
@@ -62,7 +83,7 @@ export function AssistantPage() {
       });
     journal(ws)
       .then((entries) => store.applyJournal(entries))
-      // A read that fails is a missing strip, not a broken page: the
+      // A read that fails is missing news, not a broken page: the
       // conversation is what the operator came for. Logged, not toasted.
       .catch((err) => console.error("assistant.journal failed", err));
   }, [ws, enabled]);
@@ -99,14 +120,30 @@ export function AssistantPage() {
   // they read an older turn is the worse failure.
   // The lengths, not the arrays: a re-read that changes neither is not new
   // content, and the streaming reply grows one delta at a time.
-  const messageCount = messages.length;
+  const itemCount = items.length;
   const streamedLength = streaming?.length ?? -1;
   useEffect(() => {
-    if (messageCount === 0 && streamedLength < 0) return;
+    if (itemCount === 0 && streamedLength < 0) return;
     if (!atBottomRef.current) return;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messageCount, streamedLength]);
+  }, [itemCount, streamedLength]);
+
+  const visibleCards = useVisibleProposalCards(scrollRef, items);
+  const pinned = useMemo(
+    () => pinnedProposals(openProposals, visibleCards),
+    [openProposals, visibleCards],
+  );
+
+  const showCard = useCallback((id: string) => {
+    const card = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-proposal-id="${CSS.escape(id)}"]`,
+    );
+    if (!card) return;
+    atBottomRef.current = false;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    card.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+  }, []);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -148,20 +185,77 @@ export function AssistantPage() {
   return (
     <div className="flex flex-col h-full">
       <AssistantThreadHeader />
-      <AssistantUpdatesStrip entries={entries} />
-      <AssistantProposals />
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden"
+      >
         {error && !loaded ? (
           <p className="text-xs text-destructive text-center py-6">{error}</p>
         ) : empty ? (
           <EmptyThread />
         ) : (
-          <AssistantConversation messages={messages} streaming={streaming} />
+          <AssistantConversation items={items} streaming={streaming} />
         )}
       </div>
+      <AssistantPinnedProposals proposals={pinned} onShow={showCard} />
       <AssistantComposer replying={replying} onSend={handleSend} />
     </div>
   );
+}
+
+const NO_CARDS: ReadonlySet<string> = new Set();
+
+/**
+ * The ids of the open proposal cards currently inside the scroller's view.
+ *
+ * One observer over every `[data-proposal-open]` card, rebuilt when the
+ * timeline changes — cheap, since a thread holds a handful of cards, and it
+ * keeps the set honest about cards that left the DOM. A card counts as visible
+ * once any of it shows, because the pin exists for a card that cannot be seen at
+ * all.
+ */
+function useVisibleProposalCards(
+  scrollRef: React.RefObject<HTMLDivElement | null>,
+  items: unknown,
+): ReadonlySet<string> {
+  const [visible, setVisible] = useState<ReadonlySet<string>>(NO_CARDS);
+  useEffect(() => {
+    void items;
+    const root = scrollRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const cards = root.querySelectorAll<HTMLElement>("[data-proposal-open]");
+    if (cards.length === 0) {
+      setVisible(NO_CARDS);
+      return;
+    }
+    const shown = new Set<string>();
+    const observer = new IntersectionObserver(
+      (records) => {
+        for (const record of records) {
+          const id = (record.target as HTMLElement).dataset.proposalId;
+          if (!id) continue;
+          if (record.isIntersecting) shown.add(id);
+          else shown.delete(id);
+        }
+        setVisible(new Set(shown));
+      },
+      { root },
+    );
+    for (const card of cards) observer.observe(card);
+    return () => observer.disconnect();
+  }, [scrollRef, items]);
+  return visible;
+}
+
+/** Open proposals whose card is out of sight, oldest first. */
+function pinnedProposals(
+  open: AssistantProposal[],
+  visible: ReadonlySet<string>,
+): AssistantProposal[] {
+  return open
+    .filter((row) => row.id && !visible.has(row.id))
+    .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
 }
 
 /** One line saying what this is, and an invitation. Nothing else fits here. */

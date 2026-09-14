@@ -291,8 +291,7 @@ A surface registers with the core and gets three things.
   answers through `Deliver`.
 - The conversation: append a turn, read the tail, and `SinceLast(surface)`,
   which is the journal and the conversation since this surface last saw them.
-  That is what a call's greeting reads and what the thread pins at its top as
-  recent updates.
+  That is what a call's greeting reads.
 
 A surface declares whether it **can show a card**. The thread can. A call
 cannot, and neither can a Telegram line. Where it cannot, an uncontained
@@ -330,9 +329,9 @@ orb with an empty core is the assistant's mark and a call is that mark awake;
 the row wears the unread notch and nothing else; `⌥A` opens it. The thread's
 header carries the call button, because a call is one way of talking to the
 thing you are looking at, and the composer's phone stays in sessions because
-it is about the next message. It renders the channel, proposal cards from
-their rows, and a recent-updates strip. Its composer is the ordinary composer
-sending to the head. It renders on the phone, in the same shape. (Design
+it is about the next message. It renders one timeline — the channel, the
+journal's news and the proposal cards, in the order they happened — above the
+ordinary composer sending to the head (design round 2026-09-14, option A). It renders on the phone, in the same shape. (Design
 round 1, 2026-09-12, option B; D — the thread as the landing page — is the
 direction once proposals exist.)
 
@@ -663,10 +662,12 @@ on the global topic carries the row on create and on decide.
 is thirteen.
 
 **Surfaces.** `ItemProposal` joins the Item union with `Proposal *Proposal`.
-The thread renders open proposals as cards between the strip and the
-conversation: the verb in words, the target in its project, the evidence,
-the rationale, Accept and Decline; a decided one leaves the cards and shows
-in the strip through `proposal_decided`. Accept and Decline call
+The thread renders every proposal it holds as a card in its timeline, at the
+moment it was raised: the verb in words, the target in its project, the
+evidence, the rationale, Accept and Decline; a decided one stays where it is
+and shows its outcome, standing in for its `proposal_made` and
+`proposal_decided` rows. (As first built, open cards sat in a band above the
+conversation; see "One timeline" below.) Accept and Decline call
 `assistant.decide`. The deck's Needs-you band lists open proposals as rows of
 kind `proposal`, ranked after `approval` and `question` and before `unread`,
 with the same two actions; `needs-you.ts` keeps its session kinds and the
@@ -1059,19 +1060,42 @@ arrive as `journal` or as `entries`, through `journalEntriesOf` in
 never spelled at a call site. If the op settles on one shape, delete the other
 branch there.
 
-**Everything the strip holds is unseen, so the strip does not filter.** The
-server's answer to "what have I missed" is already scoped to what this surface
-has not seen, and pushes that arrive afterwards are newer still. So the band
-renders the store's whole journal, newest first, and disappears when it is
-empty; `since` is kept for a later digest rather than used as a client-side
-cutoff. Filtering client-side would have meant two answers to one question.
+**One timeline, one scroll.** The page was first built as three stacked
+scrollers — a recent-updates band, a proposals band, then the conversation in
+whatever height was left, about a third of it on a desktop and less on a
+phone. Design round 2026-09-14 (option A) merged them. `buildTimeline`
+(`lib/assistant/timeline.ts`) is the pure merge, and its rules are tested
+there:
 
-**A report is a quotation with a visible author, and so is any untrusted row.**
-`report` is untrusted by construction and `untrusted` covers the rest, so
-`JournalRow` draws either as a `blockquote` with "reported by <session>" under
-it. The session's name comes from the list this client already holds and falls
-back to the short id, which is what the rest of the app calls a session it
-cannot name.
+- Order is by **parsed** time, because the conversation's stamps carry
+  nanoseconds and the journal's are whole seconds.
+- `heartbeat` and `day_summary` rows are not drawn — the same two kinds
+  `claimsAttention` leaves out. A `proposal_made`/`proposal_decided` row is
+  not drawn for a proposal the client holds: its card is that news.
+- A digest message absorbs the journal rows between it and the previous
+  digest, behind "Based on N updates", because it retells them.
+- A run of three or more rows folds into one line. A run that is still news —
+  after the "since you last looked" divider, or past the last turn — keeps its
+  newest five open and folds only what is ahead of them.
+- The divider sits above the oldest of the entries that were unseen when the
+  page mounted (the store's `unseen`, read once before the look zeroes it), and
+  does not move while the page is open.
+
+A journal row is one line until pressed. A `report`, and any untrusted row, is
+italic on its line and opens as a quotation captioned with where it came from.
+The session's name comes from the list this client already holds and falls
+back to the short id.
+
+**An open proposal is pinned above the composer while its card is out of
+sight** (`AssistantPinnedProposals`), on the session view's approval-banner
+rule. It leads to the card ("Review") rather than deciding in place, because
+the card carries the evidence and the reason a yes should be given against. An
+`IntersectionObserver` over `[data-proposal-open]` cards decides what is out of
+sight, so the pin and its card are never on screen together.
+
+**A bubble scrolls its own wide content.** A markdown table or a long code span
+scrolls inside the bubble (`overflow-x-auto`, `overflow-wrap: anywhere`), so
+the timeline never scrolls sideways.
 
 **`streaming` is the gate as well as the text.** One nullable string in
 `assistant-store`: null means nothing is owed, a string means the head is

@@ -37,7 +37,7 @@ import { define, LONG, MEDIUM, QUICK } from "~/lib/ws-rpc";
 
 /** How many messages a history page asks for. */
 export const HISTORY_PAGE = 50;
-/** How many journal entries the recent-updates strip reads. */
+/** How many journal entries the thread reads into its timeline. */
 export const JOURNAL_LOOK = 50;
 /** How many proposals a read asks for. The server's own cap is the same 50. */
 export const PROPOSAL_PAGE = 50;
