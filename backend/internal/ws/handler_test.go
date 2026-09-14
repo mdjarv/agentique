@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +17,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/mdjarv/agentique/backend/internal/ws"
 )
 
@@ -38,15 +37,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
 // tests that need direct SQL (e.g. backdating created_at defaults).
 func setupTestServerWithDB(t *testing.T) (*httptest.Server, *sql.DB, *store.Queries, func()) {
 	t.Helper()
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-	db, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("failed to run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	queries := store.New(db)
 	srv, err := server.New(queries, server.Config{DB: db})
 	if err != nil {
@@ -63,14 +54,7 @@ func setupTestServerWithDB(t *testing.T) (*httptest.Server, *sql.DB, *store.Quer
 
 func setupAuthenticatedWSServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		db.Close()
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	queries := store.New(db)
 	srv, err := server.New(queries, server.Config{
 		AuthEnabled: true,

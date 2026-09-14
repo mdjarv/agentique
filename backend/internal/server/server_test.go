@@ -8,31 +8,23 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 func setupAuthenticatedTestServer(t *testing.T) (*httptest.Server, *store.Queries, func()) {
 	t.Helper()
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		db.Close()
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	queries := store.New(db)
 	srv, err := server.New(queries, server.Config{
@@ -81,17 +73,7 @@ func createCookieSession(t *testing.T, queries *store.Queries, admin bool) strin
 func setupTestServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("failed to open database: %v", err)
-	}
-
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("failed to run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	queries := store.New(db)
 	srv, err := server.New(queries, server.Config{DB: db})
@@ -428,14 +410,7 @@ func TestRemovingMachineRevokesRemoteBearerFirst(t *testing.T) {
 	}))
 	defer remote.Close()
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	defer db.Close()
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	queries := store.New(db)
 	srv, err := server.New(queries, server.Config{
 		AuthEnabled:       true,

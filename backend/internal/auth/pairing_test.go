@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 const testMachineID = "10000000-0000-4000-8000-000000000001"
@@ -26,14 +26,7 @@ var testPairingNonce = base64.RawURLEncoding.EncodeToString(make([]byte, 32))
 
 func newTestService(t *testing.T) (*Service, *store.Queries) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	queries := store.New(db)
 	svc, err := NewService(queries, "localhost", []string{"http://localhost:9201"})
 	if err != nil {

@@ -4,16 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // --- test fixture ---
@@ -93,14 +92,7 @@ type fixture struct {
 
 func newFixture(t *testing.T, opts Options) *fixture {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatal(err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	q := store.New(db)
 	f := &fixture{t: t, db: db, q: q, gw: &fakeGateway{}, now: time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)}
 	opts.Loc = time.UTC

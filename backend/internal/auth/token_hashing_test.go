@@ -6,27 +6,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // newTestServiceWithDB is newTestService plus the raw handle, so a test can go
 // looking for secrets the store layer would never hand back.
 func newTestServiceWithDB(t *testing.T) (*Service, *store.Queries, *sql.DB) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	queries := store.New(db)
 	svc, err := NewService(queries, "localhost", []string{"http://localhost:9201"})
 	if err != nil {

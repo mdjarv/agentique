@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // serveWithBrain stands up a server with the brain master switch in a given position.
@@ -25,14 +25,7 @@ import (
 func serveWithBrain(t *testing.T, enabled bool) *httptest.Server {
 	t.Helper()
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		db.Close()
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	cfg := server.Config{DB: db, BrainEnabled: enabled}
 	if enabled {
@@ -114,14 +107,7 @@ func TestBrainEnabledMountsRoutes(t *testing.T) {
 // BrainDir names the store, so it is still required: enabled with no directory builds
 // nothing, and must report that honestly rather than advertising a tab that 404s.
 func TestBrainEnabledWithoutDirStaysOff(t *testing.T) {
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	srv, err := server.New(store.New(db), server.Config{DB: db, BrainEnabled: true})
 	if err != nil {

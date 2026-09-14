@@ -6,14 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/allbin/agentkit/runtime"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // noopBroadcaster satisfies eventbus.Broadcaster for tests.
@@ -26,16 +25,7 @@ func (noopBroadcaster) Broadcast(string, any)       {}
 func setupHandler(t *testing.T) (*http.ServeMux, *Handler, *store.Queries, *sql.DB) {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	queries := store.New(db)
 	conn := NewConnector()

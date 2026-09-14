@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/server"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 // The assistant's gate, on the brain's precedent: off means UNBUILT, and
@@ -29,14 +28,7 @@ import (
 func serveWithAssistant(t *testing.T, enabled bool) *httptest.Server {
 	t.Helper()
 
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		db.Close()
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testutil.OpenMigratedDB(t)
 
 	srv, err := server.New(store.New(db), server.Config{DB: db, ExperimentalAssistant: enabled})
 	if err != nil {

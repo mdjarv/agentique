@@ -3,12 +3,11 @@ package server
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/config"
 	"github.com/mdjarv/agentique/backend/internal/store"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
 func newCatalogTestDB(t *testing.T) *store.Queries {
@@ -16,14 +15,7 @@ func newCatalogTestDB(t *testing.T) *store.Queries {
 	// Point the CLI-extras layer at an empty dir so the developer's own
 	// ~/.claude.json can't leak extra models into these assertions.
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatal(err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	return store.New(db)
 }
 
@@ -119,13 +111,7 @@ func TestModelCatalogConfigOverrideWins(t *testing.T) {
 
 func TestModelCatalogSurvivesClosedDB(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
-	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatal(err)
-	}
+	db := testutil.OpenMigratedDB(t)
 	q := store.New(db)
 	closeDB(t, db)
 
