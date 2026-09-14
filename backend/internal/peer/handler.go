@@ -54,6 +54,7 @@ type Handler struct {
 	machineID string
 	limits    *limiter
 	outbox    *Outbox
+	events    session.TranscriptEvents
 }
 
 // Option configures a [Handler].
@@ -73,6 +74,12 @@ func WithCatalog(c Catalog) Option { return func(h *Handler) { h.catalog = c } }
 // Without one there is no /api/peer/events and nothing a paired server sends
 // here reports back.
 func WithOutbox(o *Outbox) Option { return func(h *Handler) { h.outbox = o } }
+
+// WithTranscripts serves a session's recent transcript to a paired server, so
+// its assistant can summarise work running here. Without it the route is absent.
+func WithTranscripts(events session.TranscriptEvents) Option {
+	return func(h *Handler) { h.events = events }
+}
 
 // withClock replaces the limiter's clock, for tests.
 func withClock(now func() time.Time) Option { return func(h *Handler) { h.limits = newLimiter(now) } }
@@ -96,7 +103,71 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/peer/sessions/{id}/send", h.handleSend)
 	if h.outbox != nil {
 		mux.HandleFunc("GET /api/peer/events", h.handleEvents)
+		mux.HandleFunc("POST /api/peer/sessions/{id}/follow", h.handleFollow)
 	}
+	if h.events != nil {
+		mux.HandleFunc("GET /api/peer/sessions/{id}/transcript", h.handleTranscript)
+	}
+}
+
+// handleFollow subscribes the credential's server to a session it did not
+// start, so its turn endings and reports reach that server's outbox. Reading is
+// all it grants, so it is not gated on accept-actions: a paired server can
+// already list the session.
+func (h *Handler) handleFollow(w http.ResponseWriter, r *http.Request) {
+	credential, id, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	if err := h.outbox.Follow(r.Context(), id, credential, ""); err != nil {
+		httperror.RespondError(w, httperror.Internal("follow session", err))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, map[string]bool{"following": true})
+}
+
+// Transcript bounds, the same the summariser on this machine reads.
+const (
+	transcriptTurns    = 6
+	maxTranscriptBytes = 24000
+)
+
+// TranscriptResponse answers GET /api/peer/sessions/{id}/transcript. The text is
+// agent-written content about a repository; the reader summarises it as data.
+type TranscriptResponse struct {
+	Transcript string `json:"transcript"`
+}
+
+func (h *Handler) handleTranscript(w http.ResponseWriter, r *http.Request) {
+	_, id, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	text, err := session.RecentTranscript(r.Context(), h.events, id, transcriptTurns, maxTranscriptBytes)
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("read transcript", err))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, TranscriptResponse{Transcript: text})
+}
+
+// existingSession is the common preamble of a route about one session: a peer
+// credential, a UUID, and a session that exists here.
+func (h *Handler) existingSession(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	credential, ok := h.requirePeer(w, r)
+	if !ok {
+		return "", "", false
+	}
+	id := r.PathValue("id")
+	if uuid.Validate(id) != nil {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "session id must be a UUID"))
+		return "", "", false
+	}
+	if _, err := h.sessions.GetSessionInfo(r.Context(), id); err != nil {
+		h.refuse(w, r, credential, refuse(http.StatusNotFound, ReasonNotFound, "no such session here"))
+		return "", "", false
+	}
+	return credential, id, true
 }
 
 // handleEvents is the follower's poll: GET /api/peer/events?since=N&wait=S.

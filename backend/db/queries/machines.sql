@@ -34,3 +34,10 @@ VALUES (1, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   label = excluded.label,
   icon = excluded.icon;
+
+-- name: SetMachinePeerCredential :execrows
+UPDATE machines SET peer_token = sqlc.arg(peer_token), peer_session_id = sqlc.arg(peer_session_id)
+WHERE machine_id = sqlc.arg(machine_id);
+
+-- name: SetMachinePeerCursor :execrows
+UPDATE machines SET peer_cursor = sqlc.arg(peer_cursor) WHERE machine_id = sqlc.arg(machine_id);

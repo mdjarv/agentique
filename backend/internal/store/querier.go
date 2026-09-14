@@ -147,6 +147,7 @@ type Querier interface {
 	// reports and journals -- and it is the only count that is true after the fact,
 	// where the one read before the delete is what the summary could see.
 	DeleteAssistantJournalRawForDay(ctx context.Context, arg DeleteAssistantJournalRawForDayParams) (int64, error)
+	DeleteAssistantPeerFollow(ctx context.Context, sessionID string) error
 	DeleteAssistantPolicy(ctx context.Context, id string) error
 	DeleteAuthSession(ctx context.Context, tokenHash string) error
 	DeleteAuthSessionByID(ctx context.Context, id sql.NullString) (int64, error)
@@ -299,6 +300,7 @@ type Querier interface {
 	// What has been said in the conversation since a surface last looked, oldest
 	// first: this is read to be pasted into a preamble or a strip, in order.
 	ListAssistantMessagesSince(ctx context.Context, arg ListAssistantMessagesSinceParams) ([]Message, error)
+	ListAssistantPeerFollows(ctx context.Context) ([]AssistantPeerFollow, error)
 	// Standing instructions and the heartbeat's mark (docs/assistant.md, the M4
 	// contract, and migration 059).
 	// Name order, so the list a person reads and the list the heartbeat reads are
@@ -407,6 +409,8 @@ type Querier interface {
 	// VALUES clause names.
 	SetAssistantSurfaceMark(ctx context.Context, arg SetAssistantSurfaceMarkParams) error
 	SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error
+	SetMachinePeerCredential(ctx context.Context, arg SetMachinePeerCredentialParams) (int64, error)
+	SetMachinePeerCursor(ctx context.Context, arg SetMachinePeerCursorParams) (int64, error)
 	SetScheduleAttention(ctx context.Context, arg SetScheduleAttentionParams) error
 	SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) error
 	SetScheduleFailures(ctx context.Context, arg SetScheduleFailuresParams) error
@@ -496,6 +500,7 @@ type Querier interface {
 	UpdateUserSidebarFocusMode(ctx context.Context, arg UpdateUserSidebarFocusModeParams) error
 	UpdateWorktreeBaseSHA(ctx context.Context, arg UpdateWorktreeBaseSHAParams) error
 	UpsertAssistantFollow(ctx context.Context, arg UpsertAssistantFollowParams) error
+	UpsertAssistantPeerFollow(ctx context.Context, arg UpsertAssistantPeerFollowParams) error
 	// One statement for a new policy and an edit, because the client sends the
 	// whole row either way: a policy is one form with a Save button, and a
 	// partial update would need a field-by-field patch nobody asked for.

@@ -459,3 +459,14 @@ VALUES (1, sqlc.arg(last_compacted_at), sqlc.arg(now), sqlc.arg(now))
 ON CONFLICT(id) DO UPDATE SET
   last_compacted_at = excluded.last_compacted_at,
   updated_at = excluded.updated_at;
+
+-- name: UpsertAssistantPeerFollow :exec
+INSERT INTO assistant_peer_follows (machine_id, session_id, since, source)
+VALUES (sqlc.arg(machine_id), sqlc.arg(session_id), sqlc.arg(since), sqlc.arg(source))
+ON CONFLICT (machine_id, session_id) DO UPDATE SET source = excluded.source;
+
+-- name: DeleteAssistantPeerFollow :exec
+DELETE FROM assistant_peer_follows WHERE session_id = ?;
+
+-- name: ListAssistantPeerFollows :many
+SELECT machine_id, session_id, since, source FROM assistant_peer_follows ORDER BY since;

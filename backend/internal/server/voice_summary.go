@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -13,6 +11,7 @@ import (
 	claudecli "github.com/allbin/claudecli-go"
 
 	"github.com/mdjarv/agentique/backend/internal/msggen"
+	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -240,51 +239,10 @@ func (s *sessionSummarizer) recentTranscript(ctx context.Context, sessionID stri
 	if s.queries == nil {
 		return ""
 	}
-	events, err := s.queries.ListRecentEventsBySession(ctx, store.ListRecentEventsBySessionParams{
-		SessionID: sessionID,
-		Column2:   summaryTurns,
-	})
+	out, err := session.RecentTranscript(ctx, s.queries, sessionID, summaryTurns, maxSummaryInput)
 	if err != nil {
 		slog.Warn("voice: transcript lookup failed", "session", sessionID, "error", err)
 		return ""
-	}
-
-	var b strings.Builder
-	for _, ev := range events {
-		// Prompts and assistant text carry the intent. Tool calls and results
-		// are volume without much meaning at this altitude.
-		var who string
-		switch ev.Type {
-		case "prompt":
-			who = "User"
-		case "text":
-			who = "Agent"
-		default:
-			continue
-		}
-
-		var payload struct {
-			Content string `json:"content"`
-			Text    string `json:"text"`
-			Prompt  string `json:"prompt"`
-		}
-		if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
-			continue
-		}
-		text := firstNonEmptyOf(payload.Content, payload.Text, payload.Prompt)
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		fmt.Fprintf(&b, "%s: %s\n\n", who, strings.TrimSpace(text))
-
-		if b.Len() > maxSummaryInput {
-			break
-		}
-	}
-
-	out := strings.TrimSpace(b.String())
-	if len(out) > maxSummaryInput {
-		out = out[:maxSummaryInput]
 	}
 	return out
 }

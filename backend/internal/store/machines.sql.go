@@ -35,7 +35,7 @@ func (q *Queries) GetHostPresentation(ctx context.Context) (GetHostPresentationR
 }
 
 const getMachine = `-- name: GetMachine :one
-SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os FROM machines WHERE machine_id = ?
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os, peer_token, peer_session_id, peer_cursor FROM machines WHERE machine_id = ?
 `
 
 func (q *Queries) GetMachine(ctx context.Context, machineID string) (Machine, error) {
@@ -51,12 +51,15 @@ func (q *Queries) GetMachine(ctx context.Context, machineID string) (Machine, er
 		&i.SessionID,
 		&i.IdentityKey,
 		&i.PlatformOs,
+		&i.PeerToken,
+		&i.PeerSessionID,
+		&i.PeerCursor,
 	)
 	return i, err
 }
 
 const listMachines = `-- name: ListMachines :many
-SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os FROM machines ORDER BY label
+SELECT machine_id, label, base_url, token, added_at, icon, session_id, identity_key, platform_os, peer_token, peer_session_id, peer_cursor FROM machines ORDER BY label
 `
 
 func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
@@ -78,6 +81,9 @@ func (q *Queries) ListMachines(ctx context.Context) ([]Machine, error) {
 			&i.SessionID,
 			&i.IdentityKey,
 			&i.PlatformOs,
+			&i.PeerToken,
+			&i.PeerSessionID,
+			&i.PeerCursor,
 		); err != nil {
 			return nil, err
 		}
@@ -108,6 +114,42 @@ type SetHostPresentationParams struct {
 func (q *Queries) SetHostPresentation(ctx context.Context, arg SetHostPresentationParams) error {
 	_, err := q.db.ExecContext(ctx, setHostPresentation, arg.Label, arg.Icon)
 	return err
+}
+
+const setMachinePeerCredential = `-- name: SetMachinePeerCredential :execrows
+UPDATE machines SET peer_token = ?1, peer_session_id = ?2
+WHERE machine_id = ?3
+`
+
+type SetMachinePeerCredentialParams struct {
+	PeerToken     string `json:"peer_token"`
+	PeerSessionID string `json:"peer_session_id"`
+	MachineID     string `json:"machine_id"`
+}
+
+func (q *Queries) SetMachinePeerCredential(ctx context.Context, arg SetMachinePeerCredentialParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setMachinePeerCredential, arg.PeerToken, arg.PeerSessionID, arg.MachineID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setMachinePeerCursor = `-- name: SetMachinePeerCursor :execrows
+UPDATE machines SET peer_cursor = ?1 WHERE machine_id = ?2
+`
+
+type SetMachinePeerCursorParams struct {
+	PeerCursor int64  `json:"peer_cursor"`
+	MachineID  string `json:"machine_id"`
+}
+
+func (q *Queries) SetMachinePeerCursor(ctx context.Context, arg SetMachinePeerCursorParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setMachinePeerCursor, arg.PeerCursor, arg.MachineID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateMachinePresentation = `-- name: UpdateMachinePresentation :execrows

@@ -789,6 +789,16 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			httperror.RespondError(w, httperror.Internal("load machine", err))
 			return
 		}
+		// The peer credential first (docs/peers.md): it is the one an unattended
+		// loop here presents, and forgetting the machine must not leave it alive
+		// on the remote. A refusal already counts as revoked, the same rule as
+		// the bearer's.
+		if entry.PeerToken != "" {
+			if err := machine.RevokeRemoteBearer(r.Context(), machineHTTPClient, entry.BaseUrl, entry.MachineID, entry.IdentityKey, entry.PeerToken); err != nil {
+				httperror.RespondError(w, httperror.BadGateway("remote peer credential could not be revoked; the machine was not removed", err))
+				return
+			}
+		}
 		if err := machine.RevokeRemoteBearer(r.Context(), machineHTTPClient, entry.BaseUrl, entry.MachineID, entry.IdentityKey, entry.Token); err != nil {
 			httperror.RespondError(w, httperror.BadGateway("remote credential could not be revoked; the machine was not removed", err))
 			return
@@ -976,6 +986,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		peer.WithMachineID(cfg.MachineID),
 		peer.WithCatalog(catalog),
 		peer.WithOutbox(peerOutbox),
+		peer.WithTranscripts(queries),
 	).RegisterRoutes(mux)
 
 	// Persistent memory ("the brain"). Opt-in: [brain] enabled is the master switch

@@ -70,6 +70,23 @@ type RemotePeer struct {
 // host answering at a stale or hijacked address never receives the credential.
 // maxBytes bounds the body, because the answer comes from another machine.
 func FetchRemoteJSON(ctx context.Context, client *http.Client, peer RemotePeer, path string, maxBytes int64, dst any) error {
+	return DoRemoteJSON(ctx, client, peer, http.MethodGet, path, nil, maxBytes, dst)
+}
+
+// RemoteStatusError is a paired machine answering with a status other than
+// 200. Body is the bounded response, so a caller that knows the route's error
+// shape can decode a refusal from it.
+type RemoteStatusError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *RemoteStatusError) Error() string { return fmt.Sprintf("status %d", e.Status) }
+
+// DoRemoteJSON is [FetchRemoteJSON] for any method: identity proof first, then
+// the request with the bearer and body (JSON-encoded when non-nil), decoding a
+// 200 into dst. Any other status is a [*RemoteStatusError].
+func DoRemoteJSON(ctx context.Context, client *http.Client, peer RemotePeer, method, path string, body any, maxBytes int64, dst any) error {
 	if client == nil {
 		return errors.New("remote machine HTTP client is unavailable")
 	}
@@ -80,18 +97,43 @@ func FetchRemoteJSON(ctx context.Context, client *http.Client, peer RemotePeer, 
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, peer.BaseURL+path, nil)
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("encode request to %s: %w", path, err)
+		}
+		reader = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, peer.BaseURL+path, reader)
 	if err != nil {
 		return fmt.Errorf("create remote request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+peer.Token)
 	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", path, err)
 	}
-	if err := decodeLimitedJSONResponse(resp, maxBytes, dst); err != nil {
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(raw)) > maxBytes {
+		return fmt.Errorf("read %s: response exceeds %d bytes", path, maxBytes)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return &RemoteStatusError{Status: resp.StatusCode, Body: raw}
+	}
+	if dst == nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil
 }

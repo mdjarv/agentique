@@ -286,6 +286,15 @@ func (q *Queries) DeleteAssistantJournalRawForDay(ctx context.Context, arg Delet
 	return result.RowsAffected()
 }
 
+const deleteAssistantPeerFollow = `-- name: DeleteAssistantPeerFollow :exec
+DELETE FROM assistant_peer_follows WHERE session_id = ?
+`
+
+func (q *Queries) DeleteAssistantPeerFollow(ctx context.Context, sessionID string) error {
+	_, err := q.db.ExecContext(ctx, deleteAssistantPeerFollow, sessionID)
+	return err
+}
+
 const deleteAssistantPolicy = `-- name: DeleteAssistantPolicy :exec
 DELETE FROM assistant_policies WHERE id = ?
 `
@@ -1047,6 +1056,38 @@ func (q *Queries) ListAssistantMessagesSince(ctx context.Context, arg ListAssist
 	return items, nil
 }
 
+const listAssistantPeerFollows = `-- name: ListAssistantPeerFollows :many
+SELECT machine_id, session_id, since, source FROM assistant_peer_follows ORDER BY since
+`
+
+func (q *Queries) ListAssistantPeerFollows(ctx context.Context) ([]AssistantPeerFollow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssistantPeerFollows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AssistantPeerFollow{}
+	for rows.Next() {
+		var i AssistantPeerFollow
+		if err := rows.Scan(
+			&i.MachineID,
+			&i.SessionID,
+			&i.Since,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssistantPolicies = `-- name: ListAssistantPolicies :many
 
 SELECT id, name, text, enabled, budget_in_flight, budget_per_day, last_fired_at, created_at, updated_at FROM assistant_policies ORDER BY name ASC, id ASC
@@ -1384,6 +1425,29 @@ type UpsertAssistantFollowParams struct {
 
 func (q *Queries) UpsertAssistantFollow(ctx context.Context, arg UpsertAssistantFollowParams) error {
 	_, err := q.db.ExecContext(ctx, upsertAssistantFollow, arg.SessionID, arg.Since, arg.Source)
+	return err
+}
+
+const upsertAssistantPeerFollow = `-- name: UpsertAssistantPeerFollow :exec
+INSERT INTO assistant_peer_follows (machine_id, session_id, since, source)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT (machine_id, session_id) DO UPDATE SET source = excluded.source
+`
+
+type UpsertAssistantPeerFollowParams struct {
+	MachineID string `json:"machine_id"`
+	SessionID string `json:"session_id"`
+	Since     string `json:"since"`
+	Source    string `json:"source"`
+}
+
+func (q *Queries) UpsertAssistantPeerFollow(ctx context.Context, arg UpsertAssistantPeerFollowParams) error {
+	_, err := q.db.ExecContext(ctx, upsertAssistantPeerFollow,
+		arg.MachineID,
+		arg.SessionID,
+		arg.Since,
+		arg.Source,
+	)
 	return err
 }
 

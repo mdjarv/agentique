@@ -41,6 +41,13 @@ type AssistantJournal struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type AssistantPeerFollow struct {
+	MachineID string `json:"machine_id"`
+	SessionID string `json:"session_id"`
+	Since     string `json:"since"`
+	Source    string `json:"source"`
+}
+
 type AssistantPolicy struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -133,15 +140,18 @@ type InviteToken struct {
 }
 
 type Machine struct {
-	MachineID   string `json:"machine_id"`
-	Label       string `json:"label"`
-	BaseUrl     string `json:"base_url"`
-	Token       string `json:"token"`
-	AddedAt     string `json:"added_at"`
-	Icon        string `json:"icon"`
-	SessionID   string `json:"session_id"`
-	IdentityKey string `json:"identity_key"`
-	PlatformOs  string `json:"platform_os"`
+	MachineID     string `json:"machine_id"`
+	Label         string `json:"label"`
+	BaseUrl       string `json:"base_url"`
+	Token         string `json:"token"`
+	AddedAt       string `json:"added_at"`
+	Icon          string `json:"icon"`
+	SessionID     string `json:"session_id"`
+	IdentityKey   string `json:"identity_key"`
+	PlatformOs    string `json:"platform_os"`
+	PeerToken     string `json:"peer_token"`
+	PeerSessionID string `json:"peer_session_id"`
+	PeerCursor    int64  `json:"peer_cursor"`
 }
 
 type Message struct {
