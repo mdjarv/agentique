@@ -15,11 +15,10 @@ Work in four steps: **survey**, **ask**, **act**, **verify**. The survey is
 read-only. Nothing is installed, written or restarted until the person has
 picked what they want from what you found.
 
-Expect a **half-finished install**. People often start by hand — the install
-script, `agentique setup`, a foreground `agentique serve`, `tailscale up` — and
-abort partway before asking you. Treat every step below as **reconcile**, not
-install: find what already exists, keep what is valid, repair what is
-inconsistent, and add only what is missing.
+The machine may be clean, fully set up, or somewhere in between — for instance
+an earlier attempt by hand (the install script, `agentique setup`, `tailscale
+up`) that stopped partway. Work from what the survey finds: keep what is valid,
+repair what is inconsistent, and add only what is missing.
 
 ## Rules that hold in every step
 
@@ -83,7 +82,7 @@ command -v tailscale && tailscale status --json | python3 -c 'import json,sys; d
 command -v tailscale && tailscale serve status
 command -v node npx gh codex just
 
-# Leftovers from an aborted attempt
+# Existing or partial setup
 which -a agentique; ls -la ~/.local/bin/agentique* /usr/local/bin/agentique* 2>/dev/null
 ls -la ~/.local/share/agentique ~/Library/Application\ Support/agentique 2>/dev/null
 pgrep -af 'agentique (serve|tray)'                       # a serve whose PID is not the service's runs outside it
@@ -155,8 +154,8 @@ before touching it.
 ## 2. Ask
 
 Show the table, then give a short read of it: what is missing, what is broken,
-which leftovers you found and what you think happened ("the installer finished,
-setup was abandoned before the service step"). Lead with anything urgent, such
+and, if any leftovers matched, what you think happened ("the installer finished,
+setup stopped before the service step"). Lead with anything urgent, such
 as a network listener nobody has registered on. Then ask what the person wants
 help with, as a multi-select question (`AskUserQuestion` in Claude Code). Offer
 only the options that apply to what you found, and mark the ones you recommend:
