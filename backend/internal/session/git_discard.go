@@ -42,6 +42,9 @@ func (g *GitService) DiscardFile(
 	if _, statErr := os.Stat(dir); statErr != nil {
 		return UncommittedFilesResult{}, fmt.Errorf("work directory not found")
 	}
+	if !g.git.IsRepoRoot(dir) {
+		return UncommittedFilesResult{}, fmt.Errorf("discard: %w", gitops.ErrNotRepository)
+	}
 
 	live := g.mgr.Get(sessionID)
 	guard, err := tryLockForGitOp(g.mgr, sessionID, live, "discarding", StateIdle)

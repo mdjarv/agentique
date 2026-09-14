@@ -61,7 +61,7 @@ func (s *Session) buildLocalSnapshot(state State) GitSnapshot {
 
 	if s.git.workDir != "" && !snap.WorktreeMerged && (state == StateIdle || state == StateDone) {
 		if s.git.gitStatus != nil {
-			if dirty, err := s.git.gitStatus.HasUncommittedChanges(s.git.workDir); err == nil {
+			if dirty, ok := localDirty(s.git.gitStatus, s.git.workDir); ok {
 				snap.HasDirtyWorktree = dirty
 				snap.HasUncommitted = dirty
 			}
@@ -129,6 +129,9 @@ func (s *Session) scheduleGitRefresh() {
 			return
 		}
 
+		if !gitops.IsRepoRoot(workDir) {
+			return // a plain folder: nothing for git to report
+		}
 		dirty, err := gitops.HasUncommittedChanges(workDir)
 		if err != nil {
 			slog.Warn("mid-turn git status check failed", "session_id", s.ID, "error", err)

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -67,6 +68,7 @@ type mockGitOps struct {
 	uncommittedFiles []gitops.FileStatus
 	uncommittedErr   error
 	discardErr       error
+	notRepo          bool
 
 	// Call tracking
 	fetchCalled    bool
@@ -76,6 +78,7 @@ type mockGitOps struct {
 	discardCalled  bool
 }
 
+func (m *mockGitOps) IsRepoRoot(string) bool { return !m.notRepo }
 func (m *mockGitOps) Fetch(string) error {
 	m.fetchCalled = true
 	return m.fetchErr
@@ -156,6 +159,46 @@ func TestStatus_ProjectNotFound(t *testing.T) {
 	_, err := svc.Status(context.Background(), "bad-id")
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// A project whose folder is not a repository root refuses every git operation
+// with the named error, before git runs, and answers the two lists the client
+// asks for unprompted with empty ones.
+func TestPlainFolderProject(t *testing.T) {
+	git := &mockGitOps{notRepo: true, dirty: true, localBranches: []string{"main"}}
+	svc, hub := newTestService(git)
+	ctx := context.Background()
+
+	refused := map[string]func() error{
+		"fetch":    func() error { _, err := svc.Fetch(ctx, "proj-1"); return err },
+		"push":     func() error { _, err := svc.Push(ctx, "proj-1"); return err },
+		"pull":     func() error { _, err := svc.Pull(ctx, "proj-1"); return err },
+		"commit":   func() error { _, err := svc.Commit(ctx, "proj-1", "m"); return err },
+		"message":  func() error { _, err := svc.GenerateCommitMessage(ctx, "proj-1"); return err },
+		"branches": func() error { _, err := svc.ListBranches(ctx, "proj-1"); return err },
+		"checkout": func() error { _, err := svc.Checkout(ctx, "proj-1", "main"); return err },
+		"discard":  func() error { _, err := svc.DiscardChanges(ctx, "proj-1"); return err },
+	}
+	for name, op := range refused {
+		if err := op(); !errors.Is(err, gitops.ErrNotRepository) {
+			t.Errorf("%s: err = %v, want ErrNotRepository", name, err)
+		}
+	}
+	if git.fetchCalled || git.discardCalled || git.commitMsg != "" || git.checkoutBranch != "" {
+		t.Error("a refused operation reached git")
+	}
+	if len(hub.messages) != 0 {
+		t.Errorf("a refused operation broadcast %d events", len(hub.messages))
+	}
+
+	tracked, err := svc.TrackedFiles(ctx, "proj-1")
+	if err != nil || len(tracked.Files) != 0 {
+		t.Errorf("TrackedFiles = %v, %v; want empty, nil", tracked.Files, err)
+	}
+	files, err := svc.UncommittedFiles(ctx, "proj-1")
+	if err != nil || len(files.Files) != 0 {
+		t.Errorf("UncommittedFiles = %v, %v; want empty, nil", files.Files, err)
 	}
 }
 

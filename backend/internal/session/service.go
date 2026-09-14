@@ -16,6 +16,7 @@ import (
 
 	"github.com/allbin/agentkit/eventbus"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/janitor"
 	"github.com/mdjarv/agentique/backend/internal/msggen"
 	"github.com/mdjarv/agentique/backend/internal/paths"
@@ -634,6 +635,14 @@ func (s *Service) provisionWorktree(ctx context.Context, p CreateSessionParams, 
 	wt := worktreeInfo{workDir: project.Path}
 	if !p.Worktree {
 		return wt, nil
+	}
+	// A linked worktree needs a repository to link to. A project whose folder
+	// is not a repository root runs its sessions straight in that folder, and
+	// a request for isolation it cannot have is refused rather than quietly
+	// downgraded: a caller that wanted a worktree (a swarm worker, say) was
+	// counting on not sharing a directory.
+	if !gitops.IsRepoRoot(project.Path) {
+		return worktreeInfo{}, fmt.Errorf("project %q is a plain folder, so its sessions cannot have a worktree: %w", project.Name, gitops.ErrNotRepository)
 	}
 
 	branch := p.Branch
@@ -1273,7 +1282,7 @@ func (s *Service) refreshBranchStatus(sessionID string) {
 		s.mgr.branchStatus.put(sessionID, branchStatusKey{projectPath: project.Path, branch: branch}, bs)
 		return
 	}
-	if dirty, err := s.mgr.gitStatus.HasUncommittedChanges(dbSess.WorkDir); err == nil {
+	if dirty, ok := localDirty(s.mgr.gitStatus, dbSess.WorkDir); ok {
 		s.mgr.branchStatus.put(sessionID,
 			branchStatusKey{projectPath: project.Path, workDir: dbSess.WorkDir},
 			branchStatus{HasUncommitted: dirty})

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
@@ -70,6 +71,40 @@ func (s *SpawnSuite) seedChannelWithRole(name, sessionID, role string) string {
 	_, err = s.svc.JoinChannel(ctx, sessionID, ch.ID, role)
 	s.Require().NoError(err)
 	return ch.ID
+}
+
+// A project whose folder is not a repository root cannot give a session a
+// worktree. The request is refused, never downgraded to the shared folder: a
+// caller asking for isolation was counting on it.
+func (s *SpawnSuite) TestCreateSession_WorktreeInPlainFolderRefused() {
+	_, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID: s.Project.ID,
+		Name:      "Isolated",
+		Model:     "opus",
+		Worktree:  true,
+	})
+	s.Require().ErrorIs(err, gitops.ErrNotRepository)
+
+	sessions, err := s.Queries.ListSessionsByProject(context.Background(), s.Project.ID)
+	s.Require().NoError(err)
+	s.Empty(sessions, "a refused create writes no row")
+}
+
+// A folder inside some other repository is still a plain folder: the rule
+// asks about the project's own directory.
+func (s *SpawnSuite) TestCreateSession_WorktreeInRepoSubfolderRefused() {
+	s.initGitRepo()
+	sub := filepath.Join(s.Project.Path, "sub")
+	s.Require().NoError(os.Mkdir(sub, 0o755))
+	project := testutil.SeedProject(s.T(), s.Queries, "sub", sub)
+
+	_, err := s.svc.CreateSession(context.Background(), CreateSessionParams{
+		ProjectID: project.ID,
+		Name:      "Isolated",
+		Model:     "opus",
+		Worktree:  true,
+	})
+	s.Require().ErrorIs(err, gitops.ErrNotRepository)
 }
 
 // --- authorizeSpawn unit tests ---

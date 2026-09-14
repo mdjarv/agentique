@@ -47,6 +47,7 @@ func RealBranchStatusQuerier() branchStatusQuerier { return realBranchStatusQuer
 
 type realBranchStatusQuerier struct{}
 
+func (realBranchStatusQuerier) IsRepoRoot(dir string) bool { return gitops.IsRepoRoot(dir) }
 func (realBranchStatusQuerier) BranchExists(dir, branch string) bool {
 	return gitops.BranchExists(dir, branch)
 }
@@ -141,7 +142,7 @@ func (realWorktreeOps) DeleteRemoteBranch(dir, branch string) { gitops.DeleteRem
 
 // sessionGitOps abstracts git operations used by session.GitService.
 type sessionGitOps interface {
-	IsRepo(dir string) bool
+	IsRepoRoot(dir string) bool
 	HasUncommittedChanges(dir string) (bool, error)
 	AutoCommitAll(dir, message string) error
 	MergeBranch(dir, branch string) (string, error)
@@ -174,7 +175,7 @@ func RealSessionGitOps() sessionGitOps { return realSessionGitOps{} }
 
 type realSessionGitOps struct{}
 
-func (realSessionGitOps) IsRepo(dir string) bool { return gitops.IsRepo(dir) }
+func (realSessionGitOps) IsRepoRoot(dir string) bool { return gitops.IsRepoRoot(dir) }
 
 func (realSessionGitOps) HasUncommittedChanges(dir string) (bool, error) {
 	return gitops.HasUncommittedChanges(dir)

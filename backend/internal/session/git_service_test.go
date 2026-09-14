@@ -80,7 +80,7 @@ func (m *mockSessionGitOps) PushBranch(string, string) error { return m.pushErr 
 func (m *mockSessionGitOps) CreatePR(string, string, string, string) (string, error) {
 	return m.createPRUrl, m.createPRErr
 }
-func (m *mockSessionGitOps) IsRepo(string) bool { return !m.notRepo }
+func (m *mockSessionGitOps) IsRepoRoot(string) bool { return !m.notRepo }
 func (m *mockSessionGitOps) WorktreeDiff(context.Context, string, string, bool) (worktree.DiffResult, error) {
 	return m.diffResult, m.diffErr
 }
@@ -250,6 +250,27 @@ func (s *GitServiceSuite) TestDiff_NotAGitRepo() {
 	result, err = s.gitSvc.UncommittedDiff(context.Background(), id)
 	s.NoError(err)
 	s.False(result.HasDiff)
+}
+
+// A plain folder has no git to commit or discard through. Both refuse with
+// the named error rather than relaying git's usage text, and the file list is
+// empty rather than failed — the Changes view asks for it unprompted.
+func (s *GitServiceSuite) TestGitOps_NotAGitRepo() {
+	id := s.createLocalSession()
+	s.git.notRepo = true
+	s.git.dirty = true
+	s.git.uncommittedErr = fmt.Errorf("exit status 128: fatal: not a git repository")
+	ctx := context.Background()
+
+	_, err := s.gitSvc.Commit(ctx, id, "msg")
+	s.ErrorIs(err, gitops.ErrNotRepository)
+
+	_, err = s.gitSvc.DiscardFile(ctx, id, "notes.txt")
+	s.ErrorIs(err, gitops.ErrNotRepository)
+
+	files, err := s.gitSvc.UncommittedFiles(ctx, id)
+	s.NoError(err)
+	s.Empty(files.Files)
 }
 
 func (s *GitServiceSuite) TestDiff_SessionNotFound() {

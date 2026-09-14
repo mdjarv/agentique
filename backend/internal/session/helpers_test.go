@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -17,7 +18,10 @@ type mockBranchQuerier struct {
 	dirtyErr     error
 	mergeResult  gitops.MergeTreeResult
 	mergeErr     error
+	notRepo      bool
 }
+
+func (m *mockBranchQuerier) IsRepoRoot(string) bool { return !m.notRepo }
 
 func (m *mockBranchQuerier) BranchExists(string, string) bool           { return m.branchExists }
 func (m *mockBranchQuerier) CommitsAhead(string, string) (int, error)   { return m.ahead, m.aheadErr }
@@ -134,4 +138,26 @@ func TestComputeBranchStatus_MergeCheckError(t *testing.T) {
 	if bs.MergeStatus != "unknown" {
 		t.Errorf("got merge status %q, want unknown", bs.MergeStatus)
 	}
+}
+
+func TestLocalDirty(t *testing.T) {
+	t.Run("plain folder is a known clean answer", func(t *testing.T) {
+		q := &mockBranchQuerier{notRepo: true, dirty: true, dirtyErr: errors.New("fatal: not a git repository")}
+		dirty, ok := localDirty(q, "/some/folder")
+		if dirty || !ok {
+			t.Errorf("localDirty on a plain folder = (%v, %v), want (false, true)", dirty, ok)
+		}
+	})
+	t.Run("repository reports git's answer", func(t *testing.T) {
+		dirty, ok := localDirty(&mockBranchQuerier{dirty: true}, "/repo")
+		if !dirty || !ok {
+			t.Errorf("localDirty on a dirty repo = (%v, %v), want (true, true)", dirty, ok)
+		}
+	})
+	t.Run("git failure is not an answer", func(t *testing.T) {
+		_, ok := localDirty(&mockBranchQuerier{dirtyErr: errors.New("boom")}, "/repo")
+		if ok {
+			t.Error("localDirty with a failing git = ok, want not ok")
+		}
+	})
 }

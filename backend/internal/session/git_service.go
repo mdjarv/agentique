@@ -181,7 +181,7 @@ func (g *GitService) buildSnapshot(dbSess store.Session, project store.Project) 
 			g.mgr.branchStatus.put(dbSess.ID, branchStatusKey{projectPath: project.Path, branch: branch}, bs)
 		} else if dbSess.WorkDir != "" {
 			// Local (non-worktree) session: only check uncommitted changes.
-			if dirty, err := g.mgr.gitStatus.HasUncommittedChanges(dbSess.WorkDir); err == nil {
+			if dirty, ok := localDirty(g.mgr.gitStatus, dbSess.WorkDir); ok {
 				snap.HasUncommitted = dirty
 				g.mgr.branchStatus.put(dbSess.ID,
 					branchStatusKey{projectPath: project.Path, workDir: dbSess.WorkDir},
@@ -560,10 +560,10 @@ func (g *GitService) Diff(ctx context.Context, sessionID string) (worktree.DiffR
 	}
 
 	// Local session: diff work dir against HEAD (include untracked files).
-	// A project may be a plain directory, which has no changes to report
-	// rather than a failed diff — the client toasts every error it gets.
+	// A project may be a plain folder, which has no changes to report rather
+	// than a failed diff — the client toasts every error it gets.
 	workDir := dbSess.WorkDir
-	if _, statErr := os.Stat(workDir); statErr != nil || !g.git.IsRepo(workDir) {
+	if _, statErr := os.Stat(workDir); statErr != nil || !g.git.IsRepoRoot(workDir) {
 		return noDiff, nil
 	}
 	return g.git.WorktreeDiff(ctx, workDir, "HEAD", true)
@@ -583,7 +583,7 @@ func (g *GitService) UncommittedDiff(ctx context.Context, sessionID string) (wor
 		dir = wtPath
 	}
 
-	if _, statErr := os.Stat(dir); statErr != nil || !g.git.IsRepo(dir) {
+	if _, statErr := os.Stat(dir); statErr != nil || !g.git.IsRepoRoot(dir) {
 		return noDiff, nil
 	}
 
@@ -620,6 +620,9 @@ func (g *GitService) Commit(ctx context.Context, sessionID, message string) (Com
 
 	if _, statErr := os.Stat(dir); statErr != nil {
 		return CommitResult{}, fmt.Errorf("work directory not found")
+	}
+	if !g.git.IsRepoRoot(dir) {
+		return CommitResult{}, fmt.Errorf("commit: %w", gitops.ErrNotRepository)
 	}
 
 	dirty, err := g.git.HasUncommittedChanges(dir)
@@ -691,7 +694,7 @@ func (g *GitService) UncommittedFiles(ctx context.Context, sessionID string) (Un
 		dir = wtPath
 	}
 
-	if _, statErr := os.Stat(dir); statErr != nil {
+	if _, statErr := os.Stat(dir); statErr != nil || !g.git.IsRepoRoot(dir) {
 		return UncommittedFilesResult{Files: []gitops.FileStatus{}}, nil
 	}
 

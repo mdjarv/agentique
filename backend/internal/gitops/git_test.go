@@ -421,12 +421,35 @@ func TestUncommittedDiff_Modified(t *testing.T) {
 	}
 }
 
-func TestIsRepo(t *testing.T) {
-	if !IsRepo(initGitRepo(t)) {
-		t.Error("IsRepo on a git repo = false, want true")
+func TestIsRepoRoot(t *testing.T) {
+	repo := initGitRepo(t)
+	if !IsRepoRoot(repo) {
+		t.Error("IsRepoRoot on a git repo = false, want true")
 	}
 	plain := t.TempDir()
-	if IsRepo(plain) {
-		t.Errorf("IsRepo on plain directory %s = true, want false", plain)
+	if IsRepoRoot(plain) {
+		t.Errorf("IsRepoRoot on plain directory %s = true, want false", plain)
+	}
+
+	// A folder inside a repository is not a repository root: the rule asks
+	// about the exact directory, never about a parent git would answer for.
+	sub := filepath.Join(repo, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if IsRepoRoot(sub) {
+		t.Error("IsRepoRoot on a subdirectory of a repo = true, want false")
+	}
+	if got := ProjectStatus(sub); got != (ProjectStatusResult{}) {
+		t.Errorf("ProjectStatus on a subdirectory of a repo = %+v, want zero", got)
+	}
+
+	// A linked worktree carries .git as a file, and is a root.
+	linked := t.TempDir()
+	if err := os.WriteFile(filepath.Join(linked, ".git"), []byte("gitdir: /elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !IsRepoRoot(linked) {
+		t.Error("IsRepoRoot with a .git file = false, want true")
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 // branchStatusQuerier abstracts git queries needed by computeBranchStatus.
 type branchStatusQuerier interface {
+	IsRepoRoot(dir string) bool
 	BranchExists(dir, branch string) bool
 	CommitsAhead(dir, branch string) (int, error)
 	CommitsBehind(dir, branch string) (int, error)
@@ -48,6 +49,25 @@ type branchStatus struct {
 	HasUncommitted     bool
 	MergeStatus        string // "clean", "conflicts", "unknown", or ""
 	MergeConflictFiles []string
+}
+
+// localDirty reports whether a session running straight in dir has uncommitted
+// work. ok is false only when git was asked and failed.
+//
+// A directory that is not a repository root (gitops.IsRepoRoot) is a plain
+// folder: git tracks nothing there, so "clean" is a known answer rather than a
+// failure — which is what lets the branch-status cache hold it instead of
+// re-queueing the session on every list, and keeps a folder inside some other
+// repository from reporting that repository's dirty tree.
+func localDirty(q branchStatusQuerier, dir string) (dirty, ok bool) {
+	if !q.IsRepoRoot(dir) {
+		return false, true
+	}
+	dirty, err := q.HasUncommittedChanges(dir)
+	if err != nil {
+		return false, false
+	}
+	return dirty, true
 }
 
 // computeBranchStatus queries git for branch-level status of a worktree session.

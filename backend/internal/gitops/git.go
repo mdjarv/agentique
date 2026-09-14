@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -109,11 +111,28 @@ func CurrentBranch(projectDir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// IsRepo reports whether dir is inside a git working tree. A project may be a
-// plain directory, so callers use this to tell "nothing to show" apart from a
-// git command that genuinely failed.
-func IsRepo(dir string) bool {
-	_, err := gitRun(dir, "rev-parse", "--git-dir")
+// ErrNotRepository is what a git operation answers for a directory that is not
+// the root of a repository. Callers wrap it so the client can say "this is a
+// plain folder" rather than relay git's usage text.
+var ErrNotRepository = errors.New("not a git repository: the folder has no .git of its own")
+
+// IsRepoRoot reports whether dir is itself the root of a git working tree,
+// meaning it carries its own .git — a directory for a clone, a file for a
+// linked worktree or a submodule.
+//
+// This is the rule for whether a project is git-based, and it deliberately
+// asks about the exact directory rather than "inside a repository": a folder
+// added below some other repository (a subdirectory of a dotfiles repo in
+// $HOME, say) is a plain folder, and asking git would answer for the parent —
+// its branch, its dirty tree, its whole diff. Every session's working
+// directory is either a repository root (a linked worktree, or a git
+// project's own path) or a plain project folder, so this one stat decides git
+// for sessions and projects alike.
+func IsRepoRoot(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
 	return err == nil
 }
 
@@ -626,9 +645,13 @@ type ProjectStatusResult struct {
 }
 
 // ProjectStatus computes the git status for a project root directory.
-// Returns a zero-value result if the path is not a git repo.
+// Returns a zero-value result if the path is not a repository root
+// (IsRepoRoot), including a folder that sits inside some other repository.
 func ProjectStatus(projectPath string) ProjectStatusResult {
 	var r ProjectStatusResult
+	if !IsRepoRoot(projectPath) {
+		return r
+	}
 
 	branch, err := CurrentBranch(projectPath)
 	if err != nil {

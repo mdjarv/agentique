@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"slices"
 
 	"github.com/allbin/agentkit/eventbus"
@@ -54,6 +53,21 @@ func (g *GitService) getProject(ctx context.Context, projectID string) (store.Pr
 	return project, nil
 }
 
+// getRepoProject loads a project for an operation that needs git, and refuses a
+// project whose folder is not a repository root with gitops.ErrNotRepository.
+// Without it, git answers for whatever repository encloses the folder — or
+// fails with its usage text, which the client would toast verbatim.
+func (g *GitService) getRepoProject(ctx context.Context, projectID string) (store.Project, error) {
+	project, err := g.getProject(ctx, projectID)
+	if err != nil {
+		return store.Project{}, err
+	}
+	if !g.git.IsRepoRoot(project.Path) {
+		return store.Project{}, fmt.Errorf("project %q: %w", project.Name, gitops.ErrNotRepository)
+	}
+	return project, nil
+}
+
 // Status computes the git status for a project's root directory.
 func (g *GitService) Status(ctx context.Context, projectID string) (ProjectGitStatus, error) {
 	project, err := g.getProject(ctx, projectID)
@@ -77,7 +91,7 @@ func (g *GitService) computeStatus(projectID, projectPath string) ProjectGitStat
 
 // Fetch runs git fetch and returns the updated status.
 func (g *GitService) Fetch(ctx context.Context, projectID string) (ProjectGitStatus, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
 	}
@@ -93,7 +107,7 @@ func (g *GitService) Fetch(ctx context.Context, projectID string) (ProjectGitSta
 
 // Push pushes the current branch to origin and returns the updated status.
 func (g *GitService) Push(ctx context.Context, projectID string) (ProjectGitStatus, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
 	}
@@ -114,7 +128,7 @@ func (g *GitService) Push(ctx context.Context, projectID string) (ProjectGitStat
 
 // Commit stages all changes and commits in the project root.
 func (g *GitService) Commit(ctx context.Context, projectID, message string) (CommitResult, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return CommitResult{}, err
 	}
@@ -146,7 +160,7 @@ func (g *GitService) Commit(ctx context.Context, projectID, message string) (Com
 
 // GenerateCommitMessage uses Haiku to generate a commit message from the project's uncommitted diff.
 func (g *GitService) GenerateCommitMessage(ctx context.Context, projectID string) (msggen.CommitMessageResult, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return msggen.CommitMessageResult{}, err
 	}
@@ -172,6 +186,11 @@ func (g *GitService) TrackedFiles(ctx context.Context, projectID string) (Tracke
 	project, err := g.getProject(ctx, projectID)
 	if err != nil {
 		return TrackedFilesResult{}, err
+	}
+	if !g.git.IsRepoRoot(project.Path) {
+		// A plain folder tracks nothing. Empty, not an error: the composer
+		// asks for this on its own to fill @file completion.
+		return TrackedFilesResult{Files: []string{}}, nil
 	}
 	files, err := g.git.ListTrackedFiles(project.Path)
 	if err != nil {
@@ -206,7 +225,7 @@ type BranchListResult struct {
 
 // ListBranches returns local and remote-only branch names for a project.
 func (g *GitService) ListBranches(ctx context.Context, projectID string) (BranchListResult, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return BranchListResult{}, err
 	}
@@ -220,7 +239,7 @@ func (g *GitService) ListBranches(ctx context.Context, projectID string) (Branch
 // Checkout switches to the given branch in the project root.
 // Refuses if there are uncommitted changes.
 func (g *GitService) Checkout(ctx context.Context, projectID, branch string) (ProjectGitStatus, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
 	}
@@ -259,7 +278,7 @@ func (g *GitService) Checkout(ctx context.Context, projectID, branch string) (Pr
 
 // Pull fetches from remote and fast-forward merges the upstream tracking branch.
 func (g *GitService) Pull(ctx context.Context, projectID string) (ProjectGitStatus, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
 	}
@@ -298,6 +317,9 @@ func (g *GitService) UncommittedFiles(ctx context.Context, projectID string) (Un
 	if err != nil {
 		return UncommittedFilesResult{}, err
 	}
+	if !g.git.IsRepoRoot(project.Path) {
+		return UncommittedFilesResult{Files: []gitops.FileStatus{}}, nil
+	}
 	files, err := g.git.UncommittedFiles(project.Path)
 	if err != nil {
 		return UncommittedFilesResult{}, fmt.Errorf("failed to get uncommitted files: %w", err)
@@ -310,7 +332,7 @@ func (g *GitService) UncommittedFiles(ctx context.Context, projectID string) (Un
 
 // DiscardChanges discards all uncommitted changes in the project root.
 func (g *GitService) DiscardChanges(ctx context.Context, projectID string) (ProjectGitStatus, error) {
-	project, err := g.getProject(ctx, projectID)
+	project, err := g.getRepoProject(ctx, projectID)
 	if err != nil {
 		return ProjectGitStatus{}, err
 	}
@@ -335,10 +357,4 @@ func (g *GitService) BroadcastStatus(ctx context.Context, projectID string) {
 	}
 	status := g.computeStatus(projectID, project.Path)
 	g.hub.Publish(projectID, "project.git-status", status)
-}
-
-// IsGitRepo returns true if the given path is inside a git repository.
-func IsGitRepo(path string) bool {
-	cmd := exec.Command("git", "-C", path, "rev-parse", "--git-dir")
-	return cmd.Run() == nil
 }
