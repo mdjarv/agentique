@@ -16,6 +16,10 @@ VPS behave like one control surface.
 - SQLite (pure Go, no cgo), WebAuthn passkeys, systemd/launchd/Scheduled Task
   service integration
 
+**Want an agent to set it up with you?** See
+[Install with an agent](#install-with-an-agent): it surveys the machine, asks
+what you want, and handles the service, Tailscale and extras.
+
 **Automating an install?** Skip to [Scripted install](#scripted-install), which
 is written for an agent doing an unattended setup and names the two steps a human
 still has to perform.
@@ -85,6 +89,26 @@ Installs `agentique.exe` to `%LOCALAPPDATA%\Programs\agentique` (override with
 Completions and the background service come from `agentique setup` and
 `agentique service install`. The service is a per-user Scheduled Task, so no
 admin elevation.
+
+### Install with an agent
+
+Give Claude Code (or any coding agent with a shell) this prompt on the machine
+you are setting up:
+
+```text
+Run `curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md` and follow the instructions it prints.
+```
+
+The brief, [docs/install-with-claude.md](docs/install-with-claude.md), has the
+agent survey what is already installed and configured without changing anything,
+then ask what you want: install or upgrade, missing dependencies, the background
+service, access over Tailscale, pairing with another machine, or extras such as
+`gh` and Codex. It asks before anything that needs root or restarts a running
+server, and hands you the steps only a person can do: browser logins, the
+Tailscale admin console, and registering a passkey.
+
+It is fetched with `curl` rather than a web-fetch tool so the agent reads the
+whole file instead of a summary.
 
 ### Upgrading
 
@@ -880,6 +904,7 @@ Notes on the workflow itself:
 | Where | What |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | Conventions, code-gen workflow, subsystem invariants. |
+| [docs/install-with-claude.md](docs/install-with-claude.md) | The brief an agent follows to install and configure agentique with you. |
 | [ROADMAP.md](ROADMAP.md) | What shipped, what is next, what was dropped. |
 | [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md) | Product positioning and the design system. Generated and consumed by the `impeccable` skill. |
 | [docs/tech-debt.md](docs/tech-debt.md) | Open debt by severity. Closed items are deleted, not struck through. |
