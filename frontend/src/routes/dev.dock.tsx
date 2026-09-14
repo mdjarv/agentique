@@ -2,7 +2,7 @@
  * The sync dock in every state it can reach, in a real 288px rail.
  *
  * The live dock only shows the drift your checkouts happen to have, so the
- * meter's three tones, the bulk button's label variants, and the below-the-rule
+ * drift counts, the bulk button's label variants, and the below-the-rule
  * exceptions can't be eyeballed without a fixture. This route seeds the app and
  * machine stores with hand-built projects and git statuses — nothing is
  * fetched, and the dock's own actions will fail here, which is fine: it exists

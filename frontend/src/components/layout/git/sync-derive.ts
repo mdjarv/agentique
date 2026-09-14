@@ -205,10 +205,10 @@ export function exceptionRows(rows: SyncRowVM[]): SyncRowVM[] {
 }
 
 /**
- * The collapsed meter's three segments, in commits. Direction is colour —
+ * The collapsed line's commit counts, split three ways. Direction is colour —
  * green ahead, blue behind — except for a diverged checkout, whose commits are
- * amber whichever way they point: the bar's job is to separate what one press
- * can clear from what needs a person, and that distinction outranks direction.
+ * counted apart from both: the line's job is to separate what one press can clear
+ * from what needs a person, and that distinction outranks direction.
  */
 export interface SyncSegments {
   ahead: number;

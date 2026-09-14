@@ -2,9 +2,10 @@
  * The sync dock — the rail's last band, under the session list and above the
  * footer.
  *
- * At rest it is one line: a three-tone meter (ahead / behind / diverged) in
- * place of a status dot, the faces of the repos that have drifted, and the
- * commit counts. Opening it keeps that header exactly as it was and only grows
+ * At rest it is one line: the faces of the repos that have drifted and the
+ * commit counts, or two faint words when nothing has. It carries no bar and no
+ * status light — a bar reads as progress, and a line that is right most of the
+ * day must not be the loudest thing at the bottom of the rail. Opening it keeps that header exactly as it was and only grows
  * a list underneath — one row per drifted *checkout* (so a repo out of sync on
  * two machines is two rows, one face) with its single action.
  *
@@ -13,14 +14,14 @@
  * (diverged) or a machine that is home (away), and pointing at the button
  * previews that split. The label never says a generic "sync N" — it names each
  * half it contains. Running it applies each checkout's result as it lands, so
- * rows leave the dock one by one and the meter shrinks with them.
+ * rows leave the dock one by one and the counts shrink with them.
  *
  * Freshness is part of the design, not a footnote: ahead/behind is only as
  * true as the last `git fetch`, so the dock reports its age and says "not
  * checked yet" rather than presenting a stale count as fact.
  */
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronRight, CircleDashed, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useNow } from "~/hooks/useNow";
@@ -46,7 +47,6 @@ import {
   type SyncChip,
   type SyncRowInput,
   type SyncRowVM,
-  type SyncSegments,
   summarize,
   syncSegments,
 } from "./sync-derive";
@@ -152,36 +152,6 @@ function Chip({ chip, stacked }: { chip: SyncChip; stacked: boolean }) {
       )}
     </span>
   );
-}
-
-/**
- * The drift meter — proportional by commits, three-tone (ahead / behind /
- * diverged). It is drawn only when something has drifted: a bar is a quantity,
- * and a full-width track with nothing to measure reads as a progress bar and
- * asks for attention the all-clear has not earned. The empty states get
- * {@link ClearMark} instead.
- */
-function SyncMeter({ segments }: { segments: SyncSegments }) {
-  const pct = (n: number) => (segments.total > 0 ? `${(n / segments.total) * 100}%` : "0%");
-  return (
-    <span
-      aria-hidden
-      className="flex h-[5px] w-[46px] shrink-0 overflow-hidden rounded-full bg-border/55"
-    >
-      <span className="h-full bg-success" style={{ width: pct(segments.ahead) }} />
-      <span className="h-full bg-primary" style={{ width: pct(segments.behind) }} />
-      <span className="h-full bg-warning" style={{ width: pct(segments.diverged) }} />
-    </span>
-  );
-}
-
-/**
- * Nothing docked: a small glyph in faint ink, never colour. A check when a
- * fetch backs the claim, a dashed circle when it would be a guess.
- */
-function ClearMark({ stale }: { stale: boolean }) {
-  const Icon = stale ? CircleDashed : Check;
-  return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground-faint" />;
 }
 
 const BULK_CLASS: Record<BulkAction, string> = {
@@ -303,7 +273,7 @@ export function SyncDock() {
 
   // Bulk: one direction at a time, mechanical rows only, each settled and
   // *applied* on its own. The per-checkout store write is the point — a synced
-  // checkout leaves the list the moment its status lands and the meter shrinks
+  // checkout leaves the list the moment its status lands and the counts shrink
   // with it, so the run proves what the button covered instead of restating it.
   const runBulk = useCallback(
     async (action: BulkAction) => {
@@ -375,10 +345,6 @@ export function SyncDock() {
           "transition-colors hover:bg-sidebar-accent/60 max-md:min-h-9",
         )}
       >
-        {/* The meter is the status light while there is drift; at rest a
-            quiet glyph holds the slot, so the all-clear never looks like work. */}
-        {clear ? <ClearMark stale={stale} /> : <SyncMeter segments={segments} />}
-
         {/* Staleness only silences the *claim*, never the findings: drift we
             already know about is real work whether or not it was just
             re-checked, so an unverified dock still names its repos and marks
@@ -387,8 +353,8 @@ export function SyncDock() {
             docked and nothing fetched, where "everything pushed" might simply
             be ignorance. */}
         {clear ? (
-          <span className="truncate text-[11.5px] text-muted-foreground-faint">
-            {stale ? "Not checked yet" : "Everything pushed"}
+          <span className="truncate font-mono text-[10px] text-muted-foreground-faint">
+            {stale ? "not checked" : "in sync"}
           </span>
         ) : (
           // Open or shut, the header says the same thing in the same place —
@@ -419,9 +385,12 @@ export function SyncDock() {
         )}
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <span className="font-mono text-[9.5px] text-muted-foreground-faint">
-            as of {ageLabel(oldest, now)}
-          </span>
+          {/* "not checked" already says there is no age to give. */}
+          {!(clear && oldest === null) && (
+            <span className="font-mono text-[9.5px] text-muted-foreground-faint">
+              {ageLabel(oldest, now)}
+            </span>
+          )}
           {!clear && (
             <ChevronRight
               className={cn(
