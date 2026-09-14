@@ -15,6 +15,12 @@ cannot infer by reading the code: conventions, invariants, and gotchas.
   hand-edited.
 - Doc comments and README/API surface are part of the feature, not a follow-up.
 
+Tests get a migrated database from `testutil.OpenMigratedDB` (or `SetupDB` /
+`DBSuite`), never by running migrations themselves: that costs ~2s per test
+under `-race`. The `assistant` and `session` packages run in parallel, so a new
+top-level test there calls `t.Parallel()` unless it uses `t.Setenv`. A knob a
+test needs to change is a field on the instance it tests, never a package var.
+
 Use `just` rather than raw `npx`/`tsc`. The recipes `cd` into the right
 directory; `npx biome` from the repo root fails silently and reports success.
 
