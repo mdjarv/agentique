@@ -23,7 +23,8 @@ import { UpdateRowAction } from "~/components/update/UpdateRowAction";
 import type { UpdateStatus } from "~/lib/generated-types";
 import { DEFAULT_MACHINE_ICON, getMachineIcon } from "~/lib/machines/icons";
 import { checkedAgo, machineKeys, PRIMARY_MACHINE_KEY } from "~/lib/update-api";
-import { cn, relativeTime } from "~/lib/utils";
+import { type BulkStep, planUpgradeAll, runUpgradeAll } from "~/lib/update-bulk";
+import { cn, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
 import { useMachineStore } from "~/stores/machine-store";
 import type { Flight } from "~/stores/update-store";
@@ -169,6 +170,55 @@ function MachineRow({
   );
 }
 
+/**
+ * One click for every machine with something waiting (docs/upgrades.md, U3).
+ * Offered only for two or more: a single machine already has its button. Each
+ * step is the action that machine's row offers, a busy machine is armed rather
+ * than forced, and the primary goes last — see `lib/update-bulk.ts`.
+ */
+function UpgradeAllAction({ steps }: { steps: BulkStep[] }) {
+  const apply = useUpdateStore((s) => s.apply);
+  const [starting, setStarting] = useState(false);
+  const [failures, setFailures] = useState<string[]>([]);
+
+  if (steps.length < 2 && failures.length === 0) return null;
+
+  const waiting = steps.filter((s) => s.whenIdle).length;
+  const start = async () => {
+    setStarting(true);
+    setFailures([]);
+    try {
+      const refused = await runUpgradeAll(steps, apply);
+      setFailures(refused.map((f) => `${f.label}: ${getErrorMessage(f.error, "could not start")}`));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      {steps.length >= 2 ? (
+        <span className="flex items-center gap-2">
+          <Button size="sm" disabled={starting} onClick={() => void start()}>
+            {starting ? "Starting…" : `Upgrade all (${steps.length})`}
+          </Button>
+          {waiting > 0 ? (
+            <span className="truncate text-[10.5px] text-muted-foreground-faint">
+              {waiting === steps.length ? "all" : waiting} busy — upgrade{waiting === 1 ? "s" : ""}{" "}
+              when idle
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {failures.map((line) => (
+        <span key={line} className="truncate text-[10.5px] text-destructive" title={line}>
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function UpdateDialog({
   open,
   onOpenChange,
@@ -229,6 +279,20 @@ export function UpdateDialog({
     return [primary, ...remotes];
   }, [primaryLabel, primaryIcon, machines, statuses, versions, lastSeenAt, updates, flights]);
 
+  const bulk = useMemo(
+    () =>
+      planUpgradeAll(
+        rows.map((row) => ({
+          key: row.key,
+          label: row.label,
+          online: row.online,
+          status: row.status,
+          inFlight: Boolean(row.flight),
+        })),
+      ),
+    [rows],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -254,8 +318,10 @@ export function UpdateDialog({
           ))}
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-start justify-between gap-3">
+          <UpgradeAllAction steps={bulk} />
           <Button
+            className="ml-auto"
             size="sm"
             variant="ghost"
             disabled={busy}

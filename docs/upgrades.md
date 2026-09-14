@@ -1,7 +1,7 @@
 # In-app upgrades
 
 A tagged release lands; every client says so, names which machines are behind, and
-upgrades them one at a time on request. Without ending a turn that is mid-flight,
+upgrades them on request, one machine or all of them at once. Without ending a turn that is mid-flight,
 and without pretending to work on a platform nobody has ever run.
 
 There are two channels, and a machine can be behind on both at once. The
@@ -197,6 +197,23 @@ action. It gets offered the upgrade when it returns.
 **Only a client may trigger an upgrade.** Never a peer machine, never as a side
 effect of anything else. If presentation sync ships, its scoped credential is
 excluded from this route by construction.
+
+**Upgrade all is every row's own button, pressed by one click.** The Versions
+dialog offers it once two or more machines have an action (`lib/update-bulk.ts`).
+It adds no new verdict: each step is what that machine's row offers — the release
+when the row offers one, else the checkout's rebuild or restart — and a machine
+that is away, already armed or already upgrading is left out, as its row offers
+nothing either. Two rules carry the drain gate across a fleet:
+
+- **A busy machine is armed, never forced.** Ending turns stays a per-row second
+  click that names its cost; a bulk button that ended turns on several machines at
+  once could name none of it.
+- **The primary goes last.** The remotes are started together, and the primary
+  only once every one of them has answered: it serves the page and the machine
+  catalog, so its restart must not land while the other requests are still going
+  out. Each request answers 202 before anything restarts, so "answered" is fast.
+
+A machine that refuses is named under the button, and the rest go ahead.
 
 **Mixed versions stay legal.** The descriptor carries capabilities and clients
 treat a missing key as unsupported. An upgrade feature makes version skew routine
@@ -553,7 +570,7 @@ starts calling a shared-tree rewrite self-managed.
 |---|---|---|
 | U1 | Each server checks for itself | A machine that cannot reach GitHub cannot upgrade anyway. |
 | U2 | A dot on the usage trigger, no dismissal | A mark is quiet enough not to need silencing, and costs no width on a line that has none. The words are in the popover it opens. |
-| U3 | Per-row action, no bulk | One machine, one button, one visible outcome. |
+| U3 | Per-row action, plus an Upgrade all that is the rows' own actions | Was "no bulk". Each row still has one button and one visible outcome; with several machines behind, pressing each in turn was the chore. The bulk button arms busy machines and never forces one, and starts the primary last. |
 | U4 | Arm when idle; override on a second click | See the drain gate. |
 | U5 | Build wide, enable narrow | No Mac or ARM hardware to verify against. |
 | U6 | CLI updates deferred to V5 | Install method has to be detected first. |
