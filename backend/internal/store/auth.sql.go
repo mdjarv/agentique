@@ -238,6 +238,23 @@ func (q *Queries) DeleteExpiredPairingTokens(ctx context.Context) error {
 	return err
 }
 
+const deletePeerAuthSessionByIDAndUser = `-- name: DeletePeerAuthSessionByIDAndUser :execrows
+DELETE FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'peer'
+`
+
+type DeletePeerAuthSessionByIDAndUserParams struct {
+	ID     sql.NullString `json:"id"`
+	UserID string         `json:"user_id"`
+}
+
+func (q *Queries) DeletePeerAuthSessionByIDAndUser(ctx context.Context, arg DeletePeerAuthSessionByIDAndUserParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePeerAuthSessionByIDAndUser, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = ?
 `

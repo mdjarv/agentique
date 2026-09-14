@@ -37,8 +37,9 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 // header. Adding a socket endpoint means adding it here — which is also the
 // moment to check that requiresAuth already covers the new path.
 var wsUpgradePaths = map[string]bool{
-	"/ws":             true,
-	"/api/voice/live": true,
+	"/ws":              true,
+	"/api/voice/live":  true,
+	"/api/peer/stream": true,
 }
 
 // authenticate resolves the request credential in precedence order: a
@@ -48,7 +49,16 @@ var wsUpgradePaths = map[string]bool{
 func (s *Service) authenticate(r *http.Request) (*store.GetAuthSessionRow, error) {
 	if wsUpgradePaths[r.URL.Path] {
 		if ticket := r.URL.Query().Get("wsTicket"); ticket != "" {
-			return s.redeemWSTicket(r.Context(), ticket)
+			row, err := s.redeemWSTicket(r.Context(), ticket)
+			if err != nil {
+				return nil, err
+			}
+			// A ticket carries its session's scope: a peer's ticket opens only
+			// the peer stream, and a browser's never opens it.
+			if !credentialAllowed(row.Kind, r) {
+				return nil, errCredentialScope
+			}
+			return row, nil
 		}
 	}
 	return s.authenticateRequest(r)

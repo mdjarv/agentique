@@ -438,7 +438,22 @@ func (s *Service) validateSession(r *http.Request) (*store.GetAuthSessionRow, er
 // authenticateRequest resolves the request's credential to a session row. An
 // explicit Authorization: Bearer header wins and does not fall back to the
 // cookie on failure — a presented credential must be the one judged.
+//
+// Every credential is judged against the route it was presented to
+// ([credentialAllowed]) here, where the middleware and every self-authorizing
+// /api/auth handler both arrive, so no route can forget the check.
 func (s *Service) authenticateRequest(r *http.Request) (*store.GetAuthSessionRow, error) {
+	row, err := s.resolveRequest(r)
+	if err != nil {
+		return nil, err
+	}
+	if !credentialAllowed(row.Kind, r) {
+		return nil, errCredentialScope
+	}
+	return row, nil
+}
+
+func (s *Service) resolveRequest(r *http.Request) (*store.GetAuthSessionRow, error) {
 	if h := r.Header.Get("Authorization"); h != "" {
 		token, ok := strings.CutPrefix(h, "Bearer ")
 		if !ok {

@@ -97,3 +97,6 @@ DELETE FROM webauthn_credentials;
 
 -- name: DeleteAllAuthSessions :exec
 DELETE FROM auth_sessions;
+-- name: DeletePeerAuthSessionByIDAndUser :execrows
+DELETE FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'peer';
+

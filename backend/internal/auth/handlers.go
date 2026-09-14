@@ -35,6 +35,7 @@ func (s *Service) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/pair", s.handlePairExchange)
 	mux.HandleFunc("POST /api/auth/identity-proof", s.handleIdentityProof)
 	mux.HandleFunc("POST /api/auth/ws-ticket", s.handleCreateWSTicket)
+	mux.HandleFunc("POST /api/auth/peer-credential", s.handleMintPeerCredential)
 	mux.HandleFunc("GET /api/auth/sessions", s.handleListSessions)
 	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.handleRevokeSession)
 	mux.HandleFunc("DELETE /api/auth/session", s.handleRevokeCurrentBearer)

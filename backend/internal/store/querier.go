@@ -156,6 +156,7 @@ type Querier interface {
 	DeleteExpiredPairingTokens(ctx context.Context) error
 	DeleteMachine(ctx context.Context, machineID string) error
 	DeleteMessagesByChannel(ctx context.Context, channelID string) error
+	DeletePeerAuthSessionByIDAndUser(ctx context.Context, arg DeletePeerAuthSessionByIDAndUserParams) (int64, error)
 	DeleteProject(ctx context.Context, id string) error
 	DeletePromptTemplate(ctx context.Context, id string) error
 	DeleteSchedule(ctx context.Context, id string) error

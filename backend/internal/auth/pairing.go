@@ -515,8 +515,8 @@ func (s *Service) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRevokeCurrentBearer lets a paired client revoke the exact credential
-// it presents. Machine removal uses this before deleting its local catalog
+// handleRevokeCurrentBearer lets a paired client — or a paired server's peer
+// credential — revoke the exact credential it presents. Machine removal uses this before deleting its local catalog
 // entry, so forgetting a machine does not leave a remote bearer alive.
 func (s *Service) handleRevokeCurrentBearer(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") == "" {
@@ -524,7 +524,7 @@ func (s *Service) handleRevokeCurrentBearer(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	session, err := s.authenticateRequest(r)
-	if err != nil || session == nil || session.Kind != "bearer" {
+	if err != nil || session == nil || (session.Kind != "bearer" && session.Kind != KindPeer) {
 		httperror.RespondError(w, httperror.Unauthorized("valid bearer credential required"))
 		return
 	}
