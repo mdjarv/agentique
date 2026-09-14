@@ -349,46 +349,45 @@ notifier, and the personal-assistant product as a client on top.
 
 ## Multi-machine
 
-One assistant per primary. Remote sessions are **listed and found** from the
-server's own read of each paired machine (`internal/server/peer_sessions.go`):
-it calls that machine's `GET /api/sessions` and `GET /api/projects` as its
-client, with the bearer `machines.token` already holds, after the same signed
-identity proof `RevokeRemoteBearer` makes (`machine.FetchRemoteJSON`). Before
-it, the directory read only this machine's database, so a session the sidebar
-showed on zbook did not exist for `list_sessions` or `find_session` in the
-thread — only a live call had one, through the browser-fed world snapshot, and
-the thread has no browser behind it.
+One assistant per account, on whichever server enables it, and it works with
+every paired machine as it works with its own (docs/peers.md has the full
+contract). The line: **the assistant decides what to ask for; the machine that
+owns a session decides what may happen to it.**
 
-The read is a view, exactly as the snapshot is: it can make the assistant say
-things, never do things. A peer row carries no `ProjectID`, and
-`Directory.SessionBrief` never answers for it, which is the check every verb
-that acts on a session applies. Create, dispatch, follow and summarise on a
-remote refuse naming the machine, because dispatch and the report registry are
-local and a remote run would report into nothing.
+- **Listing and finding** read each paired machine's `/api/peer/sessions` with
+  a peer credential (`peerlink`, identity proof before the credential), and
+  every row carries a `Reach`: `local`, `peer` (accepts work), `peer-off` (has
+  not set `[peer] accept-actions`), `peer-old` (a release from before the peer
+  surface, read the transitional way with the pairing bearer), and the zero
+  value `view` for anything nobody vouched for. Rows say their machine and their
+  reach to the head.
+- **Acting** — `run_prompt`, `create_session` (with a `machine` when the same
+  repository is on two), `follow_session`, `summarize_session` — goes by reach:
+  `Locator.Locate` finds the session wherever it runs, the dispatcher and the
+  directory route it to the owner's peer surface, and the owner's guard decides.
+  A refusal from the owner comes back as a `RefusedError` sentence the head
+  relays. `Directory.SessionBrief` stays the local-only test for journal
+  subjects and memory scopes, and a paired machine's `ProjectID` is never used.
+- **Proposals** about a paired machine's session are written from that machine's
+  facts (branch, delete verdict, busy, settings, catalog), name the machine, and
+  are performed there by `routedActions` → `/api/peer/.../do/{verb}`, where
+  `assistant.PerformProposal` re-runs the same check before executing. Dissolving
+  a channel stays local.
+- **Budgets** count work on paired machines from the journal (`machineId` on a
+  `session_created` entry) and each owner's latest list; a machine that does not
+  answer counts its sessions as in flight.
+- **News** — reports, turn endings, steward findings — arrives by the event poll
+  (`peer_poller.go`, one goroutine per machine, a durable cursor starting from
+  the head) and is journaled like local news, placed on its machine; reports and
+  turn endings only for sessions this server follows. Findings are the
+  trusted `finding` kind, in this package's words (`FindingSentence`).
 
-Three rules keep it honest under load and failure:
-
-- **Stale-while-refresh, bounded once.** An answer is used as-is for 20s and
-  served while a refresh runs behind it for five minutes; only a machine this
-  reader has nothing from is waited on, for at most 2.5s. A machine that is
-  asleep costs that wait once — a read while its fetch is out, or after it
-  failed, answers at once.
-- **A machine that did not answer is named, never silently absent.** Its rows
-  are dropped (an old "running" would be said as current) and the verbs carry
-  `unreachable_machines`, so "nothing matches" is not said about a sleeping box.
-- **The project is named the way this host names it** where the repository is
-  checked out here too (matched on `remote_url`), because presentation belongs to
-  the host whose surface is asking.
-
-The directory's lists are **uncut**. Every caller bounds what it says and also
-matches over what it is given, so a cut in the directory made the thirteenth
-session unfindable rather than unlisted.
-
-Acting on a peer — create, send, follow, proposals — and each machine's own
-health reports are designed in [peers.md](peers.md) (one assistant decides, the
-owning machine guards; a model-free steward on every machine) and not built.
-Until they are, create and dispatch on a remote refuse naming the machine, and
-the journal carries no machine-away entries.
+Reading stays honest under load and failure: an answer is used for 20s and
+served stale for five minutes while a refresh runs; only a machine with nothing
+usable is waited on, once, for 2.5s; a machine that does not answer is named in
+the reply (`unreachable_machines`), never silently absent; and a project checked
+out here too is named the way this host names it. The directory's lists are
+uncut, because callers match over them.
 
 ## Security
 
@@ -398,9 +397,13 @@ Containment is the tier table, the budgets, the journal with the facts each
 action was judged on, and a yes given on a surface that shows the card or reads
 the target back. A hostile report can make the assistant say something wrong,
 and can cause a contained write within a policy's budget: a session in a
-worktree with a bad prompt, visibly assistant-origin, spending allowance. It
-cannot merge, delete, archive, reach a main worktree or reach a paired machine.
-That residual is stated so nobody widens a tier to save a click.
+worktree with a bad prompt, visibly assistant-origin, spending allowance — on
+this machine, and on any paired machine that has set `[peer] accept-actions`,
+where that machine's own guard and rate ceilings apply as well. It cannot merge,
+delete, archive, reclaim or reach a main worktree on any machine without a
+person accepting a card, and the owner re-checks the card's facts before it
+performs one. It cannot reach a machine that has not opted in. That residual is
+stated so nobody widens a tier to save a click.
 
 ## Phasing
 

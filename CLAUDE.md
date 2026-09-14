@@ -1585,8 +1585,9 @@ system instruction, never a tool and never a `run_prompt` — the carve-out is
 worded inside the never-answer rule, because read apart the two contradict.
 
 **A session the call creates goes through `session.Service.CreateSession`**,
-the same path the composer's new-session flow takes, and only into a **local**
-project — creation is local because the service is. It is born `fullAuto`: any
+the same path the composer's new-session flow takes — on this machine, or on a
+paired machine that accepts work, through that machine's own service over its
+peer surface (`docs/peers.md`). It is born `fullAuto`: any
 other mode would be refused at its own first dispatch, since there is no spoken
 approval. That does not move the consent gate, which was never the session's
 mode. Creation is deferred to the one yes that sends the prompt, and the
@@ -1622,18 +1623,14 @@ session and no log line" is the same picture for five different causes.
 
 **The world snapshot is a view, never authority.** The browser sends the merged
 multi-machine session list as `world` frames; the call stores it for listing and
-name resolution. It is no longer the only picture of a paired machine: the
-assistant directory reads each one itself (`peer_sessions.go`, identity proof
-before the bearer, `docs/assistant.md` Multi-machine), because the thread has no
-browser behind it and a zbook session did not exist there. Those rows follow
-the same rule — no `ProjectID`, no `SessionBrief` — and a machine that did not
-answer is named in the reply rather than silently absent. Dispatch
-re-checks the local DB every time — a snapshot row can make the assistant *say*
-things, never *do* things. Remote sessions are listed and focusable; `run_prompt`
-on one refuses naming the machine, because the report registry is local and a
-remote run would report into nothing. `find_session` ranks and returns
-candidates, it never picks — ambiguity costs a spoken question, not a
-wrong-target dispatch.
+name resolution, and a snapshot row can make the assistant *say* things, never
+*do* things — its `Reach` is the zero value, `ReachView`. What acts is the
+directory's own answer: `Locate` returns this machine's session or a paired
+machine's with the reach its owner allows (`docs/peers.md`), and dispatch,
+focus and summarise judge by that. A paired machine that accepts work is as
+reachable from a call as this one; one that does not is refused naming the
+machine and why. `find_session` ranks and returns candidates, it never picks —
+ambiguity costs a spoken question, not a wrong-target dispatch.
 
 **Per-call state is only the focus.** Everything else that spans requests is
 per-session — the follow *set*, the briefing flag, the in-flight bit — and the
@@ -1763,17 +1760,47 @@ rule: a peer credential is refused everywhere else and a browser credential is
 refused there, judged where every request authenticates. Adding any route means
 adding it to `TestPeerCredentialIsRefusedOutsideThePeerSurface`.
 
-The owner's guard (`peer.JudgeSend`, `peer.JudgeCreate`) holds whatever the body
-says: origin is assistant because of the credential, never a field; worktree
-sessions only; full auto only; per-credential rate and in-flight caps; and
-nothing at all unless `[peer] accept-actions`, nor policy work unless
-`accept-policies`. Opt-in is judged before a session is looked up, so a machine
-that has not opted in reveals nothing about which ids exist.
+The owner's guard (`peer.JudgeSend`, `peer.JudgeCreate`, `handleDo`) holds
+whatever the body says: origin is assistant because of the credential, never a
+field; worktree sessions only; full auto only; per-credential rate and in-flight
+caps; nothing at all unless `[peer] accept-actions`, nor policy work unless
+`accept-policies`; and an uncontained verb runs only after
+`assistant.PerformProposal` re-checks it on the owner's own facts. Opt-in is
+judged before a session is looked up, so a machine that has not opted in reveals
+nothing about which ids exist.
+
+**On the acting side, reach decides, not ownership.** Every row carries a
+`Reach` whose zero value is `ReachView` — described, never acted on — so a row
+nobody vouched for fails closed. `Directory.SessionBrief` stays the test for
+"this machine's own" (a journal subject, a memory scope, a local runtime hook);
+every verb that ACTS asks `Locator.Locate` and checks `Reach.CanAct()`. The
+dispatcher, the directory and `routedActions` route a session to its owner by
+asking this machine's database first. A paired machine's `ProjectID` is never
+carried: a remote id means nothing here and it is what files a memory scope.
+
+**Budgets fail closed across machines.** A session created on a paired machine
+is journaled with its `machineId`, and a policy's in-flight count adds it until
+that machine's own list says it finished; a machine that does not answer counts
+its sessions as open. An undercount is the one error that widens a budget.
 
 News goes back through `peer_outbox`, a log per follower read by
-`GET /api/peer/events?since=`, never a queue with read state. `AssistantReport`
-is registered on every server whatever its flags, because the machine a session
-runs on need not run an assistant.
+`GET /api/peer/events?since=` (a long poll on its own long-timeout client),
+never a queue with read state; the acting side's cursor is durable and starts
+from the head on first contact. `AssistantReport` is registered on every server
+whatever its flags, because the machine a session runs on need not run an
+assistant.
+
+**The steward has no model, and its kinds are a closed set.** It reads what the
+machine's collectors already hold, opens a finding when a condition starts and
+resolves it when it stops, and never resolves a kind whose sensor did not read.
+A threshold it shares with a surface is that surface's number (the disk floor is
+`LOW_DISK_BYTES`). The footer's mark carries only the kinds nothing else on the
+line or a row already says.
+
+The transitional read of an older release (its REST lists with the pairing
+bearer, every row `ReachPeerOld`) stays until no paired release predates the
+peer surface: removing it early is the wire-compat break the expand/contract
+rule exists to prevent.
 
 ### The assistant — `docs/assistant.md`
 

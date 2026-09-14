@@ -3,7 +3,7 @@
 How the assistant acts on a paired machine, and how every machine reports on its
 own health.
 
-**Status: P1 (the owner side) built; P2 onward designed.** Two verdicts settled
+**Status: built (P1–P4), 2026-09-14.** Two verdicts settled
 in design rounds on 2026-09-13/14: **C** (one assistant; the owner guards its
 sessions) and **S1** (sensors on every machine, one mind at home). The four
 questions that were open were answered "defaults" on 2026-09-14 and are recorded
@@ -70,8 +70,9 @@ requested once by the acting server using the full bearer it already holds.
   reads the decoded path and the mux does not route it verbatim.
 - `TestPeerCredentialIsRefusedOutsideThePeerSurface` is the route matrix at the
   real HTTP boundary. Adding a route means adding it there.
-- Stored outbound in a new `machines.peer_token` column, plaintext for the reason
-  `machines.token` is (an outbound credential; see CLAUDE.md).
+- Stored outbound in `machines.peer_token` (and its public id in
+  `peer_session_id`, which a rotation names), plaintext for the reason
+  `machines.token` is: an outbound credential; see CLAUDE.md.
 - Every connection proves identity first (`machine.FetchRemoteJSON`), on the
   no-redirect client with verified TLS and bounded bodies.
 - **An explicit credential never falls back.** Once a machine has a peer token,
@@ -91,8 +92,11 @@ must not unpair the machine for the browser.
 | `POST /api/peer/sessions` | Create in a project named by id or canonical remote, with a model **family** this machine's catalog resolves: worktree only, `fullAuto`, origin assistant. An optional `prompt` is sent in the same call, and a send that fails is reported beside the created session, never instead of it. `requestId` makes a retry idempotent. | Actions not accepted; policies not accepted; unknown or ambiguous project; unknown model; creates per hour; in-flight cap. |
 | `POST /api/peer/sessions/{id}/send` | Enqueue with origin assistant and optional policy. Answers the `MessageDelivery`. | Actions not accepted; archived; main worktree; not `fullAuto`; rate. |
 | `GET /api/peer/events?since=N&wait=S` | This credential's outbox rows after `since`, held open up to 25s when there are none. Answers `{events, latest}`. | — |
-| `POST /api/peer/proposals/check` (P3) | Runs the owner's own check for a verb on a session and answers facts plus a version. | — |
-| `POST /api/peer/proposals/execute` (P3) | Re-checks against the version, then runs through the owner's `GitService`/`session.Service`. Answers `done`, `stale`, `conflict`, `needs_rebase`, `dirty_worktree` or `failed`. | Actions not accepted; stale facts perform nothing. |
+| `POST /api/peer/sessions/{id}/follow` | Subscribes the credential's server to a session it did not start. A read, not gated. | Not found. |
+| `GET /api/peer/sessions/{id}/transcript` | The recent transcript (the summariser's own rendering, bounded) so the acting server can summarise. A read, not gated. | Not found. |
+| `GET /api/peer/sessions/{id}/facts/{kind}` | `branch`, `delete`, `busy` or `settings`, read fresh — what a card is judged on. A read, not gated. | Unknown kind. |
+| `POST /api/peer/sessions/{id}/models/resolve` | A spoken model family against this machine's catalog. | Unknown model, with the families there are. |
+| `POST /api/peer/sessions/{id}/do/{verb}` | One uncontained session verb a person accepted on the acting server's card: `assistant.PerformProposal` re-runs the card's check on this machine's facts, then executes. A refusal there is reason `outcome` with the word the card shows. | Actions not accepted; not a session proposal verb; actions per hour; stale facts perform nothing. |
 
 Refusals answer `{error, reason}` with a stable `reason` (`peer.Reason*`), so the
 acting side says each in its own words. Every refusal is logged.
@@ -180,7 +184,8 @@ thread or journal.
 
 ## The steward
 
-Every machine runs one, from serve's production block, never a constructor. It has
+Every machine runs one (`internal/steward`, a pass a minute), from serve's
+production block, never a constructor. It has
 **no model**, writes only its own findings table, and reads what the existing
 collectors already know. Its name is *steward*; **never `janitor`**,
 which is already `internal/janitor`, the disk planner.
@@ -194,11 +199,11 @@ forces each kind to choose rather than inherit a blank.
 | Kind | Source | Resolves when | Remedy |
 |---|---|---|---|
 | `cli-signed-out` | `usage.Collector` auth state | auth reads OK again | hand: "run `claude auth login` on zbook" |
-| `disk-low` | free space under doctor's disk-space threshold | above threshold plus hysteresis | proposal: reclaim finished sessions |
+| `disk-low` | free space under `LOW_DISK_BYTES` (3 GiB), the meter's own floor | above it | reclaim when finished sessions hold space, else hand |
 | `loop-paused` | scheduler auto-pause | the loop is re-enabled or edited | hand |
-| `session-blocked-long` | pending approval or question older than a bound | answered | hand: "needs a screen" |
-| `update-waiting` | update checker / source checker | applied | proposal (restart costs the turn; `BusyTurns` rule) |
-| `backup-failing` | backup job errors | next backup succeeds | hand |
+| `session-blocked-long` | pending approval or question for 30 minutes (the steward keeps the clock) | answered | hand: "needs a screen" |
+| `update-waiting` | the release checker says behind | applied | update (costs the turn in flight) |
+| `backup-failing` | no periodic backup file for three intervals | a new one lands | hand |
 
 What is deliberately **not** a finding: a boot reap that found orphans, a disk
 gauge at a high but ordinary level, an idle eviction. Those are bookkeeping, not
@@ -209,9 +214,14 @@ the gauge rule from usage.md.
 can execute becomes a proposal card executed through the guard. A remedy only a
 person at that machine can perform is said in words naming the machine.
 
-**Each machine shows its own findings.** One glyph in its own footer, on the
-footer's marks-not-sentences rule, with the rows one click away. So a machine
-reports its health even while the acting server is down or unreachable.
+**Each machine shows its own findings.** A stethoscope leads the usage cluster's
+trigger in its own footer, on the footer's marks-not-sentences rule, with the
+rows one click away (`lib/steward.ts`, `GET /api/steward/findings`). Only the
+kinds nothing else on that line or a row already says earn the mark:
+`cli-signed-out`, `loop-paused`, `backup-failing`. `update-waiting` is
+`UpdateMark`, `disk-low` is the amber meter, `session-blocked-long` is the row's
+triangle. So a machine reports its health even while the acting server is down
+or unreachable.
 
 ## Failure modes
 
@@ -244,18 +254,21 @@ the browser's credential; it is not a blast-radius claim.
 
 ## Phases
 
-- **P1, owner side. Built.** Peer credential and the route matrix (9282e880).
-  `/api/peer/sessions` list, create and send behind the guard and
-  `[peer] accept-actions` (f37d770b). `AssistantReport` on every server, the
-  outbox and the event poll. Expand only: nothing an older acting server calls
-  changed.
-- **P2, acting side.** `Locate`, `PeerActions`, event pollers and cursors, journal
-  ingest, `machine_id` on follows. Listing moves to `/api/peer/sessions`.
-- **P3, budgets and proposals across machines.**
-- **P4, the steward.** Findings table and kinds, outbox publication, footer mark,
-  heartbeat triage.
-- **P5, contract.** Remove the transitional full-bearer listing; rewrite the
-  security sections of assistant.md and CLAUDE.md.
+- **P1, owner side. Built.** Peer credential and the route matrix (9282e880);
+  list, create and send behind the guard (f37d770b); `AssistantReport` on every
+  server, the outbox and the event poll (69ab5e1d).
+- **P2, acting side. Built.** `peerlink` mints, holds and rotates the credential
+  (e6dc7c34); the directory, dispatcher and verbs act by reach (faa9533b); the
+  poller feeds the journal and the call (4f54f825); the voice call acts the same
+  way (e5c3e2ed).
+- **P3, budgets and proposals across machines. Built.** 55d3c156, 13bfb221.
+- **P4, the steward. Built.** Findings, publication and the journal kind
+  (4232feba); the footer mark (c9c6b439); the disk floor shared with the meter.
+- **P5, the record.** This document, assistant.md and CLAUDE.md describe what
+  shipped. **The transitional full-bearer listing stays** until no paired
+  release predates the peer surface: removing it now would stop this server
+  listing zbook at all, which is the break the expand/contract rule exists to
+  prevent.
 
 ## Settled on 2026-09-14
 

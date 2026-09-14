@@ -22,6 +22,17 @@ before it answers anything else.
 
 ## Shipped
 
+### Acting across machines (2026-09-14)
+
+The assistant works with every paired machine as with its own
+([docs/peers.md](docs/peers.md)): one assistant decides what to ask for, the
+machine that owns a session decides what may happen to it. A scoped peer
+credential and an owner-guarded `/api/peer/*` surface (opt-in per machine);
+listing, sending, creating, following, summarising and proposals across
+machines, with budgets that fail closed; news by a long-polled outbox into the
+journal and the live call; and a model-free steward on every machine whose
+findings reach its own footer, its assistant and every paired server.
+
 Well past MVP. Full detail is in git history; these are the headlines.
 
 **Core chat.** Multi-session chat over WebSocket, a git worktree per session,
@@ -111,12 +122,9 @@ are in CLAUDE.md.
 
 The five milestones shipped; these are the things they named and did not build.
 A **messaging gateway** as another transport, so the thread is reachable from
-outside the app. **Acting on paired machines**, designed in
-[docs/peers.md](docs/peers.md): the owner-guarded `/api/peer/*` surface, a
-sequenced stream per peer feeding the journal, and a model-free steward on
-every machine reporting findings. Listing already reaches peers; until the
-rest lands, create and dispatch on a remote refuse, and the journal carries no
-machine-away entries. The **scheduler absorbing the heartbeat**, once
+outside the app. **Contracting the transitional peer read**: once no paired release predates
+the peer surface, drop the full-bearer REST listing of older releases
+([docs/peers.md](docs/peers.md)). The **scheduler absorbing the heartbeat**, once
 `schedules` grows a target kind and stops being session-shaped. And a **budget
 that reads a folded day**: M5's summaries already carry every standing
 instruction the day spent, but nothing reads that payload back, so a lookback
