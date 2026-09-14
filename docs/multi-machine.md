@@ -10,7 +10,6 @@ the client can reach works.
 The first half of this document is built and running. **Presentation sync**, at
 the end, is designed and not implemented.
 
-
 Acting on a paired machine from the assistant, and per-machine health findings,
 are designed in [peers.md](peers.md).
 
