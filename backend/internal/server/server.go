@@ -497,6 +497,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		return label, row.Icon
 	}
 
+	// Set once dictation is mounted, further down; read per request, so the
+	// health answer describes the routes that actually exist.
+	var dictationMounted bool
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		machineLabel, machineIcon := hostPresentation(r.Context())
 		httperror.JSON(w, http.StatusOK, map[string]any{
@@ -518,6 +521,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				"voice":     cfg.ExperimentalVoice,
 				"assistant": cfg.ExperimentalAssistant,
 				"brain":     cfg.BrainEnabled && cfg.BrainDir != "",
+				// Server-side dictation, the composer's fallback where the
+				// browser's own speech recognition cannot work.
+				"dictation": dictationMounted,
 			},
 		})
 	})
@@ -1311,6 +1317,22 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// The live handler outlives this block so the auth service — constructed
 	// later — can be wired in as its session tracker.
 	var liveVoice *voice.Handler
+
+	// Dictation. Not gated on [experimental] voice: it is not a call, only the
+	// composer's mic working in a browser whose speech API cannot (Brave,
+	// Firefox, Safari with Dictation off). It needs real speech credentials,
+	// and a server without them does not mount it, so the client never offers
+	// a fallback that would answer with an echo.
+	var dictation *voice.DictationHandler
+	if dictOpts, err := resolveVoiceOptions(cfg); err == nil {
+		dictOpts.AllowedOrigins = allowedOrigins
+		dictOpts.AllowTicketOrigin = cfg.AuthEnabled
+		if dh, err := voice.NewDictationHandler(dictOpts); err == nil {
+			mux.Handle("GET /api/voice/dictation", dh)
+			dictation = dh
+			dictationMounted = true
+		}
+	}
 	if cfg.ExperimentalVoice {
 		// Persona settings are read per call, so a change here takes effect on
 		// the next call rather than the next restart.
@@ -1473,6 +1495,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		// its subscriptions.
 		if liveVoice != nil {
 			liveVoice.SetSessionTracker(authSvc)
+		}
+		if dictation != nil {
+			dictation.SetSessionTracker(authSvc)
 		}
 	} else {
 		// When auth is disabled, serve a static status endpoint.

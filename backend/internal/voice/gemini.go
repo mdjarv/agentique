@@ -77,8 +77,10 @@ type geminiEngine struct {
 	wg        sync.WaitGroup
 }
 
-// newGeminiEngine connects a live session and starts its receive loop.
-func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string, log *slog.Logger) (*geminiEngine, error) {
+// newGenaiClient builds a client for the configured Gemini backend. Shared by
+// the call engine and the dictation transcriber, so both authenticate the one
+// way [voice] config describes.
+func newGenaiClient(ctx context.Context, opts Options) (*genai.Client, error) {
 	clientCfg := &genai.ClientConfig{
 		// v1alpha, because session resumption is absent from v1beta — and
 		// without resumption a call cannot outlive ten minutes.
@@ -99,6 +101,15 @@ func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string
 	client, err := genai.NewClient(ctx, clientCfg)
 	if err != nil {
 		return nil, fmt.Errorf("gemini client: %w", err)
+	}
+	return client, nil
+}
+
+// newGeminiEngine connects a live session and starts its receive loop.
+func newGeminiEngine(ctx context.Context, opts Options, systemInstruction string, log *slog.Logger) (*geminiEngine, error) {
+	client, err := newGenaiClient(ctx, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	// The persona's model wins over config: it is the more specific choice, and

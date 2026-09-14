@@ -357,32 +357,9 @@ func (h *Handler) dialEngine(ctx context.Context, instruction string, persona Pe
 		budget = engineDialBudget
 	}
 
-	type dialed struct {
-		engine Engine
-		err    error
-	}
-	// Buffered: the dial must be able to finish and exit even after the wait
-	// has been given up on, or a slow backend leaks a goroutine per call.
-	done := make(chan dialed, 1)
-	go func() {
-		engine, err := h.newEngine(ctx, instruction, persona)
-		done <- dialed{engine, err}
-	}()
-
-	timer := time.NewTimer(budget)
-	defer timer.Stop()
-
-	select {
-	case d := <-done:
-		return d.engine, d.err
-	case <-timer.C:
-		go func() {
-			if d := <-done; d.engine != nil {
-				_ = d.engine.Close()
-			}
-		}()
-		return nil, fmt.Errorf("the speech backend did not answer within %s", budget)
-	}
+	return dialWithin(ctx, budget, func(ctx context.Context) (Engine, error) {
+		return h.newEngine(ctx, instruction, persona)
+	})
 }
 
 // refuseCall says on an already-open socket why the call is not happening, and
