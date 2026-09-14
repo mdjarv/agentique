@@ -7,8 +7,10 @@
  * A repo held on three machines lists three rows, because a command targets
  * one machine and the caller has to be able to say which. The machine is part
  * of the search text, so "agentique zbook" is one query rather than a repo
- * pick followed by a second control. A single-machine repo shows no machine
- * chrome at all — there is nothing to choose.
+ * pick followed by a second control. Once any machine is paired every row
+ * names its machine, this one included: unrelated projects that share a name
+ * on two machines are otherwise two identical rows. With nothing paired no
+ * row names one — there is nothing to choose.
  *
  * The trigger is the caller's (`children`), so a split button, a menu row or a
  * plain button can all open the same list.
@@ -18,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useLaunchTargets } from "~/hooks/useLaunchTargets";
+import { useMachineNaming } from "~/hooks/useMachineNaming";
 import type { LaunchTarget } from "~/lib/machines/launch-targets";
 import { matchesLaunchTarget } from "~/lib/machines/launch-targets";
 import { resolveMachineGlyph } from "~/lib/machines/platform";
@@ -159,9 +162,8 @@ function TargetRow({
     if (active) ref.current?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  // The machine only earns a line when there is a choice to make: a repo that
-  // spans machines, or one that lives somewhere other than here.
-  const showMachine = target.spansMachines || !!target.machineId;
+  const { named } = useMachineNaming();
+  const showMachine = named || target.spansMachines || !!target.machineId;
   const MachineIcon = resolveMachineGlyph(
     target.machineId ? target.machineIcon : "",
     target.machinePlatform,

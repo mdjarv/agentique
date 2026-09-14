@@ -23,9 +23,11 @@ import { Circle, Plus, Search, Settings, Star } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ProjectGitPill } from "~/components/layout/git/ProjectGitPill";
+import { MachineTag } from "~/components/machines/MachineTag";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ProjectPill } from "~/components/ui/project-pill";
 import { useLogicalProjects } from "~/hooks/useLogicalProjects";
+import { useMachineNaming } from "~/hooks/useMachineNaming";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import type { LogicalProjectVM } from "~/lib/machines/logical-derive";
 import { compareLogicalProjects, matchesLogicalProject } from "~/lib/machines/logical-derive";
@@ -202,6 +204,8 @@ function ProjectPaletteRow({
   // entity this row commands. Other members' drift is the sync dock's job.
   const gitStatus = useAppStore((s) => s.projectGitStatus[row.id]);
   const dirty = gitStatus?.uncommittedCount ?? 0;
+  const { named, nameOf } = useMachineNaming();
+  const home = row.members[0];
   const away = row.away;
   const alsoOn = row.remoteMembers
     .map((m) => `${m.machineLabel}${m.offline ? " (offline)" : ""}`)
@@ -232,6 +236,15 @@ function ProjectPaletteRow({
         )}
       >
         <ProjectPill slug={row.slug} showIcon size="md" background={false} />
+        {/* The machine the row launches on, named whenever more than one is
+            paired: two machines can hold unrelated projects of one name, and
+            only this tells those rows apart. */}
+        {named && home && (
+          <MachineTag
+            machine={nameOf(home)}
+            className="max-w-[9rem] text-[10px] text-muted-foreground-faint"
+          />
+        )}
         <MemberGlyphs row={row} />
         {away && (
           <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground-faint">

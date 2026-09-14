@@ -102,14 +102,24 @@ describe("ProjectLaunchPicker", () => {
   });
   afterEach(cleanup);
 
-  it("lists one row per checkout, naming the machine only where there is a choice", () => {
+  it("lists one row per checkout, naming the machine on every row once one is paired", () => {
     open();
-    // The repo on two machines contributes two rows; the machine is named on
-    // both. The single-machine repo names none — nothing to choose.
+    // The repo on two machines contributes two rows. The single-machine repo
+    // names its machine too: a same-named project elsewhere would otherwise
+    // be an identical row.
     expect(screen.getAllByText("Agentique")).toHaveLength(2);
-    expect(screen.getByText("desktop")).toBeInTheDocument();
+    expect(screen.getAllByText("desktop")).toHaveLength(2);
     expect(screen.getByText("zbook")).toBeInTheDocument();
     expect(screen.getByText("Hittat")).toBeInTheDocument();
+  });
+
+  it("names no machine when nothing is paired", () => {
+    cleanup();
+    useAppStore.setState({ projects: [project({ id: "p-solo", slug: "hittat", name: "Hittat" })] });
+    useMachineStore.setState({ machines: {}, statuses: {} });
+    open();
+    expect(screen.getByText("Hittat")).toBeInTheDocument();
+    expect(screen.queryByText("desktop")).not.toBeInTheDocument();
   });
 
   it("picks the physical checkout, not the repo", () => {

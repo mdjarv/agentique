@@ -196,8 +196,22 @@ representative while routing by its own qualified slug.
 
 A row is `away` only when *every* member's machine is away, so a repo that also
 lives locally is always launchable, and an unknown machine id counts as away
-rather than reachable. Where a repo spans machines, `/settings/projects` gives each
-checkout its own launchable line with machine, path and reachability.
+rather than reachable. Once any machine is paired, `/settings/projects` gives
+each checkout its own line with machine, path, reachability and its own settings
+link — settings on the row could only ever reach the representative.
+
+### Every project row names its machine once one is paired
+
+Grouping is by remote, so unrelated projects that share a *name* on two machines
+stay two rows — and without a machine on each they were two identical rows, with
+no way to tell which one a rename would hit. So once the catalog holds any
+machine, every project list names each row's machine, **this one included**
+(`useMachineNaming`, drawn by `MachineTag`): Settings › Projects, the project
+settings page (header and delete confirmation), the sidebar New palette and
+`ProjectLaunchPicker`. With nothing paired there is one machine and nothing is
+named. The rule keys on *paired*, not on a same-name collision, for the reason
+`SessionLocation` keeps zone 1: a mark that appears only sometimes cannot be
+compared between rows.
 
 ### Launching names a machine
 
@@ -211,8 +225,7 @@ representative's and is the only one presentation may read.
 
 `ProjectLaunchPicker` is that list as a searchable palette (the prompt card's
 target picker). The machine is part of the search text, so "agentique zbook" is
-one query rather than a repo pick followed by a second control, and a
-single-machine repo shows no machine chrome at all. An away machine's row is
+one query rather than a repo pick followed by a second control. An away machine's row is
 present but refused — where the repo lives is worth knowing even when it is
 asleep.
 

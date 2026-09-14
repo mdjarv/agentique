@@ -17,14 +17,17 @@ import { FolderPlus, Plus, Settings } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import { NewProjectDialog } from "~/components/layout/project/NewProjectDialog";
+import { MachineTag } from "~/components/machines/MachineTag";
 import { SettingsSection } from "~/components/settings/SettingsLayout";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useLogicalProjects } from "~/hooks/useLogicalProjects";
+import type { NamedMachine } from "~/hooks/useMachineNaming";
+import { useMachineNaming } from "~/hooks/useMachineNaming";
 import { useTheme } from "~/hooks/useTheme";
 import type { LogicalMemberVM } from "~/lib/machines/logical-derive";
 import { compareLogicalProjects, matchesLogicalProject } from "~/lib/machines/logical-derive";
-import { resolveMachineGlyph } from "~/lib/machines/platform";
+import { displaySlug } from "~/lib/machines/slug";
 import { getProjectColor } from "~/lib/project-colors";
 import { useAppStore } from "~/stores/app-store";
 
@@ -32,30 +35,50 @@ function truncatePath(path: string): string {
   return path.replace(/^\/home\/[^/]+/, "~").replace(/^\/Users\/[^/]+/, "~");
 }
 
-/** One machine's checkout of the repo — the physical thing a click targets. */
-function MemberLine({ member, onLaunch }: { member: LogicalMemberVM; onLaunch: () => void }) {
-  const Icon = resolveMachineGlyph(member.machineIcon, member.machinePlatform);
+/**
+ * One machine's checkout of the repo — the physical thing a click targets.
+ * Launch and settings both name this member, never the row: two checkouts of
+ * one repo are two projects to configure, and settings on the row could only
+ * ever reach the representative.
+ */
+function MemberLine({
+  member,
+  machine,
+  onLaunch,
+  onSettings,
+}: {
+  member: LogicalMemberVM;
+  machine: NamedMachine;
+  onLaunch: () => void;
+  onSettings: () => void;
+}) {
   return (
-    <button
-      type="button"
-      onClick={onLaunch}
-      disabled={member.offline}
-      title={
-        member.offline
-          ? `${member.machineLabel} is offline`
-          : `New session on ${member.machineLabel || "this machine"}`
-      }
-      className={`flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs ${
-        member.offline
-          ? "cursor-not-allowed text-muted-foreground-faint/70"
-          : "cursor-pointer text-muted-foreground-faint hover:bg-muted/50 hover:text-foreground"
-      }`}
-    >
-      <Icon className="size-3 shrink-0" />
-      <span className="shrink-0">{member.machineLabel || "This machine"}</span>
-      <span className="truncate">{truncatePath(member.path)}</span>
-      {member.offline && <span className="ml-auto shrink-0 font-mono text-[10px]">offline</span>}
-    </button>
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onLaunch}
+        disabled={member.offline}
+        title={member.offline ? `${machine.label} is offline` : `New session on ${machine.label}`}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs ${
+          member.offline
+            ? "cursor-not-allowed text-muted-foreground-faint/70"
+            : "cursor-pointer text-muted-foreground-faint hover:bg-muted/50 hover:text-foreground"
+        }`}
+      >
+        <MachineTag machine={machine} className="shrink-0 text-muted-foreground" />
+        <span className="truncate">{truncatePath(member.path)}</span>
+        {member.offline && <span className="ml-auto shrink-0 font-mono text-[10px]">offline</span>}
+      </button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onSettings}
+        title={`Project settings on ${machine.label}`}
+        aria-label={`Project settings on ${machine.label}`}
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </Button>
+    </div>
   );
 }
 
@@ -66,6 +89,7 @@ export function ProjectsSettings() {
   const rows = useLogicalProjects();
   const { resolvedTheme } = useTheme();
   const [filter, setFilter] = useState("");
+  const { named, nameOf } = useMachineNaming();
 
   const filteredProjects = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p]));
@@ -123,6 +147,12 @@ export function ProjectsSettings() {
               to: "/project/$projectSlug/session/new",
               params: { projectSlug: slug },
             });
+          const openSettings = (slug: string) =>
+            navigate({
+              to: "/project/$projectSlug/settings",
+              params: { projectSlug: slug },
+            });
+          const memberLines = named || row.members.some((m) => m.machineId);
           return (
             <div
               key={row.id}
@@ -136,24 +166,28 @@ export function ProjectsSettings() {
                 <div className="flex items-center gap-2">
                   <span className="truncate text-[13px] font-medium">{row.name}</span>
                   <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {row.slug}
+                    {/* The machine qualifier is noise once the member lines
+                        name the machine. */}
+                    {memberLines ? displaySlug(row.slug) : row.slug}
                   </code>
                   {row.favorite && (
                     <span className="text-[10px] text-muted-foreground-faint">fav</span>
                   )}
                 </div>
-                {/* A repo that lives only on this machine reads as a plain
-                    path. As soon as another machine holds a checkout —
-                    whether alongside this one or instead of it — every
-                    member gets its own launchable line, so where the code
-                    lives and whether it is reachable are both on the row. */}
-                {row.members.some((m) => m.machineId) ? (
+                {/* With one machine a row reads as a plain path. Once another
+                    machine is paired every member gets its own line naming
+                    its machine — this one included — so two projects that
+                    share a name on two machines can be told apart, and each
+                    checkout carries its own settings. */}
+                {memberLines ? (
                   <div className="mt-1 space-y-0.5">
                     {row.members.map((member) => (
                       <MemberLine
                         key={member.projectId}
                         member={member}
+                        machine={nameOf(member)}
                         onLaunch={() => newSession(member.slug)}
+                        onSettings={() => openSettings(member.slug)}
                       />
                     ))}
                   </div>
@@ -173,19 +207,16 @@ export function ProjectsSettings() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() =>
-                    navigate({
-                      to: "/project/$projectSlug/settings",
-                      params: { projectSlug: row.slug },
-                    })
-                  }
-                  title="Project settings"
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
+                {!memberLines && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => openSettings(row.slug)}
+                    title="Project settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           );

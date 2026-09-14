@@ -1718,6 +1718,12 @@ target's `slug` routes; only `rowSlug` may feed presentation. Where nobody picke
 representative is chosen for presentation and can be the one machine that is
 asleep.
 
+Once any machine is paired, **every** project row names its machine, this one
+included (`useMachineNaming`). Unrelated projects sharing a name on two machines
+are otherwise identical rows, and a rename lands on one of them. A remote's slug
+carries a client-side `~machineid` qualifier the owning server never saw, so a
+slug edit sends `displaySlug` and re-qualifies the answer.
+
 The machine catalog is full-access account state on the primary. localStorage
 never persists bearer credentials, and per-machine data caches sanitize
 live-ness. A flaky remote re-syncs only itself and never resets primary state.

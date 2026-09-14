@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader, StatusPage } from "~/components/layout/PageHeader";
 import { IconPicker } from "~/components/layout/project/IconPicker";
+import { MachineTag } from "~/components/machines/MachineTag";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,9 +19,12 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Separator } from "~/components/ui/separator";
+import { useLogicalProjectOf } from "~/hooks/useLogicalProjects";
+import { useMachineNaming } from "~/hooks/useMachineNaming";
 import { deleteProject, listPresetDefinitions, updateProject } from "~/lib/api";
 import { COLORS } from "~/lib/color-palette";
 import type { BehaviorPresets, PresetDefinition } from "~/lib/generated-types";
+import { displaySlug, remoteSlug } from "~/lib/machines/slug";
 import { cn, getErrorMessage, slugify } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 
@@ -50,6 +54,8 @@ function ProjectSettingsPage() {
   const project = useAppStore((s) => s.projects.find((p) => p.slug === projectSlug));
   const updateProjectStore = useAppStore((s) => s.updateProject);
   const removeProject = useAppStore((s) => s.removeProject);
+  const logicalRow = useLogicalProjectOf(project?.id);
+  const { named, nameOf } = useMachineNaming();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [renameEditing, setRenameEditing] = useState(false);
   const [renameName, setRenameName] = useState("");
@@ -95,6 +101,17 @@ function ProjectSettingsPage() {
     return <StatusPage message="Project not found" />;
   }
 
+  // Settings edit one checkout. The other checkouts of the same repo are
+  // separate projects on their own machines, each reachable from here.
+  const otherMembers = logicalRow?.members.filter((m) => m.projectId !== project.id) ?? [];
+  const thisMachine = nameOf(
+    logicalRow?.members.find((m) => m.projectId === project.id) ?? {
+      machineId: project.machineId,
+      machineLabel: "Unknown machine",
+    },
+  );
+  const onMachine = named || project.machineId ? ` on ${thisMachine.label}` : "";
+
   const handleColorChange = async (color: string) => {
     try {
       const updated = await updateProject(project.id, { color });
@@ -125,7 +142,9 @@ function ProjectSettingsPage() {
 
   const handleRenameEdit = () => {
     setRenameName(project.name);
-    setRenameSlug(project.slug);
+    // A remote project's slug carries a client-side machine qualifier; the
+    // machine that owns it only knows the bare one.
+    setRenameSlug(displaySlug(project.slug));
     setSlugManual(true);
     setRenameEditing(true);
   };
@@ -144,7 +163,7 @@ function ProjectSettingsPage() {
 
   const handleRenameSave = async () => {
     const nameChanged = renameName !== project.name;
-    const slugChanged = renameSlug !== project.slug;
+    const slugChanged = renameSlug !== displaySlug(project.slug);
     if (!nameChanged && !slugChanged) {
       setRenameEditing(false);
       return;
@@ -160,7 +179,11 @@ function ProjectSettingsPage() {
       if (slugChanged) {
         navigate({
           to: "/project/$projectSlug/settings",
-          params: { projectSlug: updated.slug },
+          params: {
+            projectSlug: project.machineId
+              ? remoteSlug(updated.slug, project.machineId)
+              : updated.slug,
+          },
           replace: true,
         });
       }
@@ -207,7 +230,34 @@ function ProjectSettingsPage() {
               Back to project
             </button>
             <h1 className="text-2xl font-semibold">{project.name}</h1>
+            {/* Which machine this is, stated before anything on the page can
+                change it: two machines can each hold a project of this name,
+                and a rename lands on exactly one of them. */}
+            {onMachine && (
+              <MachineTag machine={thisMachine} className="text-sm font-medium text-foreground" />
+            )}
             <p className="text-sm text-muted-foreground">{project.path}</p>
+            {otherMembers.length > 0 && (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs text-muted-foreground">
+                <span>Also checked out on</span>
+                {otherMembers.map((member) => (
+                  <button
+                    key={member.projectId}
+                    type="button"
+                    onClick={() =>
+                      navigate({
+                        to: "/project/$projectSlug/settings",
+                        params: { projectSlug: member.slug },
+                      })
+                    }
+                    title={`Settings for the checkout on ${nameOf(member).label}`}
+                    className="cursor-pointer rounded px-1 py-0.5 hover:bg-muted hover:text-foreground"
+                  >
+                    <MachineTag machine={nameOf(member)} offline={member.offline} />
+                  </button>
+                ))}
+              </p>
+            )}
           </div>
 
           <Separator />
@@ -260,7 +310,9 @@ function ProjectSettingsPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium w-12">Slug</span>
-                  <code className="text-sm bg-muted px-2 py-1 rounded">{project.slug}</code>
+                  <code className="text-sm bg-muted px-2 py-1 rounded">
+                    {displaySlug(project.slug)}
+                  </code>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleRenameEdit}>
                   Rename
@@ -391,8 +443,8 @@ function ProjectSettingsPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete project</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove &ldquo;{project.name}&rdquo; and all its sessions. This cannot be
-                  undone.
+                  This will remove &ldquo;{project.name}&rdquo;{onMachine} and all its sessions.
+                  This cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
