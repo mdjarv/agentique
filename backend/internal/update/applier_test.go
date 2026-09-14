@@ -332,6 +332,14 @@ func TestSecondApplyIsRefused(t *testing.T) {
 	if err := h.applier.Start(KindRelease, "", false); !errors.Is(err, ErrAlreadyRunning) {
 		t.Fatalf("got %v, want ErrAlreadyRunning", err)
 	}
+
+	// End the first upgrade before the test does. Releasing the stall alone
+	// let the download finish and write into the install dir while TempDir's
+	// cleanup was deleting it.
+	if err := h.applier.Cancel(); err != nil {
+		t.Fatalf("cancel the running upgrade: %v", err)
+	}
+	h.waitPhase(t, PhaseCancelled)
 }
 
 func TestPreflightRefusesUnverifiedPlatform(t *testing.T) {
