@@ -93,6 +93,18 @@ func newSessionSummarizer(runner msggen.Runner, queries *store.Queries, model st
 // Every failure returns "" rather than an error: a missing summary makes the
 // drafter vaguer, and nothing here is worth failing a call over.
 func (s *sessionSummarizer) Summary(ctx context.Context, sessionID string) string {
+	return s.summarize(ctx, sessionID, func() string { return s.recentTranscript(ctx, sessionID) })
+}
+
+// SummaryOfTranscript is [sessionSummarizer.Summary] for a transcript that did
+// not come from this machine's database — a paired machine's session, read over
+// its peer surface. key must not collide with a local session id; the caller
+// prefixes the machine.
+func (s *sessionSummarizer) SummaryOfTranscript(ctx context.Context, key, transcript string) string {
+	return s.summarize(ctx, key, func() string { return transcript })
+}
+
+func (s *sessionSummarizer) summarize(ctx context.Context, sessionID string, transcriptOf func() string) string {
 	if s == nil || s.runner == nil || s.model == "" {
 		return ""
 	}
@@ -116,7 +128,7 @@ func (s *sessionSummarizer) Summary(ctx context.Context, sessionID string) strin
 	}
 	defer s.release(sessionID, wait)
 
-	transcript := s.recentTranscript(ctx, sessionID)
+	transcript := transcriptOf()
 	if transcript == "" {
 		return ""
 	}

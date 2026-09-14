@@ -534,6 +534,9 @@ func (s *Service) Unfollow(ctx context.Context, sessionID string) error {
 	if err := s.store.DeleteAssistantFollow(ctx, sessionID); err != nil {
 		return fmt.Errorf("unfollow %s: %w", sessionID, err)
 	}
+	if err := s.store.DeleteAssistantPeerFollow(ctx, sessionID); err != nil {
+		return fmt.Errorf("unfollow remote %s: %w", sessionID, err)
+	}
 	return nil
 }
 
@@ -552,7 +555,7 @@ func (s *Service) Following(ctx context.Context, sessionID string) bool {
 			return true
 		}
 	}
-	return false
+	return s.followingRemote(ctx, sessionID)
 }
 
 // Follows returns the watch list, oldest first.

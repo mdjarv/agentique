@@ -287,8 +287,9 @@ func (s *Service) buildVerbs() []Verb {
 		{
 			Name: VerbListProjects,
 			Tier: TierRead,
-			Description: "List the repositories on this machine a new session could go in, most " +
-				"recently worked in first.",
+			Description: "List the repositories a new session could go in, on this machine and on " +
+				"paired machines, most recently worked in first. Each says its machine and whether " +
+				"work can be sent there.",
 			Input: []Param{{
 				Name: "query", Type: ParamString,
 				Description: "What they called the project, to narrow the list. Leave empty to see " +
@@ -322,8 +323,9 @@ func (s *Service) buildVerbs() []Verb {
 		{
 			Name: VerbCreateSession,
 			Tier: TierContained,
-			Description: "Create a session in a project on this machine, in its own worktree, and " +
-				"optionally start it on a prompt. Only after they have asked for the work.",
+			Description: "Create a session in a project, on this machine or a paired one that accepts " +
+				"work, in its own worktree, and optionally start it on a prompt. Only after they have " +
+				"asked for the work.",
 			Input: []Param{
 				{
 					Name: "project", Type: ParamString,
@@ -335,6 +337,11 @@ func (s *Service) buildVerbs() []Verb {
 					Name: "project_id", Type: ParamString,
 					Description: "The project id exactly as it was returned to you, when you have " +
 						"one. Never invent one; say the name in `project` instead.",
+				},
+				{
+					Name: "machine", Type: ParamString,
+					Description: "Which machine, when they said one or the same project is on more " +
+						"than one. Leave empty otherwise.",
 				},
 				{
 					Name: "model", Type: ParamString,
@@ -573,12 +580,17 @@ func (s *Service) verbSummarizeSession(ctx context.Context, args map[string]any)
 			"came back with."), nil
 	}
 
-	row, local := s.dir.SessionBrief(ctx, sessionID)
-	if !local {
-		row, _ = s.describeSession(ctx, sessionID)
-		return refuse("summary-not-local", fmt.Sprintf("%s runs on %s, and its "+
-			"transcript is not here, so it cannot be summarised from this server. Say that.",
-			DisplayFor(row), machineOf(row))), nil
+	// A paired machine's transcript is read over the peer surface, which a
+	// machine that has not opted into actions still serves: reading is not
+	// acting. Only a release from before the surface cannot answer.
+	row, found := s.locate(ctx, sessionID)
+	if !found {
+		return refuse("summary-unknown-session", "No session with that id is known here. Find it "+
+			"again and use the id that comes back."), nil
+	}
+	if row.Reach != ReachLocal && row.Reach != ReachPeer && row.Reach != ReachPeerOff {
+		return refuse("summary-not-reachable", fmt.Sprintf("%s runs on %s, and its transcript cannot "+
+			"be read from this server. Say that.", DisplayFor(row), machineOf(row))), nil
 	}
 
 	// Waited on rather than delivered later, unlike the call's version of this:
@@ -720,6 +732,11 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 	if refusal != nil {
 		return refusal, nil
 	}
+	if policy.ID != "" && project.Reach == ReachPeer && !project.AcceptsPolicies {
+		return refuse("create-peer-no-policies", fmt.Sprintf("Nothing was created: %s is on %s, which "+
+			"accepts work somebody asked for but not work under a standing instruction.",
+			project.DisplayName(), project.MachineName)), nil
+	}
 
 	row, err := s.dir.CreateSession(ctx, project.ID, strings.TrimSpace(stringArg(args, "model")))
 	if err != nil {
@@ -728,6 +745,10 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		var unknown *UnknownModelError
 		if errors.As(err, &unknown) {
 			return refuse("unknown-model", unknown.Error()), nil
+		}
+		if reason, say, ok := refusedSay(err); ok {
+			return refuse("create-refused:"+reason, fmt.Sprintf("Nothing was created in %s: %s. Say so "+
+				"plainly.", projectWhere(project), say)), nil
 		}
 		s.log.Warn("assistant session creation failed", "project", project.ID, "error", err)
 		return refuse("create-failed", fmt.Sprintf("That could not be created in %s. Say so "+
@@ -747,10 +768,17 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		payload[payloadPolicyID] = policy.ID
 		payload[payloadPolicyName] = policy.Name
 	}
+	// A paired machine's project id means nothing here, and the journal's
+	// project is what a memory scope is filed under.
+	journalProject := project.ID
+	if project.Reach.Remote() {
+		journalProject = ""
+		payload["machine"] = project.MachineName
+	}
 	if _, err := s.appendJournal(ctx, journalWrite{
 		Kind:      JournalSessionCreated,
 		SessionID: row.ID,
-		ProjectID: project.ID,
+		ProjectID: journalProject,
 		Summary:   fmt.Sprintf("created %s", DisplayFor(row)),
 		Payload:   payload,
 	}); err != nil {
@@ -812,15 +840,21 @@ func (s *Service) verbRunPrompt(ctx context.Context, args map[string]any) (map[s
 		return refusal, nil
 	}
 
-	row, local := s.dir.SessionBrief(ctx, sessionID)
-	if !local {
-		// The report registry is local, so a remote run would report into
-		// nothing — and a paired machine's row is a view, which can make the
-		// assistant say things and never do things.
-		row, _ = s.describeSession(ctx, sessionID)
-		return refuse("dispatch-not-local", fmt.Sprintf("NOTHING WAS SENT: %s runs on %s, and work "+
-			"can only be started on this one. Say which machine it is on, and offer something here "+
-			"instead.", DisplayFor(row), machineOf(row))), nil
+	// Wherever it runs (docs/peers.md): a paired machine that accepts work is
+	// as reachable as this one, and its own guard still judges the send.
+	row, found := s.locate(ctx, sessionID)
+	if !found {
+		return refuse("dispatch-unknown-session", "NOTHING WAS SENT: no session with that id is known "+
+			"here. Find it again and use the id that comes back."), nil
+	}
+	if !row.Reach.CanAct() {
+		out := cannotAct("dispatch", row, "work")
+		return out, nil
+	}
+	if policy.ID != "" && row.Reach == ReachPeer && !row.AcceptsPolicies {
+		return refuse("dispatch-peer-no-policies", fmt.Sprintf("NOTHING WAS SENT: %s runs on %s, which "+
+			"accepts work somebody asked for but not work under a standing instruction.",
+			DisplayFor(row), machineOf(row))), nil
 	}
 
 	return s.dispatchPrompt(ctx, row, prompt, policy), nil
@@ -844,13 +878,17 @@ func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt str
 
 	// Followed BEFORE the send, so a run that reports in its first second has
 	// somewhere to report to.
-	if err := s.Follow(ctx, row.ID, "dispatch"); err != nil {
+	if err := s.FollowRow(ctx, row, "dispatch"); err != nil {
 		s.log.Warn("assistant follow not recorded", "session", row.ID, "error", err)
 	}
 
 	delivery, err := s.dispatch(ctx, row.ID, prompt, policy.ID)
 	if err != nil {
-		s.log.Warn("assistant dispatch failed", "session", row.ID, "error", err)
+		s.log.Warn("assistant dispatch failed", "session", row.ID, "machine", row.MachineID, "error", err)
+		if reason, say, ok := refusedSay(err); ok {
+			return refuse("dispatch-refused:"+reason, fmt.Sprintf("NOTHING WAS SENT to %s: %s. Say so "+
+				"plainly, and do not send it again without being asked.", DisplayFor(row), say))
+		}
 		return refuse("dispatch-failed", fmt.Sprintf("NOTHING WAS SENT to %s. Say so plainly, and "+
 			"do not send it again without being asked.", DisplayFor(row)))
 	}
@@ -903,17 +941,17 @@ func (s *Service) verbFollowSession(ctx context.Context, args map[string]any) (m
 	if sessionID == "" {
 		return refuse("no-session-id", "No session id, so nothing is being watched."), nil
 	}
-	// Only a session this machine owns. The report registry is local, so
-	// following a remote one would be a subscription to a channel nothing
-	// writes to — and the follow row references a session that is not here.
-	if s.dir != nil {
-		if _, local := s.dir.SessionBrief(ctx, sessionID); !local {
-			row, _ := s.describeSession(ctx, sessionID)
-			return refuse("follow-not-local", fmt.Sprintf("%s runs on %s, not this machine, so "+
-				"there is nothing here to watch. Say which machine it is on.", DisplayFor(row), machineOf(row))), nil
-		}
+	// Wherever it runs, as long as its machine can send news here: a paired
+	// machine on a release from before the peer surface has no way to.
+	row, found := s.locate(ctx, sessionID)
+	if !found {
+		return refuse("follow-unknown-session", "No session with that id is known here, so nothing is "+
+			"being watched. Find it again and use the id that comes back."), nil
 	}
-	if err := s.Follow(ctx, sessionID, "operator"); err != nil {
+	if row.Reach != ReachLocal && row.Reach != ReachPeer && row.Reach != ReachPeerOff {
+		return cannotAct("follow", row, "being followed"), nil
+	}
+	if err := s.FollowRow(ctx, row, "operator"); err != nil {
 		return nil, err
 	}
 	return map[string]any{"following": sessionID,
@@ -977,10 +1015,36 @@ func (s *Service) verbNote(ctx context.Context, args map[string]any) (map[string
 // It never picks. One match is a name; several is a description, and a
 // description gets a question rather than a guess.
 func (s *Service) resolveProject(ctx context.Context, args map[string]any) (ProjectRow, map[string]any) {
+	project, refusal := s.findProject(ctx, args)
+	if refusal != nil {
+		return project, refusal
+	}
+	// A directory that says nothing about reach lists only its own projects:
+	// that was the contract before paired machines were in the list.
+	if project.Reach == ReachView {
+		project.Reach = ReachLocal
+	}
+	if !project.Reach.CanAct() {
+		return ProjectRow{}, cannotAct("create", SessionRow{ProjectName: project.DisplayName(),
+			MachineName: project.MachineName, Reach: project.Reach}, "new sessions")
+	}
+	return project, nil
+}
+
+// findProject is [Service.resolveProject] before the reach check: one project,
+// from an id or the operator's words, narrowed to a machine when they named one.
+func (s *Service) findProject(ctx context.Context, args map[string]any) (ProjectRow, map[string]any) {
 	rows := s.dir.ListProjects(ctx)
+	if machine := strings.TrimSpace(stringArg(args, "machine")); machine != "" {
+		rows = projectsOnMachine(rows, machine)
+		if len(rows) == 0 {
+			return ProjectRow{}, refuse("machine-unrecognised", fmt.Sprintf("No machine called %q has "+
+				"projects this server can see, and nothing was created. Ask which machine they mean.", machine))
+		}
+	}
 	if len(rows) == 0 {
-		return ProjectRow{}, refuse("no-projects", "There are no projects on this machine, so there "+
-			"is nowhere to create a session.")
+		return ProjectRow{}, refuse("no-projects", "There are no projects anywhere this server can see, "+
+			"so there is nowhere to create a session.")
 	}
 
 	if projectID := strings.TrimSpace(stringArg(args, "project_id")); projectID != "" {
@@ -1006,7 +1070,7 @@ func (s *Service) resolveProject(ctx context.Context, args map[string]any) (Proj
 	matched := MatchProjects(spoken, rows)
 	switch len(matched) {
 	case 0:
-		return ProjectRow{}, refuse("project-unrecognised", fmt.Sprintf("Nothing on this machine is "+
+		return ProjectRow{}, refuse("project-unrecognised", fmt.Sprintf("Nothing this server can see is "+
 			"called %q, and nothing was created. Ask them to say it another way, or offer to list "+
 			"what there is.", spoken))
 	case 1:
@@ -1014,10 +1078,11 @@ func (s *Service) resolveProject(ctx context.Context, args map[string]any) (Proj
 	default:
 		names := make([]string, 0, len(matched))
 		for _, row := range matched {
-			names = append(names, row.DisplayName())
+			names = append(names, projectWhere(row))
 		}
 		return ProjectRow{}, refuse("project-ambiguous", fmt.Sprintf("More than one project could be "+
-			"%q — %s. Nothing was created: ask which they mean and never choose for them.",
+			"%q — %s. Nothing was created: ask which they mean, and on which machine when it is the "+
+			"same repository on two, and never choose for them. `machine` narrows it.",
 			spoken, SpokenList(names)))
 	}
 }
@@ -1042,6 +1107,11 @@ func sessionPayload(row SessionRow) map[string]any {
 	}
 	if row.MachineName != "" {
 		out["machine"] = row.MachineName
+	}
+	// Whether work can be sent there from here, so the head does not offer
+	// what the refusal would only take back.
+	if words := reachWords(row.Reach); words != "" {
+		out["reach"] = words
 	}
 	if row.State != "" {
 		out["state"] = row.State
@@ -1070,6 +1140,12 @@ func projectPayloads(rows []ProjectRow) []map[string]any {
 		}
 		if row.LastActivity != "" {
 			payload["last_activity"] = row.LastActivity
+		}
+		if row.MachineName != "" {
+			payload["machine"] = row.MachineName
+		}
+		if words := reachWords(row.Reach); words != "" {
+			payload["reach"] = words
 		}
 		out = append(out, payload)
 	}
@@ -1138,4 +1214,47 @@ func machineOf(row SessionRow) string {
 		return row.MachineName
 	}
 	return "another machine"
+}
+
+// reachWords is how a row's reach is put to the head. Local rows say nothing:
+// being able to act on this machine's own sessions is the unremarkable case.
+func reachWords(r Reach) string {
+	switch r {
+	case ReachPeer:
+		return "can send work there"
+	case ReachPeerOff:
+		return "listed only: that machine does not accept work from other machines"
+	case ReachPeerOld:
+		return "listed only: that machine runs an older release"
+	case ReachLocal:
+		return ""
+	default:
+		return "listed only"
+	}
+}
+
+// projectWhere names a project with its machine when it is not this one's, so a
+// question about two checkouts of one repository can be answered.
+func projectWhere(row ProjectRow) string {
+	if row.Reach.Remote() && row.MachineName != "" {
+		return row.DisplayName() + " on " + row.MachineName
+	}
+	return row.DisplayName()
+}
+
+// projectsOnMachine narrows projects to the machine the operator named. "here"
+// and "this machine" are this one.
+func projectsOnMachine(rows []ProjectRow, spoken string) []ProjectRow {
+	want := strings.ToLower(strings.TrimSpace(spoken))
+	local := want == "here" || want == "this machine" || want == "this one" || want == "local"
+	var out []ProjectRow
+	for _, row := range rows {
+		switch {
+		case local && !row.Reach.Remote():
+			out = append(out, row)
+		case !local && row.MachineName != "" && strings.EqualFold(row.MachineName, want):
+			out = append(out, row)
+		}
+	}
+	return out
 }

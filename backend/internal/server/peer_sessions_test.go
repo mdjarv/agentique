@@ -15,6 +15,8 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/machine"
+	"github.com/mdjarv/agentique/backend/internal/peer"
+	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -57,15 +59,16 @@ var zbook = store.Machine{MachineID: "zbook-id", Label: "zbook", BaseUrl: "https
 func TestPeerRowsDescribeARemoteSession(t *testing.T) {
 	unseen := "2026-09-13T06:00:00Z"
 	snap := peerSnapshot{
-		Sessions: []peerSessionWire{
+		Sessions: []peer.SessionWire{
 			{ID: "s1", ProjectID: "p-remote", Name: "Plugin Testing", State: "idle", Model: "claude-opus-5",
 				WorktreeBranch: "session-s1", UpdatedAt: "2026-09-13T07:00:00Z"},
 			{ID: "s2", ProjectID: "p-remote", Name: "Filed away", State: "idle", ArchivedAt: "2026-09-12T00:00:00Z"},
-			{ID: "s3", ProjectID: "p-other", Name: "Waiting", State: "idle", PendingApproval: json.RawMessage(`{"approvalId":"a"}`)},
-			{ID: "s4", ProjectID: "p-other", Name: "Done", State: "done", UnseenCompletedAt: &unseen},
-			{ID: "s5", ProjectID: "p-other", Name: "Null approval", State: "idle", PendingApproval: json.RawMessage(`null`)},
+			{ID: "s3", ProjectID: "p-other", Name: "Waiting", State: "idle", PendingApproval: true},
+			{ID: "s4", ProjectID: "p-other", Name: "Done", State: "done", UnseenCompletedAt: unseen},
+			{ID: "s5", ProjectID: "p-other", Name: "Not waiting", State: "idle"},
 		},
-		Projects: []peerProjectWire{
+		Reach: assistant.ReachPeer,
+		Projects: []peer.ProjectWire{
 			{ID: "p-remote", Name: "seisiun on zbook", Slug: "seisiun", RemoteURL: "github.com/mdjarv/seisiun"},
 			{ID: "p-other", Name: "Scratch", Slug: "scratch"},
 		},
@@ -93,6 +96,9 @@ func TestPeerRowsDescribeARemoteSession(t *testing.T) {
 	if got.ProjectID != "" {
 		t.Errorf("s1 ProjectID = %q, want empty: a remote project id means nothing here", got.ProjectID)
 	}
+	if got.Reach != assistant.ReachPeer {
+		t.Errorf("s1 reach = %q, want the snapshot's", got.Reach)
+	}
 	if got.Model != "Opus" || got.Branch != "session-s1" || got.LastActivity != "2026-09-13T07:00:00Z" {
 		t.Errorf("s1 details = %+v", got)
 	}
@@ -106,7 +112,7 @@ func TestPeerRowsDescribeARemoteSession(t *testing.T) {
 		t.Errorf("s4 attention = %q, want unread", byID["s4"].Attention)
 	}
 	if byID["s5"].Attention != "" {
-		t.Errorf("s5 attention = %q, want none for a JSON null", byID["s5"].Attention)
+		t.Errorf("s5 attention = %q, want none", byID["s5"].Attention)
 	}
 }
 
@@ -115,7 +121,7 @@ func TestPeerViewCachesAFreshAnswer(t *testing.T) {
 	peers, clock := newTestPeers([]store.Machine{zbook, {MachineID: "self", Label: "me"}},
 		func(context.Context, store.Machine) (peerSnapshot, error) {
 			calls.Add(1)
-			return peerSnapshot{Sessions: []peerSessionWire{{ID: "s1", Name: "Plugin Testing"}}}, nil
+			return peerSnapshot{Sessions: []peer.SessionWire{{ID: "s1", Name: "Plugin Testing"}}}, nil
 		})
 
 	view := peers.View(context.Background())
@@ -144,7 +150,7 @@ func TestPeerViewServesStaleWhileRefreshing(t *testing.T) {
 			if calls.Add(1) > 1 {
 				<-release
 			}
-			return peerSnapshot{Sessions: []peerSessionWire{{ID: "s1"}}}, nil
+			return peerSnapshot{Sessions: []peer.SessionWire{{ID: "s1"}}}, nil
 		})
 
 	peers.View(context.Background())
@@ -200,7 +206,7 @@ func TestPeerViewDropsRowsWhenARefreshFails(t *testing.T) {
 			if fail.Load() {
 				return peerSnapshot{}, errors.New("timeout")
 			}
-			return peerSnapshot{Sessions: []peerSessionWire{{ID: "s1", State: "running"}}}, nil
+			return peerSnapshot{Sessions: []peer.SessionWire{{ID: "s1", State: "running"}}}, nil
 		})
 
 	peers.View(context.Background())
@@ -234,9 +240,10 @@ func TestMergeRowsKeepsTheLocalCopy(t *testing.T) {
 	}
 }
 
-// The wire names are the remote's JSON tags, so this reads a remote built from
-// the real types rather than trusting the narrow structs to match them.
-func TestHTTPPeerFetchReadsARealRemote(t *testing.T) {
+// An older release is read the transitional way, with the pairing bearer, and
+// every row from it is described and never actionable. The wire names are that
+// release's JSON tags, so the remote is built from the real types.
+func TestTransitionalFetchReadsAnOlderRelease(t *testing.T) {
 	machineID := uuid.New().String()
 	identity, err := machine.LoadOrCreateSigningIdentity(t.TempDir(), machineID)
 	if err != nil {
@@ -277,9 +284,14 @@ func TestHTTPPeerFetchReadsARealRemote(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	m := store.Machine{MachineID: machineID, Label: "zbook", BaseUrl: srv.URL, Token: "live", IdentityKey: identity.PublicKey()}
-	snap, err := httpPeerFetch(srv.Client())(context.Background(), m)
+	// A link that says the machine has no peer surface is what sends the
+	// reader down the transitional path.
+	snap, err := peerFetch(noSurface{}, srv.Client())(context.Background(), m)
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
+	}
+	if snap.Reach != assistant.ReachPeerOld {
+		t.Fatalf("reach = %q, want peer-old", snap.Reach)
 	}
 	rows := peerRows(m, snap, nil)
 	if len(rows) != 1 {
@@ -287,8 +299,60 @@ func TestHTTPPeerFetchReadsARealRemote(t *testing.T) {
 	}
 	row := rows[0]
 	if row.Name != "Plugin Testing" || row.ProjectName != "seisiun" || row.Branch != "session-s1" ||
-		row.Attention != assistant.AttentionQuestion || row.Model != "Opus" {
+		row.Attention != assistant.AttentionQuestion || row.Model != "Opus" || row.Reach.CanAct() {
 		t.Fatalf("row = %+v", row)
+	}
+}
+
+type noSurface struct{}
+
+func (noSurface) List(context.Context, string) (peer.SessionsResponse, error) {
+	return peer.SessionsResponse{}, peerlink.ErrNoPeerSurface
+}
+
+// A machine with a peer surface is read through it, and the opt-ins decide the
+// reach every row carries.
+func TestPeerFetchUsesThePeerSurface(t *testing.T) {
+	for _, tt := range []struct {
+		actions, policies bool
+		want              assistant.Reach
+	}{
+		{false, true, assistant.ReachPeerOff},
+		{true, false, assistant.ReachPeer},
+		{true, true, assistant.ReachPeer},
+	} {
+		link := listed{peer.SessionsResponse{AcceptActions: tt.actions, AcceptPolicies: tt.policies,
+			Sessions: []peer.SessionWire{{ID: "s1", State: "idle"}}}}
+		snap, err := peerFetch(link, nil)(context.Background(), zbook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if snap.Reach != tt.want || snap.AcceptsPolicies != (tt.actions && tt.policies) || len(snap.Sessions) != 1 {
+			t.Errorf("actions=%v policies=%v: snapshot = %+v", tt.actions, tt.policies, snap)
+		}
+	}
+}
+
+type listed struct{ resp peer.SessionsResponse }
+
+func (l listed) List(context.Context, string) (peer.SessionsResponse, error) { return l.resp, nil }
+
+// A session created moments ago is locatable before the machine's next list
+// includes it, and stops standing in once two refreshes have passed.
+func TestLocateRemembersACreation(t *testing.T) {
+	peers, clock := newTestPeers([]store.Machine{zbook},
+		func(context.Context, store.Machine) (peerSnapshot, error) {
+			return peerSnapshot{Reach: assistant.ReachPeer}, nil
+		})
+	peers.View(context.Background())
+	peers.Remember(peerLocation{Machine: zbook, Session: peer.SessionWire{ID: "new"},
+		Row: assistant.SessionRow{ID: "new", Reach: assistant.ReachPeer}})
+	if loc, ok := peers.Locate(context.Background(), "new"); !ok || loc.Row.Reach != assistant.ReachPeer {
+		t.Fatalf("locate = %+v %v", loc, ok)
+	}
+	clock.advance(recentFor + time.Second)
+	if _, ok := peers.Locate(context.Background(), "new"); ok {
+		t.Fatal("a remembered creation outlived its window")
 	}
 }
 

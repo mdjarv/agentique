@@ -35,6 +35,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/peer"
+	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
@@ -1148,6 +1149,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		assistantDisp      *assistantDispatcher
 		assistantFacts     *assistantTurnFacts
 		summarizer         *sessionSummarizer
+		peerLink           *peerlink.Client
+		peerSrc            *peerSessions
 	)
 	if cfg.ExperimentalVoice || cfg.ExperimentalAssistant {
 		// The summariser keeps a session's transcript on this machine: it runs
@@ -1170,12 +1173,19 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				label, _ := hostPresentation(ctx)
 				return label
 			})
-		// Paired machines' sessions, read as their client with the bearer the
-		// catalog already holds. Without it the assistant knew only this
-		// machine's database, and a session the sidebar showed on zbook did not
-		// exist for list_sessions or find_session. Lazy: nothing is dialled
-		// until an assistant or a call asks.
-		assistantDir.peers = newPeerSessions(queries, machineHTTPClient, cfg.MachineID)
+		// Paired machines (docs/peers.md): their sessions and projects read
+		// through each one's peer surface, and actions on them sent the same
+		// way, with the peer credential peerLink mints and holds. Without it
+		// the assistant knew only this machine's database, and a session the
+		// sidebar showed on zbook did not exist for it. Lazy: nothing is
+		// dialled until an assistant or a call asks.
+		peerLink = peerlink.New(machineHTTPClient, queries, peerlink.WithLabel(func(ctx context.Context) string {
+			label, _ := hostPresentation(ctx)
+			return label
+		}))
+		peerSrc = newPeerSessions(queries, machineHTTPClient, peerLink, cfg.MachineID)
+		assistantDir.peers, assistantDir.link = peerSrc, peerLink
+		assistantDisp.peers, assistantDisp.link = peerSrc, peerLink
 	}
 	if cfg.ExperimentalAssistant {
 		// Every collaborator below is non-nil by construction: the block above

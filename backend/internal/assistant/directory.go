@@ -118,9 +118,10 @@ func SpokenList(items []string) string {
 // tell it from a similarly-named one, and rank it by how recently it was worked
 // in. Not enough to render it — that is the browser's job.
 //
-// Local by construction. Every row here is a repository this server can check
-// out a worktree from, which is what makes it somewhere a session can be
-// created; the world snapshot's remote projects are talked about, never used.
+// A row is somewhere a session can be created when its [Reach] can act: this
+// machine's own checkouts, and a paired machine's that accepts actions from
+// this server. The world snapshot's remote projects are talked about, never
+// used.
 type ProjectRow struct {
 	// ID is the project id, and is what [Directory.CreateSession] takes.
 	ID string
@@ -132,6 +133,17 @@ type ProjectRow struct {
 	// when nothing has run there. Compared as text, which is correct for that
 	// format and for nothing else.
 	LastActivity string
+	// MachineID and MachineName say which machine holds this checkout. A
+	// repository checked out on two machines is two rows: launching is
+	// physical (docs/multi-machine.md).
+	MachineID   string
+	MachineName string
+	// RemoteURL is the canonical git remote, the name a repository has across
+	// machines. Empty for a checkout with no remote.
+	RemoteURL string
+	// Reach and AcceptsPolicies as on [SessionRow].
+	Reach           Reach
+	AcceptsPolicies bool
 }
 
 // DisplayName is what to call a project.
@@ -212,6 +224,35 @@ func AttentionRank(attention string) int {
 // in flight. Every other state it only repeats.
 const StateRunning = "running"
 
+// Reach is what this server can do with a session or a project.
+//
+// The zero value is [ReachView] on purpose: a row nobody vouched for — a world
+// snapshot's, or one whose machine has not answered — is described and never
+// acted on, so forgetting to set Reach fails closed.
+type Reach string
+
+const (
+	// ReachView: known about, not actionable from here.
+	ReachView Reach = ""
+	// ReachLocal: this machine's own.
+	ReachLocal Reach = "local"
+	// ReachPeer: a paired machine that accepts actions from this server. Its
+	// own guard still decides each one (docs/peers.md).
+	ReachPeer Reach = "peer"
+	// ReachPeerOff: a paired machine that serves the peer surface and has not
+	// set [peer] accept-actions.
+	ReachPeerOff Reach = "peer-off"
+	// ReachPeerOld: a paired machine whose release predates the peer surface.
+	ReachPeerOld Reach = "peer-old"
+)
+
+// CanAct reports whether work can be started through this reach.
+func (r Reach) CanAct() bool { return r == ReachLocal || r == ReachPeer }
+
+// Remote reports whether the thing lives on a paired machine this server has
+// heard from, whatever that machine allows.
+func (r Reach) Remote() bool { return r == ReachPeer || r == ReachPeerOff || r == ReachPeerOld }
+
 // SessionRow is one session as the assistant sees it: enough to name it,
 // tell it apart from a session with a similar name on another machine, and say
 // what it is doing. Not enough to render it — that is the browser's job.
@@ -253,6 +294,11 @@ type SessionRow struct {
 	// LastActivity is UTC RFC3339 seconds, or "" when unknown. Compared as
 	// text, which is correct for that format and for nothing else.
 	LastActivity string
+	// Reach is what can be done with it from here.
+	Reach Reach
+	// AcceptsPolicies is, for a [ReachPeer] row, whether its machine also
+	// accepts work under a standing instruction. Always true for a local row.
+	AcceptsPolicies bool
 }
 
 // HasAttention reports whether this session is waiting on the operator.

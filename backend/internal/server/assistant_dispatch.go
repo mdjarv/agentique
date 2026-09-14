@@ -13,6 +13,7 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
+	"github.com/mdjarv/agentique/backend/internal/peer"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -37,6 +38,11 @@ type assistantDispatcher struct {
 	svc        *session.Service
 	queries    *store.Queries
 	summarizer *sessionSummarizer
+
+	// peers and link route a send to a session on a paired machine through its
+	// peer surface (docs/peers.md). Both nil means this machine's sessions only.
+	peers peerSource
+	link  peerActions
 }
 
 // Dispatch implements assistant.Dispatcher.
@@ -66,6 +72,10 @@ func (d *assistantDispatcher) DispatchUnderPolicy(ctx context.Context, sessionID
 		prompt += "\n\n" + assistant.ReportingInstructions(mcphttp.AssistantReportToolFullName)
 	}
 
+	if loc, remote := d.remote(ctx, sessionID); remote {
+		return d.sendRemote(ctx, loc, prompt, policyID)
+	}
+
 	delivery, err := d.svc.EnqueueMessageWithOrigin(ctx, sessionID, prompt, nil, session.QueryOrigin{
 		Kind:     session.OriginAssistant,
 		PolicyID: policyID,
@@ -88,12 +98,56 @@ func (d *assistantDispatcher) DispatchUnderPolicy(ctx context.Context, sessionID
 	}
 }
 
+// remote reports whether sessionID is a paired machine's rather than this
+// one's, and where. This machine's own database is asked first, always: a
+// session id is a UUID, so a local hit is never a coincidence.
+func (d *assistantDispatcher) remote(ctx context.Context, sessionID string) (peerLocation, bool) {
+	if d.peers == nil || d.link == nil {
+		return peerLocation{}, false
+	}
+	if _, err := d.svc.GetSessionInfo(ctx, sessionID); err == nil {
+		return peerLocation{}, false
+	}
+	return d.peers.Locate(ctx, sessionID)
+}
+
+// sendRemote delivers a prompt through the owning machine's peer surface. The
+// owner's guard decides; its refusal comes back as a sentence to relay.
+func (d *assistantDispatcher) sendRemote(ctx context.Context, loc peerLocation, prompt, policyID string) (assistant.Delivery, error) {
+	machineName := machineLabel(loc.Machine)
+	if !loc.Row.Reach.CanAct() {
+		return "", &assistant.RefusedError{Reason: string(loc.Row.Reach),
+			Say: machineName + " does not accept work from this server"}
+	}
+	sent, err := d.link.Send(ctx, loc.Machine.MachineID, loc.Session.ID, peer.SendRequest{Prompt: prompt, PolicyID: policyID})
+	if err != nil {
+		return "", peerError(err, machineName)
+	}
+	// What the session is doing just changed; the next list should ask again.
+	d.peers.Invalidate(loc.Machine.MachineID)
+	switch session.MessageDelivery(sent.Delivery) {
+	case session.DeliveryMidTurn:
+		return assistant.DeliveryMidTurn, nil
+	case session.DeliveryQueued:
+		return assistant.DeliveryQueued, nil
+	default:
+		return assistant.DeliveryTurn, nil
+	}
+}
+
 // AutoRunnable implements assistant.Dispatcher.
 //
 // Live voice has no spoken approval, so a session that would stop and ask is
 // refused at the handoff. The alternative is a run that stalls invisibly while
-// the call sounds perfectly healthy.
+// the call sounds perfectly healthy. A paired machine's session is judged from
+// the mode its owner reported, and the owner's guard judges it again on send.
 func (d *assistantDispatcher) AutoRunnable(ctx context.Context, sessionID string) (bool, string, error) {
+	if loc, remote := d.remote(ctx, sessionID); remote {
+		if loc.Session.AutoApproveMode == autoApproveAll {
+			return true, "", nil
+		}
+		return false, fmt.Sprintf("It is currently set to %q.", loc.Session.AutoApproveMode), nil
+	}
 	info, err := d.svc.GetSessionInfo(ctx, sessionID)
 	if err != nil {
 		return false, "", err

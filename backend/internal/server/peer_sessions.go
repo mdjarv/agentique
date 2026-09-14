@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/machine"
+	"github.com/mdjarv/agentique/backend/internal/peer"
+	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -29,8 +32,8 @@ const (
 	peerStaleFor    = 5 * time.Minute
 	peerColdBudget  = 2500 * time.Millisecond
 	peerFetchBudget = 8 * time.Second
-	// peerMaxBody bounds one remote list. A session row is a couple of KB, so
-	// this is thousands of sessions, and it is another machine's bytes.
+	// peerMaxBody bounds one remote list on the transitional read. A session
+	// row is a couple of KB, so this is thousands of sessions.
 	peerMaxBody = 8 << 20
 	// peerMaxField bounds one remote string on a rune boundary, the same
 	// discipline the voice call applies to the browser's world snapshot.
@@ -49,18 +52,132 @@ type peerView struct {
 // peerSource is the seam [assistantDirectory] reads paired machines through.
 type peerSource interface {
 	View(ctx context.Context) peerView
+	// Projects is every paired machine's checkouts, with what this server may
+	// do in each.
+	Projects(ctx context.Context) []assistant.ProjectRow
+	// Locate finds a session on a paired machine by id, from the same cached
+	// answers the lists come from.
+	Locate(ctx context.Context, sessionID string) (peerLocation, bool)
+	// Remember records a session this server just created on a paired machine,
+	// so it can be acted on before that machine's next list includes it.
+	Remember(loc peerLocation)
+	// Invalidate makes the next read of one machine ask it again.
+	Invalidate(machineID string)
 }
 
-// peerSnapshot is one machine's answer, before it is turned into rows.
+// peerLocation is a session on a paired machine, with the facts an action on
+// it is judged by.
+type peerLocation struct {
+	Machine store.Machine
+	Session peer.SessionWire
+	Row     assistant.SessionRow
+}
+
+// peerSnapshot is one machine's answer, normalized to the peer surface's shape
+// whichever read produced it.
 type peerSnapshot struct {
-	Sessions []peerSessionWire
-	Projects []peerProjectWire
+	Sessions        []peer.SessionWire
+	Projects        []peer.ProjectWire
+	Reach           assistant.Reach
+	AcceptsPolicies bool
 }
 
-// peerSessionWire is the part of a remote GET /api/sessions row the assistant
-// reads. Narrow on purpose: the remote runs whatever release it runs, and a
-// field this server does not need must not be able to fail the decode.
-type peerSessionWire struct {
+// peerLister is the one call the reader needs from the peer client.
+type peerLister interface {
+	List(ctx context.Context, machineID string) (peer.SessionsResponse, error)
+}
+
+type peerFetchFunc func(ctx context.Context, m store.Machine) (peerSnapshot, error)
+
+type peerEntry struct {
+	snapshot  peerSnapshot
+	err       error
+	fetchedAt time.Time
+	// inflight is closed when the running refresh lands; nil when none runs.
+	inflight chan struct{}
+}
+
+// peerSessions reads the sessions of every paired machine, as this server.
+//
+// It exists because the browser was the only thing that ever asked a paired
+// machine what it was running. The sidebar fans out to every machine over its
+// own socket, so the operator sees a zbook session beside a local one; the
+// assistant asks this server, which read its own database and nothing else,
+// so the same session did not exist for it.
+//
+// It reads through the peer surface where the machine serves one, with the peer
+// credential, and tags every row with what the owner allows ([assistant.Reach]).
+// A machine on a release from before the peer surface is read the transitional
+// way — its REST lists with the pairing bearer — and every row from it is
+// [assistant.ReachPeerOld]: described, never acted on. That read goes away once
+// no paired release predates the surface (docs/peers.md, contract).
+type peerSessions struct {
+	machines func(ctx context.Context) ([]store.Machine, error)
+	localKey func(ctx context.Context) map[string]store.Project
+	fetch    peerFetchFunc
+	selfID   string
+	now      func() time.Time
+	// coldBudget is peerColdBudget; a field so a test need not wait it out.
+	coldBudget time.Duration
+
+	mu      sync.Mutex
+	entries map[string]*peerEntry
+	// recent holds sessions created here moments ago, until a list has them.
+	recent map[string]recentLocation
+}
+
+type recentLocation struct {
+	loc peerLocation
+	at  time.Time
+}
+
+// recentFor is how long a remembered creation stands in for a list: past two
+// refreshes the machine's own answer is the only one worth trusting.
+const recentFor = 2 * peerFreshFor
+
+// newPeerSessions builds the reader. It does no IO: the first read is what
+// reaches out, so constructing it in a test touches nothing.
+func newPeerSessions(queries *store.Queries, client *http.Client, link peerLister, selfID string) *peerSessions {
+	return &peerSessions{
+		machines: queries.ListMachines,
+		localKey: func(ctx context.Context) map[string]store.Project {
+			return localProjectsByRemote(ctx, queries)
+		},
+		fetch:      peerFetch(link, client),
+		selfID:     selfID,
+		now:        time.Now,
+		coldBudget: peerColdBudget,
+		entries:    make(map[string]*peerEntry),
+		recent:     make(map[string]recentLocation),
+	}
+}
+
+// peerFetch reads one machine: the peer surface first, the transitional REST
+// read only when the machine's release has no peer surface.
+func peerFetch(link peerLister, client *http.Client) peerFetchFunc {
+	return func(ctx context.Context, m store.Machine) (peerSnapshot, error) {
+		if link != nil {
+			list, err := link.List(ctx, m.MachineID)
+			switch {
+			case err == nil:
+				reach := assistant.ReachPeerOff
+				if list.AcceptActions {
+					reach = assistant.ReachPeer
+				}
+				return peerSnapshot{Sessions: list.Sessions, Projects: list.Projects, Reach: reach,
+					AcceptsPolicies: list.AcceptActions && list.AcceptPolicies}, nil
+			case !errors.Is(err, peerlink.ErrNoPeerSurface):
+				return peerSnapshot{}, err
+			}
+		}
+		return transitionalFetch(ctx, client, m)
+	}
+}
+
+// legacySessionWire is the part of an older release's GET /api/sessions row the
+// transitional read uses. Narrow on purpose: a field this server does not need
+// must not be able to fail the decode.
+type legacySessionWire struct {
 	ID                string          `json:"id"`
 	ProjectID         string          `json:"projectId"`
 	Name              string          `json:"name"`
@@ -76,92 +193,139 @@ type peerSessionWire struct {
 	CreatedAt         string          `json:"createdAt"`
 }
 
-// peerProjectWire is the part of a remote GET /api/projects row the assistant
-// reads.
-type peerProjectWire struct {
+type legacyProjectWire struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Slug      string `json:"slug"`
 	RemoteURL string `json:"remote_url"`
 }
 
-type peerFetchFunc func(ctx context.Context, m store.Machine) (peerSnapshot, error)
-
-type peerEntry struct {
-	snapshot  peerSnapshot
-	err       error
-	fetchedAt time.Time
-	// inflight is closed when the running refresh lands; nil when none runs.
-	inflight chan struct{}
-}
-
-// peerSessions reads the sessions of every paired machine, as this server,
-// with the bearer the catalog already holds for it.
-//
-// It exists because the browser was the only thing that ever asked a paired
-// machine what it was running. The sidebar fans out to every machine over its
-// own socket, so the operator sees a zbook session beside a local one; the
-// assistant asks this server, which read its own database and nothing else,
-// so the same session did not exist for it. The voice call papered over that
-// with the browser's world snapshot, and the thread has no browser behind it.
-//
-// Reading is all it does. Rows from here carry no ProjectID and
-// [assistantDirectory.SessionBrief] never answers for them, so they can make
-// the assistant say things and never do things — the same contract the world
-// snapshot has, now held by a source that does not need a tab open.
-type peerSessions struct {
-	machines func(ctx context.Context) ([]store.Machine, error)
-	localKey func(ctx context.Context) map[string]store.Project
-	fetch    peerFetchFunc
-	selfID   string
-	now      func() time.Time
-	// coldBudget is peerColdBudget; a field so a test need not wait it out.
-	coldBudget time.Duration
-
-	mu      sync.Mutex
-	entries map[string]*peerEntry
-}
-
-// newPeerSessions builds the reader. It does no IO: the first read is what
-// reaches out, so constructing it in a test touches nothing.
-func newPeerSessions(queries *store.Queries, client *http.Client, selfID string) *peerSessions {
-	return &peerSessions{
-		machines: queries.ListMachines,
-		localKey: func(ctx context.Context) map[string]store.Project {
-			return localProjectsByRemote(ctx, queries)
-		},
-		fetch:      httpPeerFetch(client),
-		selfID:     selfID,
-		now:        time.Now,
-		coldBudget: peerColdBudget,
-		entries:    make(map[string]*peerEntry),
+// transitionalFetch reads an older release's REST lists with the pairing
+// bearer. Reading is all it is ever used for.
+func transitionalFetch(ctx context.Context, client *http.Client, m store.Machine) (peerSnapshot, error) {
+	remote := machine.RemotePeer{BaseURL: m.BaseUrl, MachineID: m.MachineID, IdentityKey: m.IdentityKey, Token: m.Token}
+	var sessions []legacySessionWire
+	if err := machine.FetchRemoteJSON(ctx, client, remote, "/api/sessions", peerMaxBody, &sessions); err != nil {
+		return peerSnapshot{}, err
 	}
-}
-
-// httpPeerFetch reads a machine's sessions and projects over its REST API.
-// Both are endpoints every release that can pair already serves.
-func httpPeerFetch(client *http.Client) peerFetchFunc {
-	return func(ctx context.Context, m store.Machine) (peerSnapshot, error) {
-		peer := machine.RemotePeer{BaseURL: m.BaseUrl, MachineID: m.MachineID, IdentityKey: m.IdentityKey, Token: m.Token}
-		var snap peerSnapshot
-		if err := machine.FetchRemoteJSON(ctx, client, peer, "/api/sessions", peerMaxBody, &snap.Sessions); err != nil {
-			return peerSnapshot{}, err
+	snap := peerSnapshot{Reach: assistant.ReachPeerOld}
+	for _, s := range sessions {
+		wire := peer.SessionWire{
+			ID: s.ID, ProjectID: s.ProjectID, Name: s.Name, State: s.State, Model: s.Model,
+			WorktreeBranch: s.WorktreeBranch, ArchivedAt: s.ArchivedAt,
+			PendingApproval: present(s.PendingApproval), PendingQuestion: present(s.PendingQuestion),
+			LastQueryAt: s.LastQueryAt, UpdatedAt: s.UpdatedAt, CreatedAt: s.CreatedAt,
 		}
-		// Projects only name the rows. A machine whose project list fails
-		// still has sessions worth listing, so this failure is not the read's.
-		if err := machine.FetchRemoteJSON(ctx, client, peer, "/api/projects", peerMaxBody, &snap.Projects); err != nil {
-			slog.Debug("peer sessions: project list failed", "machine", m.MachineID, "error", err)
+		if s.UnseenCompletedAt != nil {
+			wire.UnseenCompletedAt = *s.UnseenCompletedAt
 		}
-		return snap, nil
+		snap.Sessions = append(snap.Sessions, wire)
 	}
+	// Projects only name the rows. A machine whose project list fails still
+	// has sessions worth listing, so this failure is not the read's.
+	var projects []legacyProjectWire
+	if err := machine.FetchRemoteJSON(ctx, client, remote, "/api/projects", peerMaxBody, &projects); err != nil {
+		slog.Debug("peer sessions: project list failed", "machine", m.MachineID, "error", err)
+	}
+	for _, p := range projects {
+		snap.Projects = append(snap.Projects, peer.ProjectWire{ID: p.ID, Name: p.Name, Slug: p.Slug, RemoteURL: p.RemoteURL})
+	}
+	return snap, nil
 }
 
 // View implements peerSource.
 func (p *peerSessions) View(ctx context.Context) peerView {
+	peers, local := p.refreshed(ctx)
+	var view peerView
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range peers {
+		snap, ok := p.usableLocked(m)
+		if !ok {
+			view.Unreachable = append(view.Unreachable, machineLabel(m))
+			continue
+		}
+		view.Rows = append(view.Rows, peerRows(m, snap, local)...)
+	}
+	return view
+}
+
+// Projects implements peerSource.
+func (p *peerSessions) Projects(ctx context.Context) []assistant.ProjectRow {
+	peers, local := p.refreshed(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var rows []assistant.ProjectRow
+	for _, m := range peers {
+		snap, ok := p.usableLocked(m)
+		if !ok {
+			continue
+		}
+		rows = append(rows, peerProjectRows(m, snap, local)...)
+	}
+	return rows
+}
+
+// Remember implements peerSource.
+func (p *peerSessions) Remember(loc peerLocation) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.recent == nil {
+		p.recent = make(map[string]recentLocation)
+	}
+	p.recent[loc.Session.ID] = recentLocation{loc: loc, at: p.now()}
+	if entry := p.entries[loc.Machine.MachineID]; entry != nil && entry.err == nil && !entry.fetchedAt.IsZero() {
+		entry.fetchedAt = p.now().Add(-peerFreshFor - time.Second)
+	}
+}
+
+// Locate implements peerSource.
+func (p *peerSessions) Locate(ctx context.Context, sessionID string) (peerLocation, bool) {
+	if sessionID == "" {
+		return peerLocation{}, false
+	}
+	peers, local := p.refreshed(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r, ok := p.recent[sessionID]; ok {
+		if p.now().Sub(r.at) <= recentFor {
+			return r.loc, true
+		}
+		delete(p.recent, sessionID)
+	}
+	for _, m := range peers {
+		snap, ok := p.usableLocked(m)
+		if !ok {
+			continue
+		}
+		for _, s := range snap.Sessions {
+			if s.ID != sessionID {
+				continue
+			}
+			rows := peerRows(m, peerSnapshot{Sessions: []peer.SessionWire{s}, Projects: snap.Projects,
+				Reach: snap.Reach, AcceptsPolicies: snap.AcceptsPolicies}, local)
+			row := assistant.SessionRow{ID: s.ID, MachineID: m.MachineID, MachineName: machineLabel(m), Reach: snap.Reach}
+			if len(rows) == 1 {
+				row = rows[0]
+			} else {
+				// Archived rows are dropped from lists but still addressable:
+				// the owner's guard is what refuses them, in its own words.
+				row.Name = clampPeerField(s.Name)
+			}
+			return peerLocation{Machine: m, Session: s, Row: row}, true
+		}
+	}
+	return peerLocation{}, false
+}
+
+// refreshed is the catalog minus this machine, with every stale answer
+// refreshed (and the cold ones waited on, boundedly), plus this machine's
+// projects keyed by remote for naming.
+func (p *peerSessions) refreshed(ctx context.Context) ([]store.Machine, map[string]store.Project) {
 	catalog, err := p.machines(ctx)
 	if err != nil {
 		slog.Warn("peer sessions: machine catalog read failed", "error", err)
-		return peerView{}
+		return nil, nil
 	}
 	peers := catalog[:0:0]
 	for _, m := range catalog {
@@ -171,25 +335,21 @@ func (p *peerSessions) View(ctx context.Context) peerView {
 		peers = append(peers, m)
 	}
 	if len(peers) == 0 {
-		return peerView{}
+		return nil, nil
 	}
-
 	p.forget(peers)
 	p.awaitCold(ctx, peers)
+	return peers, p.localKey(ctx)
+}
 
-	local := p.localKey(ctx)
-	var view peerView
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for _, m := range peers {
-		entry := p.entries[m.MachineID]
-		if entry == nil || entry.fetchedAt.IsZero() || p.now().Sub(entry.fetchedAt) > peerStaleFor || entry.err != nil {
-			view.Unreachable = append(view.Unreachable, machineLabel(m))
-			continue
-		}
-		view.Rows = append(view.Rows, peerRows(m, entry.snapshot, local)...)
+// usableLocked answers a machine's snapshot if it is recent and not a failure.
+// p.mu must be held.
+func (p *peerSessions) usableLocked(m store.Machine) (peerSnapshot, bool) {
+	entry := p.entries[m.MachineID]
+	if entry == nil || entry.fetchedAt.IsZero() || p.now().Sub(entry.fetchedAt) > peerStaleFor || entry.err != nil {
+		return peerSnapshot{}, false
 	}
-	return view
+	return entry.snapshot, true
 }
 
 // awaitCold starts a refresh for every machine that needs one, and waits —
@@ -232,6 +392,16 @@ func (p *peerSessions) awaitCold(ctx context.Context, peers []store.Machine) {
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// Invalidate marks one machine's answer stale, so the next read refreshes it —
+// after an action there changed what it would say.
+func (p *peerSessions) Invalidate(machineID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.entries[machineID]; entry != nil && entry.err == nil && !entry.fetchedAt.IsZero() {
+		entry.fetchedAt = p.now().Add(-peerFreshFor - time.Second)
 	}
 }
 
@@ -295,7 +465,7 @@ func (p *peerSessions) forget(peers []store.Machine) {
 // the host whose surface is asking (docs/multi-machine.md). Where it is not
 // checked out here, the remote's own name is all there is.
 func peerRows(m store.Machine, snap peerSnapshot, local map[string]store.Project) []assistant.SessionRow {
-	projects := make(map[string]peerProjectWire, len(snap.Projects))
+	projects := make(map[string]peer.ProjectWire, len(snap.Projects))
 	for _, project := range snap.Projects {
 		projects[project.ID] = project
 	}
@@ -318,30 +488,65 @@ func peerRows(m store.Machine, snap peerSnapshot, local map[string]store.Project
 			LastActivity: clampPeerField(firstNonEmptyOf(s.LastQueryAt, s.UpdatedAt, s.CreatedAt)),
 			// ProjectID stays empty: a remote project id means nothing here, and
 			// it is what files a memory scope or a journal subject.
+			Reach:           snap.Reach,
+			AcceptsPolicies: snap.AcceptsPolicies,
 		}
 		if project, ok := projects[s.ProjectID]; ok {
-			row.ProjectName = clampPeerField(project.Name)
-			row.ProjectSlug = clampPeerField(project.Slug)
-			if here, ok := local[project.RemoteURL]; ok && project.RemoteURL != "" {
-				row.ProjectName = here.Name
-				row.ProjectSlug = here.Slug
-			}
+			row.ProjectName, row.ProjectSlug = presentProject(project, local)
 		}
 		rows = append(rows, row)
 	}
 	return rows
 }
 
+// peerProjectRows turns one machine's projects into rows a session could be
+// created in, when its reach allows.
+func peerProjectRows(m store.Machine, snap peerSnapshot, local map[string]store.Project) []assistant.ProjectRow {
+	lastWork := make(map[string]string)
+	for _, s := range snap.Sessions {
+		at := firstNonEmptyOf(s.LastQueryAt, s.UpdatedAt, s.CreatedAt)
+		if at > lastWork[s.ProjectID] {
+			lastWork[s.ProjectID] = at
+		}
+	}
+	label := machineLabel(m)
+	rows := make([]assistant.ProjectRow, 0, len(snap.Projects))
+	for _, project := range snap.Projects {
+		name, slug := presentProject(project, local)
+		rows = append(rows, assistant.ProjectRow{
+			// The owner's own id: it is what the owner's create resolves, and it
+			// is only ever sent back to that machine.
+			ID:              clampPeerField(project.ID),
+			Name:            name,
+			Slug:            slug,
+			LastActivity:    clampPeerField(lastWork[project.ID]),
+			MachineID:       m.MachineID,
+			MachineName:     label,
+			RemoteURL:       clampPeerField(project.RemoteURL),
+			Reach:           snap.Reach,
+			AcceptsPolicies: snap.AcceptsPolicies,
+		})
+	}
+	return rows
+}
+
+func presentProject(project peer.ProjectWire, local map[string]store.Project) (string, string) {
+	if here, ok := local[project.RemoteURL]; ok && project.RemoteURL != "" {
+		return here.Name, here.Slug
+	}
+	return clampPeerField(project.Name), clampPeerField(project.Slug)
+}
+
 // peerAttention is [attentionOf] for a remote row: the same three reasons in
 // the same order, read from the wire.
-func peerAttention(s peerSessionWire) string {
-	if present(s.PendingApproval) {
+func peerAttention(s peer.SessionWire) string {
+	if s.PendingApproval {
 		return assistant.AttentionApproval
 	}
-	if present(s.PendingQuestion) {
+	if s.PendingQuestion {
 		return assistant.AttentionQuestion
 	}
-	if s.UnseenCompletedAt != nil && *s.UnseenCompletedAt != "" && s.State != assistant.StateRunning {
+	if s.UnseenCompletedAt != "" && s.State != assistant.StateRunning {
 		return assistant.AttentionUnread
 	}
 	return ""

@@ -8,7 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/peer"
+	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -46,6 +50,18 @@ type assistantDirectory struct {
 	// peers reads the sessions of every paired machine. Nil means this
 	// directory describes this machine alone, which is what a test builds.
 	peers peerSource
+	// link acts on paired machines (docs/peers.md). Nil means nothing here
+	// reaches another machine, whatever peers lists.
+	link peerActions
+}
+
+// peerActions is what the directory and the dispatcher ask of a paired
+// machine's peer surface. *peerlink.Client implements it.
+type peerActions interface {
+	Create(ctx context.Context, machineID string, req peer.CreateRequest) (peer.CreateResponse, error)
+	Send(ctx context.Context, machineID, sessionID string, req peer.SendRequest) (peer.SendResponse, error)
+	Follow(ctx context.Context, machineID, sessionID string) error
+	Transcript(ctx context.Context, machineID, sessionID string) (string, error)
 }
 
 func newAssistantDirectory(svc *session.Service, queries *store.Queries, summarizer *sessionSummarizer,
@@ -170,11 +186,39 @@ func (d *assistantDirectory) SessionBrief(ctx context.Context, id string) (assis
 	return d.toRow(ctx, info, projects), true
 }
 
+// Locate implements assistant.Locator: this machine's own session first, then a
+// paired machine's, with the reach that machine allows.
+func (d *assistantDirectory) Locate(ctx context.Context, id string) (assistant.SessionRow, bool) {
+	if row, local := d.SessionBrief(ctx, id); local {
+		return row, true
+	}
+	if d.peers == nil {
+		return assistant.SessionRow{}, false
+	}
+	loc, ok := d.peers.Locate(ctx, id)
+	if !ok {
+		return assistant.SessionRow{}, false
+	}
+	return loc.Row, true
+}
+
+// FollowRemote implements assistant.RemoteFollower.
+func (d *assistantDirectory) FollowRemote(ctx context.Context, machineID, sessionID string) error {
+	if d.link == nil {
+		return errors.New("no peer link")
+	}
+	return d.link.Follow(ctx, machineID, sessionID)
+}
+
 // Summarize implements assistant.Directory.
 //
 // It runs on its own goroutine with a detached context: the caller is a tool
 // handler that has already answered, and the request that opened the call is
 // long gone. deliver is called exactly once, whatever happens.
+//
+// A paired machine's session is summarised HERE, from the transcript that
+// machine serves: the owner need not run a summariser, and the paragraph is
+// written by the same prompt and model as a local one.
 func (d *assistantDirectory) Summarize(ctx context.Context, id string, deliver func(summary string)) {
 	if deliver == nil {
 		return
@@ -184,17 +228,37 @@ func (d *assistantDirectory) Summarize(ctx context.Context, id string, deliver f
 		return
 	}
 	detached := context.WithoutCancel(ctx)
-	go deliver(d.summarizer.Summary(detached, id))
+	if _, local := d.SessionBrief(ctx, id); local || d.peers == nil || d.link == nil {
+		go deliver(d.summarizer.Summary(detached, id))
+		return
+	}
+	go func() {
+		loc, ok := d.peers.Locate(detached, id)
+		if !ok {
+			deliver("")
+			return
+		}
+		transcript, err := d.link.Transcript(detached, loc.Machine.MachineID, id)
+		if err != nil {
+			slog.Warn("assistant directory: remote transcript unavailable", "session", id,
+				"machine", loc.Machine.MachineID, "error", err)
+			deliver("")
+			return
+		}
+		deliver(d.summarizer.SummaryOfTranscript(detached, loc.Machine.MachineID+":"+id, transcript))
+	}()
 }
 
-// ListProjects implements assistant.Directory: this machine's projects, most
-// recently worked in first, uncut for the reason [assistantDirectory.ListSessions]
-// is — list_projects narrows by name over this list.
+// ListProjects implements assistant.Directory: this machine's projects and every
+// paired machine's, most recently worked in first, uncut for the reason
+// [assistantDirectory.ListSessions] is — list_projects narrows by name over
+// this list.
 //
-// Local only, and that is the point rather than a limitation. A project row
-// here is somewhere [assistantDirectory.CreateSession] can actually put a session,
-// and creation goes through this server's session service — a repository
-// checked out on a paired machine is not one of those places.
+// A repository checked out on two machines is two rows, each with its machine:
+// launching is physical (docs/multi-machine.md). A paired machine's row says
+// whether it accepts new sessions from here ([assistant.Reach]); the verbs
+// refuse the ones that do not rather than this list hiding them, because
+// "that is on zbook, which does not take work" is an answer and silence is not.
 func (d *assistantDirectory) ListProjects(ctx context.Context) []assistant.ProjectRow {
 	list, err := d.queries.ListProjects(ctx)
 	if err != nil {
@@ -207,14 +271,26 @@ func (d *assistantDirectory) ListProjects(ctx context.Context) []assistant.Proje
 	// just in. The sessions already read for every other answer are what say so.
 	lastWork := d.lastWorkByProject(ctx)
 
+	machineName := ""
+	if d.machineName != nil {
+		machineName = d.machineName(ctx)
+	}
 	rows := make([]assistant.ProjectRow, 0, len(list))
 	for _, project := range list {
 		rows = append(rows, assistant.ProjectRow{
-			ID:           project.ID,
-			Name:         project.Name,
-			Slug:         project.Slug,
-			LastActivity: lastWork[project.ID],
+			ID:              project.ID,
+			Name:            project.Name,
+			Slug:            project.Slug,
+			LastActivity:    lastWork[project.ID],
+			MachineID:       d.machineID,
+			MachineName:     machineName,
+			RemoteURL:       project.RemoteUrl,
+			Reach:           assistant.ReachLocal,
+			AcceptsPolicies: true,
 		})
+	}
+	if d.peers != nil {
+		rows = append(rows, d.peers.Projects(ctx)...)
 	}
 
 	sort.SliceStable(rows, func(i, j int) bool {
@@ -240,6 +316,11 @@ func (d *assistantDirectory) ListProjects(ctx context.Context) []assistant.Proje
 func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model string) (assistant.SessionRow, error) {
 	if projectID == "" {
 		return assistant.SessionRow{}, errors.New("no project")
+	}
+	if _, err := d.queries.GetProject(ctx, projectID); err != nil && d.peers != nil {
+		if remote, ok := d.peerProject(ctx, projectID); ok {
+			return d.createRemote(ctx, remote, model)
+		}
 	}
 
 	slug, family, err := d.resolveSpokenModel(ctx, model)
@@ -271,13 +352,15 @@ func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model
 	}
 
 	row := assistant.SessionRow{
-		ID:           result.SessionID,
-		Name:         result.Name,
-		MachineID:    d.machineID,
-		State:        result.State,
-		Branch:       result.WorktreeBranch,
-		Model:        family,
-		LastActivity: result.CreatedAt,
+		ID:              result.SessionID,
+		Name:            result.Name,
+		MachineID:       d.machineID,
+		State:           result.State,
+		Branch:          result.WorktreeBranch,
+		Model:           family,
+		LastActivity:    result.CreatedAt,
+		Reach:           assistant.ReachLocal,
+		AcceptsPolicies: true,
 	}
 	if d.machineName != nil {
 		row.MachineName = d.machineName(ctx)
@@ -290,6 +373,83 @@ func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model
 		row.Model = providers.ModelFamilyName(result.Model)
 	}
 	return row, nil
+}
+
+// peerProject finds a paired machine's project by the owner's id.
+func (d *assistantDirectory) peerProject(ctx context.Context, projectID string) (assistant.ProjectRow, bool) {
+	for _, row := range d.peers.Projects(ctx) {
+		if row.ID == projectID {
+			return row, true
+		}
+	}
+	return assistant.ProjectRow{}, false
+}
+
+// createRemote creates a session in a paired machine's project through its peer
+// surface. The model stays a spoken family name: the owner resolves it against
+// its own catalog, which is the one that decides what it can run.
+//
+// The prompt, if any, is sent afterwards by the caller through the dispatcher,
+// the same two steps a local creation takes, so the refusal a send can meet is
+// the same one whichever machine the session is on.
+func (d *assistantDirectory) createRemote(ctx context.Context, project assistant.ProjectRow, model string) (assistant.SessionRow, error) {
+	if d.link == nil {
+		return assistant.SessionRow{}, &assistant.RefusedError{Reason: "no-peer-link",
+			Say: "this server cannot act on other machines"}
+	}
+	if !project.Reach.CanAct() {
+		return assistant.SessionRow{}, &assistant.RefusedError{Reason: string(project.Reach),
+			Say: project.MachineName + " does not accept new sessions from this server"}
+	}
+	created, err := d.link.Create(ctx, project.MachineID, peer.CreateRequest{
+		ProjectID: project.ID,
+		Model:     strings.TrimSpace(model),
+		RequestID: uuid.NewString(),
+	})
+	if err != nil {
+		err = peerError(err, project.MachineName)
+		var unknown *assistant.UnknownModelError
+		if errors.As(err, &unknown) {
+			unknown.Spoken = strings.TrimSpace(model)
+		}
+		return assistant.SessionRow{}, err
+	}
+
+	row := assistant.SessionRow{
+		ID:              created.Session.ID,
+		Name:            created.Session.Name,
+		ProjectName:     project.Name,
+		ProjectSlug:     project.Slug,
+		MachineID:       project.MachineID,
+		MachineName:     project.MachineName,
+		State:           created.Session.State,
+		Branch:          created.Session.WorktreeBranch,
+		Model:           providers.ModelFamilyName(created.Session.Model),
+		LastActivity:    created.Session.CreatedAt,
+		Reach:           project.Reach,
+		AcceptsPolicies: project.AcceptsPolicies,
+	}
+	if m, err := d.queries.GetMachine(ctx, project.MachineID); err == nil {
+		d.peers.Remember(peerLocation{Machine: m, Session: created.Session, Row: row})
+	}
+	return row, nil
+}
+
+// peerError turns a peer client failure into the assistant's vocabulary: an
+// unknown model is the question it already is locally, an owner's refusal is a
+// sentence to relay, and anything else is an error.
+func peerError(err error, machineName string) error {
+	var refusal *peerlink.RefusalError
+	if !errors.As(err, &refusal) {
+		if errors.Is(err, peerlink.ErrNoPeerSurface) {
+			return &assistant.RefusedError{Reason: "peer-old", Say: machineName + " runs an older release that cannot take this"}
+		}
+		return err
+	}
+	if refusal.Reason == peer.ReasonUnknownModel {
+		return &assistant.UnknownModelError{Families: refusal.Families}
+	}
+	return &assistant.RefusedError{Reason: refusal.Reason, Say: machineName + " said " + refusal.Message}
 }
 
 // resolveSpokenModel turns a spoken family name into a slug to create with, and
@@ -402,6 +562,8 @@ func (d *assistantDirectory) rows(ctx context.Context) []assistant.SessionRow {
 // toRow turns one SessionInfo into something speakable.
 func (d *assistantDirectory) toRow(ctx context.Context, info session.SessionInfo, projects map[string]store.Project) assistant.SessionRow {
 	row := assistant.SessionRow{
+		Reach:           assistant.ReachLocal,
+		AcceptsPolicies: true,
 		ID:        info.ID,
 		Name:      info.Name,
 		MachineID: d.machineID,
