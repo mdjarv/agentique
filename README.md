@@ -559,6 +559,19 @@ digest-at = ""
 # compactor. Both fall back to Haiku when the family cannot be resolved.
 triage-model = ""
 
+[peer]
+# What a paired SERVER may do on this machine (docs/peers.md). Listing this
+# machine's sessions is always allowed to a paired server holding a peer
+# credential; acting is not until you say so here.
+#
+# Let a paired server's assistant create worktree sessions here and send to
+# them. Its guard still holds whatever the other side asks: never the main
+# worktree, full auto only, and rate-limited per credential.
+accept-actions = false
+# Also accept that work when it runs under a standing instruction (autonomy)
+# rather than something asked for in the moment. Inert without accept-actions.
+accept-policies = false
+
 [brain]
 # The master switch, and it is OFF by default: nothing below applies until you
 # turn it on. Off means the subsystem is never built — no /api/brain routes, no
@@ -680,6 +693,7 @@ equivalent above.
 | `AGENTIQUE_UPDATE_*` | `_DISABLED`, `_INTERVAL`, `_API_URL`, `_ARM_DEADLINE`. `_DISABLED` also silences provider-CLI version detection. |
 | `AGENTIQUE_BRAIN_*` | One per `[brain]` key, plus `AGENTIQUE_BRAIN_GRAPH_*` for `[brain.graph]`. One name does not follow the pattern: `archive-confidence-floor` is `AGENTIQUE_BRAIN_ARCHIVE_FLOOR`. |
 | `AGENTIQUE_ASSISTANT_*` | One per `[assistant]` key: `_HEARTBEAT` (for `heartbeat-interval`), `_DIGEST_AT`, `_TRIAGE_MODEL`. |
+| `AGENTIQUE_PEER_*` | `_ACCEPT_ACTIONS`, `_ACCEPT_POLICIES`. |
 
 Every environment variable above wins over the config file and loses to an
 explicitly-passed flag.

@@ -30,6 +30,7 @@ type Config struct {
 	Brain        BrainConfig        `toml:"brain"`
 	Voice        VoiceConfig        `toml:"voice"`
 	Assistant    AssistantConfig    `toml:"assistant"`
+	Peer         PeerConfig         `toml:"peer"`
 	DevURLs      []DevURLSlot       `toml:"dev-urls"`
 	// Models overrides the auto-detected model catalog, keyed by provider
 	// ("claude", "codex"). A non-empty list replaces that provider's generated
@@ -463,6 +464,25 @@ type AssistantConfig struct {
 	// upstream release must not require an agentique release.
 	// Env: AGENTIQUE_ASSISTANT_TRIAGE_MODEL.
 	TriageModel string `toml:"triage-model"`
+}
+
+// PeerConfig is what a paired SERVER may do on this machine (docs/peers.md).
+//
+// Both default to false. With both off a paired server can still list this
+// machine's sessions and read what it reports; it creates and sends nothing.
+// That is deliberate: acting across machines widens where a prompt-injected
+// assistant can start work, and a machine takes that on only when someone at it
+// says so.
+type PeerConfig struct {
+	// AcceptActions lets a paired server's assistant create worktree sessions
+	// here and send to them, within the owner's guard: never the main
+	// worktree, full auto only, rate-limited per credential.
+	// Env: AGENTIQUE_PEER_ACCEPT_ACTIONS.
+	AcceptActions bool `toml:"accept-actions"`
+	// AcceptPolicies additionally accepts that work when it runs under a
+	// standing instruction — autonomy rather than something asked for in the
+	// moment. Inert without AcceptActions. Env: AGENTIQUE_PEER_ACCEPT_POLICIES.
+	AcceptPolicies bool `toml:"accept-policies"`
 }
 
 // VoiceConfig configures the live spoken-dialog mode ("Live"). Like [brain], every

@@ -34,6 +34,7 @@ import (
 	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/peer"
 	"github.com/mdjarv/agentique/backend/internal/persona"
 	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/prompttemplate"
@@ -208,6 +209,11 @@ type Config struct {
 	// default rather than a server that will not start. Inert unless
 	// ExperimentalAssistant is on.
 	Assistant config.AssistantConfig
+
+	// Peer is the [peer] section: what a paired server may do here
+	// (docs/peers.md). The surface is mounted whatever it says — listing is
+	// always served — and both opt-ins default to off.
+	Peer config.PeerConfig
 }
 
 // serviceInstalled reports whether a service manager would bring agentique
@@ -953,6 +959,17 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	// One catalog for both the picker and the assistant: a model family someone
 	// can choose on screen is one they can ask for out loud.
 	catalog := modelCatalog(queries, cfg.ModelOverrides)
+
+	// The owner's half of acting across machines (docs/peers.md). Mounted on
+	// every server whatever its feature flags, because the machine being acted
+	// on need not run an assistant itself; the auth middleware admits only a
+	// peer credential here, and the guard inside decides what that credential
+	// may actually do.
+	peer.New(svc, queries,
+		peer.WithSettings(peer.Settings{AcceptActions: cfg.Peer.AcceptActions, AcceptPolicies: cfg.Peer.AcceptPolicies}),
+		peer.WithMachineID(cfg.MachineID),
+		peer.WithCatalog(catalog),
+	).RegisterRoutes(mux)
 
 	// Persistent memory ("the brain"). Opt-in: [brain] enabled is the master switch
 	// and is off by default, so nothing below is constructed unless an operator asked

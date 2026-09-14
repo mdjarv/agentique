@@ -123,6 +123,14 @@ func UserFromContext(ctx context.Context) *store.GetAuthSessionRow {
 }
 
 func (s *Service) setUserContext(ctx context.Context, u *store.GetAuthSessionRow) context.Context {
+	return ContextWithSession(ctx, u)
+}
+
+// ContextWithSession returns ctx carrying an authenticated session, as the
+// middleware leaves it. Exported for handlers' tests, which exercise a route
+// without standing up the whole auth chain; production requests get theirs only
+// from [Service.Middleware].
+func ContextWithSession(ctx context.Context, u *store.GetAuthSessionRow) context.Context {
 	return context.WithValue(ctx, userContextKey, u)
 }
 

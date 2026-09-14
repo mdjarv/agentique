@@ -589,6 +589,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			TriageModel: firstNonEmpty(os.Getenv("AGENTIQUE_ASSISTANT_TRIAGE_MODEL"),
 				fileCfg.Assistant.TriageModel),
 		},
+		Peer: config.PeerConfig{
+			AcceptActions:  envBoolOr("AGENTIQUE_PEER_ACCEPT_ACTIONS", fileCfg.Peer.AcceptActions),
+			AcceptPolicies: envBoolOr("AGENTIQUE_PEER_ACCEPT_POLICIES", fileCfg.Peer.AcceptPolicies),
+		},
 		Voice: config.VoiceConfig{
 			Backend:      firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_BACKEND"), fileCfg.Voice.Backend),
 			APIKey:       firstNonEmpty(os.Getenv("AGENTIQUE_VOICE_API_KEY"), fileCfg.Voice.APIKey),

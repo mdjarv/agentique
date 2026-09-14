@@ -112,3 +112,53 @@ func TestPeerCredentialIsRefusedOutsideThePeerSurface(t *testing.T) {
 		}
 	}
 }
+
+// The surface is mounted on a server with every feature flag off, admits a peer
+// credential, and refuses a browser's.
+func TestPeerSurfaceIsMountedAndScoped(t *testing.T) {
+	ts, queries, cleanup := setupAuthenticatedTestServer(t)
+	defer cleanup()
+
+	browser := createCookieSession(t, queries, true)
+	peer := "test-peer-token"
+	if err := queries.CreateAuthSession(context.Background(), store.CreateAuthSessionParams{
+		TokenHash: auth.HashToken(peer),
+		ID:        sql.NullString{String: "test-peer-id", Valid: true},
+		UserID:    "00000000-0000-4000-8000-000000000001",
+		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		Kind:      auth.KindPeer,
+	}); err != nil {
+		t.Fatalf("create peer session: %v", err)
+	}
+
+	get := func(token string) int {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/peer/sessions", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := get(peer); code != http.StatusOK {
+		t.Errorf("peer credential on the peer surface = %d, want 200", code)
+	}
+	if code := get(browser); code != http.StatusUnauthorized {
+		t.Errorf("browser credential on the peer surface = %d, want 401", code)
+	}
+
+	// Actions are off by default: a send is refused by the owner's opt-in.
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/peer/sessions/00000000-0000-4000-8000-0000000000aa/send",
+		strings.NewReader(`{"prompt":"x"}`))
+	req.Header.Set("Authorization", "Bearer "+peer)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("send with actions off = %d, want 403", resp.StatusCode)
+	}
+}
