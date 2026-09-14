@@ -110,22 +110,39 @@ export async function healthCheck(): Promise<{ status: string }> {
   return res.json();
 }
 
-export async function getDiskStats(): Promise<DiskStats> {
-  const res = await fetchWithRetry(`${BASE}/storage/disk`);
+// Storage is per machine: every server answers for its own disk, and a verb
+// sent to the wrong one would be re-planned against sessions it does not have
+// and come back as a silent skip. `machineId` undefined is this machine.
+
+export async function getDiskStats(machineId?: string): Promise<DiskStats> {
+  const res = await machineFetchWithRetry(machineId, `${BASE}/storage/disk`);
   await throwIfNotOk(res, "Failed to fetch disk stats");
   return res.json();
 }
 
-export async function getStorageUsage(refresh = false): Promise<StorageUsage> {
-  const res = await fetchWithRetry(`${BASE}/storage/usage${refresh ? "?refresh=1" : ""}`);
+export async function getStorageUsage(
+  machineId: string | undefined,
+  refresh = false,
+): Promise<StorageUsage> {
+  const res = await machineFetchWithRetry(
+    machineId,
+    `${BASE}/storage/usage${refresh ? "?refresh=1" : ""}`,
+  );
   await throwIfNotOk(res, "Failed to fetch storage usage");
   return res.json();
 }
 
-export async function deleteOrphanedWorktree(path: string): Promise<void> {
-  const res = await fetch(`${BASE}/storage/worktrees?path=${encodeURIComponent(path)}`, {
-    method: "DELETE",
-  });
+export async function deleteOrphanedWorktree(
+  machineId: string | undefined,
+  path: string,
+): Promise<void> {
+  const res = await apiFetch(
+    machineId,
+    `${BASE}/storage/worktrees?path=${encodeURIComponent(path)}`,
+    {
+      method: "DELETE",
+    },
+  );
   await throwIfNotOk(res, "Failed to delete worktree");
 }
 
@@ -136,8 +153,11 @@ export async function deleteOrphanedWorktree(path: string): Promise<void> {
  * up since the page last refreshed comes back in `skipped` rather than being
  * removed; the caller reports what actually happened, never what it asked for.
  */
-export async function reclaimSessions(sessionIds: string[]): Promise<ReclaimResponse> {
-  const res = await fetch(`${BASE}/storage/reclaim`, {
+export async function reclaimSessions(
+  machineId: string | undefined,
+  sessionIds: string[],
+): Promise<ReclaimResponse> {
+  const res = await apiFetch(machineId, `${BASE}/storage/reclaim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionIds } satisfies ReclaimRequest),
@@ -153,8 +173,11 @@ export async function reclaimSessions(sessionIds: string[]): Promise<ReclaimResp
  * and the server clamps `keep` up to its own floor — this cannot empty the
  * backup directory however small a number it is handed.
  */
-export async function trimBackups(keep: number): Promise<TrimBackupsResponse> {
-  const res = await fetch(`${BASE}/storage/backups/trim`, {
+export async function trimBackups(
+  machineId: string | undefined,
+  keep: number,
+): Promise<TrimBackupsResponse> {
+  const res = await apiFetch(machineId, `${BASE}/storage/backups/trim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ keep } satisfies TrimBackupsRequest),
@@ -169,10 +192,17 @@ export async function trimBackups(keep: number): Promise<TrimBackupsResponse> {
  * carries no agentique worktree prefix — a scratchpad that belongs to a session
  * is refused, because that one goes when the session is reclaimed.
  */
-export async function deleteForeignScratchpad(path: string): Promise<void> {
-  const res = await fetch(`${BASE}/storage/scratchpads?path=${encodeURIComponent(path)}`, {
-    method: "DELETE",
-  });
+export async function deleteForeignScratchpad(
+  machineId: string | undefined,
+  path: string,
+): Promise<void> {
+  const res = await apiFetch(
+    machineId,
+    `${BASE}/storage/scratchpads?path=${encodeURIComponent(path)}`,
+    {
+      method: "DELETE",
+    },
+  );
   await throwIfNotOk(res, "Failed to remove scratchpad");
 }
 

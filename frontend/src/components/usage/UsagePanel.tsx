@@ -20,9 +20,11 @@
  */
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { agentColor, ProviderMark } from "~/components/usage/ProviderMark";
 import type { UsageAgent } from "~/lib/generated-types";
+import { withDiskFloor } from "~/lib/storage/fleet";
+import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import {
   compactTokens,
   countdown,
@@ -34,6 +36,7 @@ import {
   usableLimits,
 } from "~/lib/usage-api";
 import { cn } from "~/lib/utils";
+import { useStorageStore } from "~/stores/storage-store";
 import { useUsageStore } from "~/stores/usage-store";
 
 /** Countdowns are minutes-scale. Ticking every 30s while the panel is open
@@ -57,7 +60,17 @@ export function UsagePanel({ onNavigate }: { onNavigate?: () => void }) {
     return () => clearInterval(id);
   }, []);
 
-  const agents = renderableAgents(doc);
+  const primaryDisk = useStorageStore((s) => s.disks[PRIMARY_MACHINE_KEY]);
+
+  // The disk gauge wears the floor here as it does on the footer meter, or
+  // the popover would call a disk fine that the meter beside it calls low.
+  const agents = useMemo(
+    () =>
+      renderableAgents(doc).map((a) =>
+        a.id === STORAGE_AGENT_ID ? withDiskFloor(a, primaryDisk) : a,
+      ),
+    [doc, primaryDisk],
+  );
   if (agents.length === 0) return null;
 
   return (

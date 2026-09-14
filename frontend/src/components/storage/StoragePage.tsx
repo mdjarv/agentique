@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "~/components/layout/PageHeader";
 import { ForeignScratchpadsDialog } from "~/components/storage/ForeignScratchpadsDialog";
+import { MachinePicker, MachineRail } from "~/components/storage/MachineRail";
 import { SelectionBar } from "~/components/storage/SelectionBar";
 import { StorageBreakdown } from "~/components/storage/StorageBreakdown";
 import {
@@ -29,6 +30,8 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { useIsMobile } from "~/hooks/useIsMobile";
+import { useStorageMachines } from "~/hooks/useStorageMachines";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import {
   deleteForeignScratchpad,
@@ -46,7 +49,9 @@ import {
   REST_GLYPH,
 } from "~/lib/session/rest-state";
 import { type BreakdownAction, buildBreakdown } from "~/lib/storage/breakdown";
+import { resolveStorageMachine, type StorageMachine } from "~/lib/storage/fleet";
 import { canDelete, canReclaim, freedBytes, reconcile, summarize } from "~/lib/storage/selection";
+import { targetFor } from "~/lib/update-api";
 import { cn, formatBytes, getErrorMessage, relativeTime } from "~/lib/utils";
 import { useStorageStore } from "~/stores/storage-store";
 
@@ -115,12 +120,80 @@ function trimmedBytes(b: BackupSummary): number {
   return Math.round(((b.periodicBytes ?? 0) / count) * trimmable);
 }
 
-export function StoragePage() {
-  const ws = useWebSocket();
-  const usage = useStorageStore((s) => s.usage);
-  const usageLoading = useStorageStore((s) => s.usageLoading);
-  const usageError = useStorageStore((s) => s.usageError);
+/**
+ * One machine at a time (docs/storage.md, "More than one machine").
+ *
+ * Every figure and every verb on the page belongs to one disk, so the page
+ * never sums machines: freeing space on one does nothing for another, and a
+ * bulk verb spanning two would partly succeed and partly fail. With machines
+ * paired, a rail (a picker on a phone) chooses which one, and `?machine=`
+ * records it so the footer's notch can link straight to a machine that is low.
+ */
+export function StoragePage({ machine }: { machine?: string }) {
+  const machines = useStorageMachines();
+  const isMobile = useIsMobile();
+  const key = resolveStorageMachine(
+    machine,
+    machines.map((m) => m.key),
+  );
+  const current = machines.find((m) => m.key === key) ?? machines[0];
+  const usage = useStorageStore((s) => s.usages[key]);
+  const usageLoading = useStorageStore((s) => s.usageLoading[key] ?? false);
   const fetchUsage = useStorageStore((s) => s.fetchUsage);
+  const fleet = machines.length > 1;
+
+  if (!current) return null;
+
+  return (
+    <div className="flex flex-col h-full">
+      <PageHeader>
+        <HardDrive className="size-4 text-muted-foreground" />
+        <span className="font-semibold">Storage</span>
+        {usage && (
+          <span className="text-xs text-muted-foreground ml-1">
+            updated {relativeTime(usage.computedAt)} ago
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchUsage(key, true)}
+            disabled={usageLoading || !current.online}
+          >
+            {usageLoading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </PageHeader>
+
+      <div className="flex min-h-0 flex-1">
+        {fleet && !isMobile && <MachineRail machines={machines} selected={key} />}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          {fleet && isMobile && <MachinePicker machines={machines} selected={key} />}
+          {/* Keyed by machine so a selection, an expanded card or an open
+              dialog never carries over to another machine's rows. */}
+          <MachineStorage key={key} machineKey={key} machine={current} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MachineStorage({ machineKey, machine }: { machineKey: string; machine: StorageMachine }) {
+  const ws = useWebSocket();
+  const usage = useStorageStore((s) => s.usages[machineKey]);
+  const usageLoading = useStorageStore((s) => s.usageLoading[machineKey] ?? false);
+  const usageError = useStorageStore((s) => s.usageErrors[machineKey]);
+  const fetchUsageFor = useStorageStore((s) => s.fetchUsage);
+  const target = targetFor(machineKey);
+  // An away machine keeps its last reading and offers no verb: each one would
+  // be a request to a machine that cannot answer.
+  const readOnly = !machine.online;
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -128,9 +201,12 @@ export function StoragePage() {
   const [busy, setBusy] = useState(false);
   const [foreignOpen, setForeignOpen] = useState(false);
 
+  const fetchUsage = (refresh = false) => fetchUsageFor(machineKey, refresh);
+
+  // Read on arrival, and again when an away machine comes back.
   useEffect(() => {
-    fetchUsage(false);
-  }, [fetchUsage]);
+    if (machine.online) void fetchUsageFor(machineKey, false);
+  }, [fetchUsageFor, machineKey, machine.online]);
 
   const allSessions = useMemo(
     () => (usage ? usage.projects.flatMap((p) => p.sessions) : []),
@@ -215,7 +291,10 @@ export function StoragePage() {
   };
 
   const runReclaim = async (sessions: SessionStorage[]) => {
-    const res = await reclaimSessions(sessions.map((s) => s.sessionId));
+    const res = await reclaimSessions(
+      target,
+      sessions.map((s) => s.sessionId),
+    );
     // Report what happened, not what was asked for — the server re-plans, so a
     // session that woke up in the meantime comes back as a skip.
     if (res.removed.length === 0 && res.skipped.length > 0) {
@@ -232,12 +311,12 @@ export function StoragePage() {
     setBusy(true);
     try {
       if (deleteTarget.kind === "orphan") {
-        await deleteOrphanedWorktree(deleteTarget.path);
+        await deleteOrphanedWorktree(target, deleteTarget.path);
         toast.success(`Removed ${deleteTarget.label}`);
       } else if (deleteTarget.kind === "orphan-all") {
         const orphans = usage?.orphans ?? [];
         const results = await Promise.allSettled(
-          orphans.map((o) => deleteOrphanedWorktree(o.worktreePath)),
+          orphans.map((o) => deleteOrphanedWorktree(target, o.worktreePath)),
         );
         orphans.forEach((o, i) => {
           const r = results[i];
@@ -252,7 +331,7 @@ export function StoragePage() {
       } else if (deleteTarget.kind === "trim-backups") {
         // Report what the server actually removed: it clamps `keep` up to its
         // own floor, so the answer can legitimately be fewer than we asked for.
-        const res = await trimBackups(BACKUPS_KEPT);
+        const res = await trimBackups(target, BACKUPS_KEPT);
         if (res.removed.length === 0) {
           toast.warning("Nothing trimmed — the backups are already at the minimum");
         } else {
@@ -261,7 +340,7 @@ export function StoragePage() {
           );
         }
       } else if (deleteTarget.kind === "clear-foreign") {
-        await deleteForeignScratchpad(deleteTarget.path);
+        await deleteForeignScratchpad(target, deleteTarget.path);
         toast.success(`Removed ${formatBytes(deleteTarget.bytes)} of scratch files`);
       } else if (deleteTarget.kind === "delete-bulk") {
         const ids = deleteTarget.sessions.map((s) => s.sessionId);
@@ -292,40 +371,27 @@ export function StoragePage() {
   const reclaimableCount = usage?.reclaimableCount ?? 0;
 
   return (
-    <div className="flex flex-col h-full">
-      <PageHeader>
-        <HardDrive className="size-4 text-muted-foreground" />
-        <span className="font-semibold">Storage</span>
-        {usage && (
-          <span className="text-xs text-muted-foreground ml-1">
-            updated {relativeTime(usage.computedAt)} ago
-          </span>
+    <>
+      <div className="p-4 space-y-4 max-w-4xl w-full mx-auto">
+        {readOnly && (
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              {machine.label} is away.{" "}
+              {usage
+                ? `Showing what it reported ${relativeTime(usage.computedAt)} ago; nothing here can be changed until it is back.`
+                : "There is no reading from it in this tab yet."}
+            </span>
+          </div>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchUsage(true)}
-            disabled={usageLoading}
-          >
-            {usageLoading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-            Refresh
-          </Button>
-        </div>
-      </PageHeader>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-4xl w-full mx-auto">
         {!usage && usageLoading && (
           <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm">
             <Loader2 className="size-4 animate-spin" /> Calculating disk usage…
           </div>
         )}
 
-        {!usage && !usageLoading && usageError && (
+        {!usage && !usageLoading && usageError && !readOnly && (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
             <AlertTriangle className="size-5 text-destructive" />
             <div className="text-sm text-muted-foreground">{usageError}</div>
@@ -380,9 +446,16 @@ export function StoragePage() {
               {reclaimableCount === 1 ? "" : "s"}
             </span>
             <span className="text-xs text-muted-foreground">branches and history are kept</span>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={selectAllReclaimable}>
-              Select all
-            </Button>
+            {!readOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                onClick={selectAllReclaimable}
+              >
+                Select all
+              </Button>
+            )}
           </div>
         )}
 
@@ -390,7 +463,7 @@ export function StoragePage() {
           <StorageBreakdown
             breakdown={breakdown}
             busy={busy}
-            onAction={runAction}
+            onAction={readOnly ? undefined : runAction}
             actionTitle={actionTitle}
           />
         )}
@@ -405,33 +478,38 @@ export function StoragePage() {
               <span className="text-xs text-muted-foreground">
                 no matching session — safe to delete
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto text-destructive hover:text-destructive"
-                onClick={() =>
-                  setDeleteTarget({
-                    kind: "orphan-all",
-                    count: usage.orphans.length,
-                    bytes: usage.orphans.reduce((a, o) => a + o.bytes, 0),
-                  })
-                }
-              >
-                <Trash2 className="size-3.5" /> Delete all
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto text-destructive hover:text-destructive"
+                  onClick={() =>
+                    setDeleteTarget({
+                      kind: "orphan-all",
+                      count: usage.orphans.length,
+                      bytes: usage.orphans.reduce((a, o) => a + o.bytes, 0),
+                    })
+                  }
+                >
+                  <Trash2 className="size-3.5" /> Delete all
+                </Button>
+              )}
             </div>
             <div className="space-y-0.5">
               {usage.orphans.map((o) => (
                 <SessionRow
                   key={o.worktreePath}
                   session={o}
-                  onDelete={() =>
-                    setDeleteTarget({
-                      kind: "orphan",
-                      path: o.worktreePath,
-                      label: o.name,
-                      bytes: o.bytes,
-                    })
+                  onDelete={
+                    readOnly
+                      ? undefined
+                      : () =>
+                          setDeleteTarget({
+                            kind: "orphan",
+                            path: o.worktreePath,
+                            label: o.name,
+                            bytes: o.bytes,
+                          })
                   }
                 />
               ))}
@@ -450,6 +528,7 @@ export function StoragePage() {
                 project={p}
                 expanded={expanded.has(p.projectId)}
                 selected={selected}
+                readOnly={readOnly}
                 onToggle={() => toggle(p.projectId)}
                 onToggleSelected={toggleSelected}
                 onDeleteSession={(s) =>
@@ -480,7 +559,7 @@ export function StoragePage() {
 
         <SelectionBar
           summary={summary}
-          busy={busy}
+          busy={busy || readOnly}
           onClear={() => setSelected(new Set())}
           onReclaim={() => setDeleteTarget({ kind: "reclaim", sessions: summary.reclaimable })}
           onDelete={() => setDeleteTarget({ kind: "delete-bulk", sessions: summary.deletable })}
@@ -496,7 +575,7 @@ export function StoragePage() {
         onRemove={async (path) => {
           const bytes = foreignScratchpads.find((a) => a.path === path)?.bytes ?? 0;
           try {
-            await deleteForeignScratchpad(path);
+            await deleteForeignScratchpad(target, path);
             toast.success(`Removed ${formatBytes(bytes)} of scratch files`);
             await fetchUsage(true);
           } catch (err) {
@@ -555,7 +634,7 @@ export function StoragePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }
 
@@ -637,6 +716,7 @@ function ProjectCard({
   project,
   expanded,
   selected,
+  readOnly,
   onToggle,
   onToggleSelected,
   onDeleteSession,
@@ -646,6 +726,8 @@ function ProjectCard({
   project: ProjectStorage;
   expanded: boolean;
   selected: Set<string>;
+  /** The machine is away: rows are shown, no verb or checkbox is offered. */
+  readOnly: boolean;
   onToggle: () => void;
   onToggleSelected: (id: string) => void;
   onDeleteSession: (s: SessionStorage) => void;
@@ -687,7 +769,7 @@ function ProjectCard({
             </span>
           </span>
         </button>
-        {reclaimable.length > 0 && (
+        {reclaimable.length > 0 && !readOnly && (
           <button
             type="button"
             onClick={onSelectReclaimable}
@@ -711,9 +793,9 @@ function ProjectCard({
               key={s.sessionId}
               session={s}
               selected={selected.has(s.sessionId)}
-              onToggleSelected={() => onToggleSelected(s.sessionId)}
-              onReclaim={canReclaim(s) ? () => onReclaimSession(s) : undefined}
-              onDelete={() => onDeleteSession(s)}
+              onToggleSelected={readOnly ? undefined : () => onToggleSelected(s.sessionId)}
+              onReclaim={!readOnly && canReclaim(s) ? () => onReclaimSession(s) : undefined}
+              onDelete={readOnly ? undefined : () => onDeleteSession(s)}
             />
           ))}
         </div>
@@ -796,7 +878,7 @@ function SessionRow({
   selected?: boolean;
   onToggleSelected?: () => void;
   onReclaim?: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const temp = session.tempBytes ?? 0;
   return (
@@ -895,15 +977,17 @@ function SessionRow({
           <RotateCcw className="size-3.5" />
         </button>
       )}
-      <button
-        type="button"
-        onClick={onDelete}
-        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
-        title="Delete"
-        aria-label={`Delete ${session.name || session.sessionId}`}
-      >
-        <Trash2 className="size-3.5" />
-      </button>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 max-md:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+          title="Delete"
+          aria-label={`Delete ${session.name || session.sessionId}`}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
     </div>
   );
 }

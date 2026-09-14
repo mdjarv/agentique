@@ -84,10 +84,16 @@ export type Tier = "normal" | "warning" | "critical";
  * counts as a warning for its own limit, and a client-side threshold is a
  * guess about somebody else's allowance. Thresholds are the fallback.
  *
- * A gauge is always `normal`, whatever its height.
+ * A gauge is `normal` whatever its height: no percentage threshold applies to
+ * a level. Only an explicit severity escalates one, and the one place that
+ * sets it is the disk floor (`lib/storage/fleet.ts`), which judges free bytes
+ * rather than height.
  */
 export function limitTier(limit: UsageLimit, gauge: boolean): Tier {
-  if (gauge) return "normal";
+  if (gauge) {
+    if (limit.severity === "warning" || limit.severity === "critical") return limit.severity;
+    return "normal";
+  }
   switch (limit.severity) {
     case "critical":
     case "exceeded":

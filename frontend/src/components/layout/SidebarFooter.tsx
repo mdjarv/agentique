@@ -22,6 +22,11 @@
  * to /settings once they outgrew a 288px column — a popover is a glance, not
  * a control panel.
  *
+ * The disk meter is THIS machine's level, and a notch on it says a reachable
+ * remote is below the disk floor (`lib/storage/fleet.ts`). The meter itself
+ * turns amber below the same floor. A click leads to whichever machine that is
+ * about, so the notch never has to be read to be acted on.
+ *
  * Everything right of the account name is `shrink-0`, and the name truncates.
  * A mark's width is what it means, and the cluster grows a meter whenever a new
  * allowance window appears, so the name is the only thing on this line that can
@@ -33,17 +38,27 @@ import { Boxes, type LucideIcon, Settings as SettingsIcon, User } from "lucide-r
 import { useEffect, useMemo, useState } from "react";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { UpdateDialog } from "~/components/update/UpdateDialog";
 import { UpdateMark, useUpdateWaiting } from "~/components/update/UpdateMark";
 import { UpdatePopoverRows } from "~/components/update/UpdatePopoverRows";
 import { UsageCluster } from "~/components/usage/UsageCluster";
 import { UsagePanel } from "~/components/usage/UsagePanel";
 import { useConnectionStatus } from "~/hooks/useConnectionStatus";
+import { useStorageMachines } from "~/hooks/useStorageMachines";
 import { dismissSidebar } from "~/lib/sidebar-nav";
+import {
+  isLowDisk,
+  lowRemotes,
+  type StorageMachine,
+  storageLinkTarget,
+  withDiskFloor,
+} from "~/lib/storage/fleet";
 import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import { splitMetered } from "~/lib/usage-api";
-import { cn } from "~/lib/utils";
+import { cn, formatBytes } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
+import { startDiskPolling } from "~/stores/storage-store";
 import { useUpdateStore } from "~/stores/update-store";
 import { startUsagePolling, useUsageStore } from "~/stores/usage-store";
 import { ClaudeLoginDialog } from "./ClaudeLoginDialog";
@@ -55,7 +70,14 @@ export function SidebarFooter() {
   const doc = useUsageStore((s) => s.doc);
   const version = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]?.current) ?? "";
   const waiting = useUpdateWaiting();
-  const { allowances, storage } = useMemo(() => splitMetered(doc), [doc]);
+  const { allowances, storage: gauge } = useMemo(() => splitMetered(doc), [doc]);
+  const machines = useStorageMachines();
+  const storage = useMemo(
+    () => (gauge ? withDiskFloor(gauge, machines[0]?.disk) : null),
+    [gauge, machines],
+  );
+  const lowElsewhere = useMemo(() => lowRemotes(machines), [machines]);
+  const storageMachine = useMemo(() => storageLinkTarget(machines), [machines]);
   const close = () => setOpen(false);
   // Leaving for a page closes both surfaces this footer sits behind. The
   // router-level rule (`useSidebarDismissOnNavigate`) covers arriving somewhere
@@ -75,6 +97,9 @@ export function SidebarFooter() {
   // route. The server holds the cache and does the probing, so this is a cheap
   // read rather than a round trip to a vendor.
   useEffect(() => startUsagePolling(), []);
+  // Every reachable machine's disk, for the notch. Cheap, and on its own beat:
+  // a disk filling during an install moves faster than an allowance does.
+  useEffect(() => startDiskPolling(), []);
 
   return (
     <div className="border-t border-sidebar-border px-2 py-1.5">
@@ -119,15 +144,34 @@ export function SidebarFooter() {
             </PopoverTrigger>
           )}
           {storage && (
-            <Link
-              to="/storage"
-              aria-label="Storage"
-              title="Storage"
-              onClick={dismissSidebar}
-              className="flex h-6 shrink-0 items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
-            >
-              <UsageCluster agents={[storage]} />
-            </Link>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    to="/storage"
+                    search={storageMachine ? { machine: storageMachine } : {}}
+                    aria-label={
+                      lowElsewhere.length > 0
+                        ? `Storage — low on disk: ${lowElsewhere.map((m) => m.label).join(", ")}`
+                        : "Storage"
+                    }
+                    onClick={dismissSidebar}
+                    className="relative flex h-6 shrink-0 items-center rounded-md px-1.5 transition-colors hover:bg-muted/50"
+                  >
+                    <UsageCluster agents={[storage]} />
+                    {/* Another machine, not this meter: cut at the corner the way
+                      the chip's unread notch is, so it reads as a mark ON the
+                      control rather than a second reading beside it. */}
+                    {lowElsewhere.length > 0 && (
+                      <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-warning ring-2 ring-sidebar" />
+                    )}
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="end">
+                  <DiskTooltip machines={machines} />
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
         {/* The content grows with what is true: an upgrade row, a window per
@@ -170,6 +214,32 @@ export function SidebarFooter() {
           machine needs the room only a dialog has. */}
       <UpdateDialog open={versionsOpen} onOpenChange={setVersionsOpen} />
       <ClaudeLoginDialog />
+    </div>
+  );
+}
+
+/**
+ * Free space per machine, behind the disk meter. With no machines paired it is
+ * one line, which is still the figure the meter cannot show.
+ */
+function DiskTooltip({ machines }: { machines: StorageMachine[] }) {
+  return (
+    <div className="flex min-w-44 flex-col gap-1 py-0.5">
+      {machines.map((m) => (
+        <div
+          key={m.key}
+          className={cn(
+            "flex items-baseline justify-between gap-4",
+            !m.online && "opacity-60",
+            m.online && isLowDisk(m.disk) && "text-warning",
+          )}
+        >
+          <span className="truncate">{m.label}</span>
+          <span className="shrink-0 font-mono text-[10px] tabular-nums">
+            {!m.online ? "away" : m.disk ? `${formatBytes(m.disk.freeBytes)} free` : "…"}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

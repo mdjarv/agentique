@@ -74,7 +74,9 @@ export function StorageBreakdown({
 }: {
   breakdown: Breakdown;
   busy: boolean;
-  onAction: (action: BreakdownAction) => void;
+  /** Absent while the machine is away: its reading is shown, and no verb is
+   *  offered that could only fail. */
+  onAction?: (action: BreakdownAction) => void;
   /** What the verb would do to *this* machine, for the row's tooltip. */
   actionTitle: (action: BreakdownAction) => string;
 }) {
@@ -123,7 +125,7 @@ export function StorageBreakdown({
                 {formatBytes(row.bytes)}
               </span>
 
-              {row.action ? (
+              {row.action && onAction ? (
                 <RowAction
                   action={row.action}
                   busy={busy}
