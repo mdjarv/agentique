@@ -113,11 +113,9 @@ check; do not start the next branch until it passes.
 
 ### Dependencies
 
-- **claude** — if absent, install with the official native installer from
-  https://claude.com/product/claude-code, then the person runs
-  `claude auth login`. If one is installed but old, update it the way it was
-  installed: `doctor` prints the right command, and an npm install over a native
-  one leaves two copies where the older one keeps running.
+- **claude** — if `doctor` reports it too old, update it the way it was
+  installed: `doctor` prints the right command, and installing a second copy by
+  another method leaves the older one running.
 - **git** — the system package manager (root).
 - **node/npx** — every session's agent browser runs `npx @playwright/mcp`, so a
   machine without `npx` gets agents with no browser. Userspace via

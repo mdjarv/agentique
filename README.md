@@ -31,7 +31,7 @@ re-paired.
 
 | Dependency | Required | Notes |
 |---|---|---|
-| `claude` >= 2.0.0 | yes | The default provider. `curl -fsSL https://claude.ai/install.sh \| bash`, then `claude auth login`. |
+| `claude` >= 2.0.0 | yes | The default provider. `npm install -g @anthropic-ai/claude-code`, then `claude auth login`. |
 | `git` | yes | Worktrees, branches, diffs. |
 | `codex` | no | Only for sessions created with `provider: "codex"`. |
 | `gh` | no | PR creation from the UI. Needs `gh auth login`. |
@@ -64,23 +64,16 @@ Claude surveys the machine, asks what you want, and walks you through it:
 install or upgrade, missing dependencies, the background service, access over
 Tailscale, pairing with another machine, and extras like `gh` and Codex.
 
-**1. Install Claude Code** and sign in when it asks. Skip this if `claude` already
-runs.
-
-```bash
-curl -fsSL https://claude.ai/install.sh | bash
-```
-
-**2. Start Claude with the install brief:**
+In a terminal on the machine you are setting up, with
+[Claude Code](https://claude.com/product/claude-code) installed:
 
 ```bash
 claude "$(curl -fsSL https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md)"
 ```
 
-Windows (PowerShell), for both steps:
+Windows (PowerShell):
 
 ```powershell
-irm https://claude.ai/install.ps1 | iex
 irm https://raw.githubusercontent.com/mdjarv/agentique/master/docs/install-with-claude.md -OutFile install-with-claude.md; claude "Follow install-with-claude.md"
 ```
 
