@@ -21,6 +21,7 @@ import {
   Plus,
   Quote,
   SendHorizonal,
+  Stethoscope,
   StickyNote,
   TriangleAlert,
   X,
@@ -68,6 +69,10 @@ const MARKS: Record<AssistantJournalKind, JournalMark> = {
   // is specific: `day_summary` is the day that was kept, and this is the fold
   // that kept it, so the two must not wear the same mark.
   compaction: { glyph: FoldVertical, label: "compacted", tone: "text-muted-foreground" },
+  // A machine's health changed. The steward's glyph, so the footer mark and the
+  // journal line about the same fact wear one picture; warning-toned because an
+  // opened finding is a fault, and the summary says when it cleared.
+  finding: { glyph: Stethoscope, label: "machine", tone: "text-warning" },
 };
 
 const UNKNOWN: JournalMark = {

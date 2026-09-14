@@ -118,6 +118,9 @@ export const ASSISTANT_JOURNAL_KINDS = [
   // and — unlike `heartbeat` — it is not hidden from anything, because it is the
   // one row that records entries having been deleted on purpose.
   "compaction",
+  // The sixteenth (docs/peers.md): a machine's steward opened or resolved a
+  // finding — this machine's own, or a paired machine's relayed by its outbox.
+  "finding",
 ] as const;
 export type AssistantJournalKind = (typeof ASSISTANT_JOURNAL_KINDS)[number];
 

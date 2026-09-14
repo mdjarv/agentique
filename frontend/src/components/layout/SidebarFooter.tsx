@@ -36,6 +36,8 @@
 import { Link } from "@tanstack/react-router";
 import { Boxes, type LucideIcon, Settings as SettingsIcon, User } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { FindingsMark, useFindingsLabel } from "~/components/steward/FindingsMark";
+import { FindingsPopoverRows } from "~/components/steward/FindingsPopoverRows";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
@@ -58,6 +60,7 @@ import { PRIMARY_MACHINE_KEY } from "~/lib/update-api";
 import { splitMetered } from "~/lib/usage-api";
 import { cn, formatBytes } from "~/lib/utils";
 import { useAuthStore } from "~/stores/auth-store";
+import { startStewardPolling } from "~/stores/steward-store";
 import { startDiskPolling } from "~/stores/storage-store";
 import { useUpdateStore } from "~/stores/update-store";
 import { startUsagePolling, useUsageStore } from "~/stores/usage-store";
@@ -70,6 +73,7 @@ export function SidebarFooter() {
   const doc = useUsageStore((s) => s.doc);
   const version = useUpdateStore((s) => s.statuses[PRIMARY_MACHINE_KEY]?.current) ?? "";
   const waiting = useUpdateWaiting();
+  const needsLook = useFindingsLabel();
   const { allowances, storage: gauge } = useMemo(() => splitMetered(doc), [doc]);
   const machines = useStorageMachines();
   const storage = useMemo(
@@ -91,7 +95,8 @@ export function SidebarFooter() {
   // The allowance trigger is also what the update mark rides, so it stays
   // mounted for a machine that reports no windows at all but is behind. With
   // neither it would be an empty target, so it goes.
-  const showAllowances = allowances.length > 0 || Boolean(waiting);
+  const showAllowances = allowances.length > 0 || Boolean(waiting) || Boolean(needsLook);
+  const triggerWords = [needsLook, waiting?.label].filter(Boolean).join(" · ");
 
   // One poll for the whole app, started here because the footer outlives every
   // route. The server holds the cache and does the probing, so this is a cheap
@@ -100,6 +105,8 @@ export function SidebarFooter() {
   // Every reachable machine's disk, for the notch. Cheap, and on its own beat:
   // a disk filling during an install moves faster than an allowance does.
   useEffect(() => startDiskPolling(), []);
+  // This machine's steward findings, for the mark and its rows.
+  useEffect(() => startStewardPolling(), []);
 
   return (
     <div className="border-t border-sidebar-border px-2 py-1.5">
@@ -128,9 +135,9 @@ export function SidebarFooter() {
                 // The mark it leads with is a glyph, so this button says what
                 // waits — in words, once, for hover and for a screen reader.
                 aria-label={
-                  waiting ? `Subscription usage — ${waiting.label}` : "Subscription usage"
+                  triggerWords ? `Subscription usage — ${triggerWords}` : "Subscription usage"
                 }
-                title={waiting?.label}
+                title={triggerWords || undefined}
                 className="flex h-6 shrink-0 cursor-pointer items-center gap-3 rounded-md px-1.5 transition-colors hover:bg-muted/50"
               >
                 {/* Leading the cluster, inside its trigger: a mark notched onto
@@ -138,6 +145,7 @@ export function SidebarFooter() {
                     and one in the gap is dead pixels beside the control it is
                     about. Inline, it costs width — which the account name pays,
                     the way everything else on this line is arranged to. */}
+                <FindingsMark />
                 <UpdateMark />
                 <UsageCluster agents={allowances} />
               </button>
@@ -186,6 +194,7 @@ export function SidebarFooter() {
         >
           {/* Above the meters, and only when populated: the verbs come first
               because they are the only thing here that can be acted on. */}
+          <FindingsPopoverRows />
           <UpdatePopoverRows />
           {/* The disk section inside is a link to /storage — see UsagePanel. */}
           <UsagePanel onNavigate={leave} />
