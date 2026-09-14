@@ -64,3 +64,58 @@ func TestIngestPeerNewsForFollowedSessionsOnly(t *testing.T) {
 		t.Fatal("unfollow left the remote follow")
 	}
 }
+
+// statefulDirectory answers remote sessions' state for the budget.
+type statefulDirectory struct {
+	*fakeDirectory
+	states map[string][2]bool // sessionID -> {unfinished, known}
+}
+
+func (d *statefulDirectory) Unfinished(_ context.Context, _, sessionID string) (bool, bool) {
+	st, ok := d.states[sessionID]
+	if !ok {
+		return false, false
+	}
+	return st[0], st[1]
+}
+
+// A policy's sessions on paired machines count against its in-flight budget,
+// and one whose machine does not answer counts as still open.
+func TestInFlightBudgetCountsPairedMachines(t *testing.T) {
+	ctx := context.Background()
+	base := &fakeDirectory{
+		projects: []ProjectRow{{ID: "zp", Name: "seisiun", MachineID: "zbook", MachineName: "zbook", Reach: ReachPeer, AcceptsPolicies: true}},
+		created:  SessionRow{ID: "remote-a", Name: "nightly", MachineID: "zbook", MachineName: "zbook", Reach: ReachPeer, AcceptsPolicies: true},
+	}
+	dir := &statefulDirectory{fakeDirectory: base, states: map[string][2]bool{}}
+	svc, queries, _ := newTestService(t, WithDirectory(dir), WithDispatcher(&fakeDispatcher{}))
+	seedMachine(t, queries, "zbook")
+	policy := enablePolicy(t, svc, "nightly tests", 1, 10)
+
+	first, err := svc.Invoke(ctx, VerbCreateSession, map[string]any{"project": "seisiun", "machine": "zbook", "policy": policy.Name})
+	if err != nil || first["error"] != nil {
+		t.Fatalf("first create = %v, %v", first, err)
+	}
+
+	// Still running on zbook: the budget of one is spent.
+	dir.states["remote-a"] = [2]bool{true, true}
+	second, _ := svc.Invoke(ctx, VerbCreateSession, map[string]any{"project": "seisiun", "machine": "zbook", "policy": policy.Name})
+	if reason, _ := second[reasonKey].(string); reason != "budget-in-flight" {
+		t.Fatalf("with the remote session open: %v", second)
+	}
+
+	// zbook asleep: unknown counts as open.
+	delete(dir.states, "remote-a")
+	third, _ := svc.Invoke(ctx, VerbCreateSession, map[string]any{"project": "seisiun", "machine": "zbook", "policy": policy.Name})
+	if reason, _ := third[reasonKey].(string); reason != "budget-in-flight" {
+		t.Fatalf("with zbook not answering: %v", third)
+	}
+
+	// Finished on zbook: the slot comes back.
+	dir.states["remote-a"] = [2]bool{false, true}
+	base.created = SessionRow{ID: "remote-b", Name: "nightly 2", MachineID: "zbook", MachineName: "zbook", Reach: ReachPeer, AcceptsPolicies: true}
+	fourth, _ := svc.Invoke(ctx, VerbCreateSession, map[string]any{"project": "seisiun", "machine": "zbook", "policy": policy.Name})
+	if fourth["error"] != nil {
+		t.Fatalf("with the remote session finished: %v", fourth)
+	}
+}

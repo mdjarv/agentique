@@ -113,6 +113,8 @@ type Store interface {
 	DeleteAssistantFollow(ctx context.Context, sessionID string) error
 	ListAssistantFollows(ctx context.Context) ([]store.AssistantFollow, error)
 	UpsertAssistantPeerFollow(ctx context.Context, arg store.UpsertAssistantPeerFollowParams) error
+	ListPeerPolicySessionsCreatedSince(ctx context.Context, arg store.ListPeerPolicySessionsCreatedSinceParams) ([]store.ListPeerPolicySessionsCreatedSinceRow, error)
+	CountPeerSessionsCreatedSince(ctx context.Context, since string) (int64, error)
 	DeleteAssistantPeerFollow(ctx context.Context, sessionID string) error
 	ListAssistantPeerFollows(ctx context.Context) ([]store.AssistantPeerFollow, error)
 }

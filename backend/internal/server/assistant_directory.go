@@ -202,6 +202,23 @@ func (d *assistantDirectory) Locate(ctx context.Context, id string) (assistant.S
 	return loc.Row, true
 }
 
+// Unfinished implements assistant.PeerSessionStates. A session its machine no
+// longer lists is gone, which is finished; a machine that did not answer is
+// unknown, which a budget counts as in flight.
+func (d *assistantDirectory) Unfinished(ctx context.Context, machineID, sessionID string) (bool, bool) {
+	if d.peers == nil {
+		return false, false
+	}
+	s, listed, answered := d.peers.SessionState(ctx, machineID, sessionID)
+	if !answered {
+		return false, false
+	}
+	if !listed {
+		return false, true
+	}
+	return s.ArchivedAt == "" && s.State != string(session.StateDone) && s.State != string(session.StateFailed), true
+}
+
 // FollowRemote implements assistant.RemoteFollower.
 func (d *assistantDirectory) FollowRemote(ctx context.Context, machineID, sessionID string) error {
 	if d.link == nil {

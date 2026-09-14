@@ -138,6 +138,22 @@ func (q *Queries) CountAssistantJournalUnseen(ctx context.Context, surface sql.N
 	return count, err
 }
 
+const countPeerSessionsCreatedSince = `-- name: CountPeerSessionsCreatedSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= ?1
+  AND json_extract(payload, '$.machineId') IS NOT NULL
+`
+
+// Sessions the assistant created on paired machines since a stamp: the half of
+// the day ceiling the sessions table cannot see.
+func (q *Queries) CountPeerSessionsCreatedSince(ctx context.Context, since string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPeerSessionsCreatedSince, since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPolicySessionsCreatedSince = `-- name: CountPolicySessionsCreatedSince :one
 SELECT COUNT(*) FROM assistant_journal
 WHERE kind = 'session_created'
@@ -1164,6 +1180,52 @@ func (q *Queries) ListAssistantProposals(ctx context.Context, lim int64) ([]Assi
 			&i.Outcome,
 			&i.ExpiresAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPeerPolicySessionsCreatedSince = `-- name: ListPeerPolicySessionsCreatedSince :many
+SELECT session_id, CAST(json_extract(payload, '$.machineId') AS TEXT) AS machine_id
+FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= ?1
+  AND json_extract(payload, '$.policyId') = ?2
+  AND json_extract(payload, '$.machineId') IS NOT NULL
+`
+
+type ListPeerPolicySessionsCreatedSinceParams struct {
+	Since    string `json:"since"`
+	PolicyID string `json:"policy_id"`
+}
+
+type ListPeerPolicySessionsCreatedSinceRow struct {
+	SessionID string `json:"session_id"`
+	MachineID string `json:"machine_id"`
+}
+
+// A policy's sessions created on PAIRED machines in a window: the half of its
+// in-flight budget this server's sessions table cannot see (docs/peers.md).
+// Rows, not a count, because whether each is unfinished is that machine's
+// answer; a policy's budget keeps the list short.
+func (q *Queries) ListPeerPolicySessionsCreatedSince(ctx context.Context, arg ListPeerPolicySessionsCreatedSinceParams) ([]ListPeerPolicySessionsCreatedSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPeerPolicySessionsCreatedSince, arg.Since, arg.PolicyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPeerPolicySessionsCreatedSinceRow{}
+	for rows.Next() {
+		var i ListPeerPolicySessionsCreatedSinceRow
+		if err := rows.Scan(&i.SessionID, &i.MachineID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

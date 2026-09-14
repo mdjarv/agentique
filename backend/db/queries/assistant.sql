@@ -470,3 +470,23 @@ DELETE FROM assistant_peer_follows WHERE session_id = ?;
 
 -- name: ListAssistantPeerFollows :many
 SELECT machine_id, session_id, since, source FROM assistant_peer_follows ORDER BY since;
+
+-- A policy's sessions created on PAIRED machines in a window: the half of its
+-- in-flight budget this server's sessions table cannot see (docs/peers.md).
+-- Rows, not a count, because whether each is unfinished is that machine's
+-- answer; a policy's budget keeps the list short.
+-- name: ListPeerPolicySessionsCreatedSince :many
+SELECT session_id, CAST(json_extract(payload, '$.machineId') AS TEXT) AS machine_id
+FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= sqlc.arg(since)
+  AND json_extract(payload, '$.policyId') = sqlc.arg(policy_id)
+  AND json_extract(payload, '$.machineId') IS NOT NULL;
+
+-- Sessions the assistant created on paired machines since a stamp: the half of
+-- the day ceiling the sessions table cannot see.
+-- name: CountPeerSessionsCreatedSince :one
+SELECT COUNT(*) FROM assistant_journal
+WHERE kind = 'session_created'
+  AND at >= sqlc.arg(since)
+  AND json_extract(payload, '$.machineId') IS NOT NULL;

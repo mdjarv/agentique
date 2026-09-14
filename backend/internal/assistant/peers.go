@@ -26,6 +26,16 @@ type RemoteFollower interface {
 	FollowRemote(ctx context.Context, machineID, sessionID string) error
 }
 
+// PeerSessionStates is implemented by a [Directory] that can say whether
+// sessions on paired machines are still unfinished — the half of a policy's
+// in-flight budget this server's own sessions table cannot see.
+type PeerSessionStates interface {
+	// Unfinished reports, for each session, whether its machine says it is
+	// unfinished (not archived, not done, not failed), and whether the machine
+	// answered at all. A session its machine did not answer for is unknown.
+	Unfinished(ctx context.Context, machineID, sessionID string) (unfinished, known bool)
+}
+
 // RefusedError is an owner's guard, or this server's own routing, saying no
 // to an action, with a sentence written to be relayed.
 //

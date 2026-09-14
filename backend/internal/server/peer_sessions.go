@@ -63,6 +63,8 @@ type peerSource interface {
 	Remember(loc peerLocation)
 	// Invalidate makes the next read of one machine ask it again.
 	Invalidate(machineID string)
+	// SessionState is what a machine last said about one session.
+	SessionState(ctx context.Context, machineID, sessionID string) (peer.SessionWire, bool, bool)
 }
 
 // peerLocation is a session on a paired machine, with the facts an action on
@@ -316,6 +318,31 @@ func (p *peerSessions) Locate(ctx context.Context, sessionID string) (peerLocati
 		}
 	}
 	return peerLocation{}, false
+}
+
+// SessionState answers what a paired machine last said about one of its
+// sessions: the row, whether the machine listed it, and whether the machine
+// answered at all recently enough to count.
+func (p *peerSessions) SessionState(ctx context.Context, machineID, sessionID string) (peer.SessionWire, bool, bool) {
+	peers, _ := p.refreshed(ctx)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, m := range peers {
+		if m.MachineID != machineID {
+			continue
+		}
+		snap, ok := p.usableLocked(m)
+		if !ok {
+			return peer.SessionWire{}, false, false
+		}
+		for _, s := range snap.Sessions {
+			if s.ID == sessionID {
+				return s, true, true
+			}
+		}
+		return peer.SessionWire{}, false, true
+	}
+	return peer.SessionWire{}, false, false
 }
 
 // refreshed is the catalog minus this machine, with every stale answer

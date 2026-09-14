@@ -314,7 +314,11 @@ func (s *Service) policySpend(ctx context.Context, policy Policy) (policySpend, 
 	if err != nil {
 		return policySpend{}, fmt.Errorf("count in flight for the %q budget: %w", policy.Name, err)
 	}
-	spend.InFlight = int(inFlight)
+	remoteInFlight, err := s.peerInFlight(ctx, policy, now)
+	if err != nil {
+		return policySpend{}, fmt.Errorf("count in flight on paired machines for the %q budget: %w", policy.Name, err)
+	}
+	spend.InFlight = int(inFlight) + remoteInFlight
 
 	total, err := s.store.CountSessionsByOriginSince(ctx, store.CountSessionsByOriginSinceParams{
 		Origin: OriginAssistant,
@@ -323,8 +327,43 @@ func (s *Service) policySpend(ctx context.Context, policy Policy) (policySpend, 
 	if err != nil {
 		return policySpend{}, fmt.Errorf("count assistant sessions since %s: %w", startOfDay, err)
 	}
-	spend.AssistantToday = int(total)
+	remote, err := s.store.CountPeerSessionsCreatedSince(ctx, startOfDay)
+	if err != nil {
+		return policySpend{}, fmt.Errorf("count assistant sessions on paired machines since %s: %w", startOfDay, err)
+	}
+	spend.AssistantToday = int(total) + int(remote)
 	return spend, nil
+}
+
+// peerInFlight counts a policy's unfinished sessions on paired machines
+// (docs/peers.md). The journal names them; each machine's own list says
+// whether they are still open.
+//
+// **It fails closed.** A session whose machine does not answer, or a directory
+// that cannot ask, counts as in flight: an undercount is the one error that
+// widens a budget, and "the laptop is asleep" must not hand a standing
+// instruction its slots back while the work on that laptop is still open.
+func (s *Service) peerInFlight(ctx context.Context, policy Policy, now time.Time) (int, error) {
+	rows, err := s.store.ListPeerPolicySessionsCreatedSince(ctx, store.ListPeerPolicySessionsCreatedSinceParams{
+		Since:    formatTime(now.Add(-policyInFlightWindow)),
+		PolicyID: policy.ID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	states, canAsk := s.dir.(PeerSessionStates)
+	n := 0
+	for _, row := range rows {
+		if !canAsk {
+			n++
+			continue
+		}
+		unfinished, known := states.Unfinished(ctx, row.MachineID, row.SessionID)
+		if unfinished || !known {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // assistantDayCeiling is the sum of every enabled policy's day budget: the most

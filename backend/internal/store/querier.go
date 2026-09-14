@@ -80,6 +80,9 @@ type Querier interface {
 	// was working on were still open. Filing it away (archiving) is what releases
 	// the slot, because that is a person saying they are done with it.
 	CountLiveSessionsForPolicy(ctx context.Context, arg CountLiveSessionsForPolicyParams) (int64, error)
+	// Sessions the assistant created on paired machines since a stamp: the half of
+	// the day ceiling the sessions table cannot see.
+	CountPeerSessionsCreatedSince(ctx context.Context, since string) (int64, error)
 	// A policy's day budget: how many sessions this standing instruction has
 	// created since a stamp.
 	//
@@ -328,6 +331,11 @@ type Querier interface {
 	ListModelResolutions(ctx context.Context) ([]ModelResolution, error)
 	ListPeerFollowers(ctx context.Context, sessionID string) ([]string, error)
 	ListPeerOutboxSince(ctx context.Context, arg ListPeerOutboxSinceParams) ([]ListPeerOutboxSinceRow, error)
+	// A policy's sessions created on PAIRED machines in a window: the half of its
+	// in-flight budget this server's sessions table cannot see (docs/peers.md).
+	// Rows, not a count, because whether each is unfinished is that machine's
+	// answer; a policy's budget keeps the list short.
+	ListPeerPolicySessionsCreatedSince(ctx context.Context, arg ListPeerPolicySessionsCreatedSinceParams) ([]ListPeerPolicySessionsCreatedSinceRow, error)
 	ListPendingDeliveriesForSession(ctx context.Context, recipientSessionID string) ([]ListPendingDeliveriesForSessionRow, error)
 	ListPersonaInteractions(ctx context.Context, arg ListPersonaInteractionsParams) ([]PersonaInteraction, error)
 	ListPersonaInteractionsForProfile(ctx context.Context, arg ListPersonaInteractionsForProfileParams) ([]PersonaInteraction, error)

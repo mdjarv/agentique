@@ -774,6 +774,8 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 	if project.Reach.Remote() {
 		journalProject = ""
 		payload["machine"] = project.MachineName
+		// What the remote half of a policy's budgets counts by.
+		payload["machineId"] = project.MachineID
 	}
 	if _, err := s.appendJournal(ctx, journalWrite{
 		Kind:      JournalSessionCreated,
