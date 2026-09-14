@@ -195,6 +195,8 @@ export interface PathValidation {
   exists: boolean;
   isDirectory: boolean;
   parentExists: boolean;
+  /** What an existing directory would be as a project. Absent: not reported. */
+  kind?: "git" | "folder";
 }
 
 export async function validatePath(path: string, machineId?: string): Promise<PathValidation> {

@@ -625,6 +625,30 @@ worktree" rather than an empty zone. `worktreeKind` reads `worktreeBranch`, not
 the path, which is set for both. `FolderOpen`, not `FolderGit2` — at 10px the
 branch node inside the folder collapses into noise.
 
+**A project is git-based only when its own folder is a repository root.**
+`gitops.IsRepoRoot` — a `.git` of its own, a directory for a clone or a file for
+a linked worktree — never "inside a repository". A folder added below some other
+repository (a subdirectory of a dotfiles repo in `$HOME`) is a plain folder, and
+asking git there answers for the parent: its branch, its dirty tree, its whole
+diff. Every session's working directory is a repository root or a plain project
+folder, so that one stat is the guard at every git chokepoint, session and
+project alike; do not reach for `git rev-parse` to decide it. The project wire
+carries it as `kind` (`git`/`folder`), **derived per read** so a later `git
+init` needs nothing to notice it, and optional, so a peer that sends none keeps
+its git features (`lib/project-kind.ts`).
+
+A plain folder is the third location kind, `folder`: its sessions run in it with
+no branch and no isolation. So the new-session picker states the folder rather
+than offering a toggle, and the zone is quiet rather than the main worktree's
+amber — it is the only place such a session can run, and a warning that is
+always on stops being read. A request for a worktree there is **refused**
+(`gitops.ErrNotRepository`), never downgraded to the shared folder: swarm
+workers and repo-backed discussions ask for isolation because they count on it,
+and they are refused before anything is created. Callers that only wanted "the
+composer's default" — voice's `create_session`, prompt cards, persona launch —
+read the kind and ask for no worktree. The cost, accepted: a project added at a
+monorepo subdirectory has no worktrees either.
+
 **Zone 1 is always present, including for this machine.** Absence is not a
 signal you can trust: it reads the same as a bar that has not loaded, and an
 address that is sometimes two segments and sometimes one cannot be compared

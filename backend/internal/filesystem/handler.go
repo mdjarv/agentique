@@ -7,7 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/project"
 )
 
 // Handler handles filesystem browsing HTTP requests.
@@ -115,10 +117,9 @@ func (h *Handler) HandleBrowse(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		isGit := false
-		if gitInfo, err := os.Stat(filepath.Join(fullPath, ".git")); err == nil && gitInfo != nil {
-			isGit = true
-		}
+		// The same rule that decides whether a project is git-based, so the
+		// branch mark in the browser promises exactly the worktrees you get.
+		isGit := gitops.IsRepoRoot(fullPath)
 
 		entries = append(entries, entry{
 			Name:      name,
@@ -148,6 +149,10 @@ type validateResponse struct {
 	Exists       bool `json:"exists"`
 	IsDirectory  bool `json:"isDirectory"`
 	ParentExists bool `json:"parentExists"`
+	// Kind is what an existing directory would be as a project — "git" or
+	// "folder" (project.KindOf). Absent when there is no directory to judge,
+	// and absent from a peer too old to say, which is why it is not a bool.
+	Kind project.Kind `json:"kind,omitempty"`
 }
 
 // HandleValidate checks whether a path exists and whether its parent exists.
@@ -166,11 +171,15 @@ func (h *Handler) HandleValidate(w http.ResponseWriter, r *http.Request) {
 
 	info, err := os.Stat(dirPath)
 	if err == nil {
-		httperror.JSON(w, http.StatusOK, validateResponse{
+		resp := validateResponse{
 			Exists:       true,
 			IsDirectory:  info.IsDir(),
 			ParentExists: true,
-		})
+		}
+		if info.IsDir() {
+			resp.Kind = project.KindOf(dirPath)
+		}
+		httperror.JSON(w, http.StatusOK, resp)
 		return
 	}
 

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderOpen, FolderPlus, Monitor, Plus, TriangleAlert } from "lucide-react";
+import { Folder, FolderOpen, FolderPlus, Monitor, Plus, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DirectoryBrowser } from "~/components/layout/DirectoryBrowser";
 import { Button } from "~/components/ui/button";
@@ -230,6 +230,9 @@ export function NewProjectDialog({
   };
 
   const willCreate = validation !== null && !validation.exists && validation.parentExists;
+  // Said before creating, not discovered at the first session: the folder has
+  // no .git of its own, so its sessions will run in it with no worktrees.
+  const plainFolder = validation?.kind === "folder";
   const parentMissing = validation !== null && !validation.exists && !validation.parentExists;
   const canCreate = path.trim() !== "" && !parentMissing;
 
@@ -310,6 +313,12 @@ export function NewProjectDialog({
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <FolderPlus className="h-3.5 w-3.5 shrink-0" />
                 Directory will be created and initialized with git
+              </p>
+            )}
+            {plainFolder && (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Folder className="h-3.5 w-3.5 shrink-0" />
+                Not a git repository — sessions will work directly in this folder, without worktrees
               </p>
             )}
             {parentMissing && (
