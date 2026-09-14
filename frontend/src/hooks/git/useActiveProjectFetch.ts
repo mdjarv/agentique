@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { fetchProject } from "~/lib/project-actions";
+import { useIsFolderProject } from "~/lib/project-kind";
 import { useAppStore } from "~/stores/app-store";
 import { useChatStore } from "~/stores/chat-store";
 
@@ -25,10 +26,13 @@ export function useActiveProjectFetch() {
     return s.sessions[id]?.meta.projectId ?? null;
   });
 
+  // A plain folder has no remote to fetch from, and the server refuses it.
+  const folder = useIsFolderProject(activeProjectId ?? undefined);
+
   const lastFetchedRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
-    if (!activeProjectId) return;
+    if (!activeProjectId || folder) return;
 
     const run = () => {
       const last = lastFetchedRef.current.get(activeProjectId) ?? 0;
@@ -60,5 +64,5 @@ export function useActiveProjectFetch() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [ws, activeProjectId]);
+  }, [ws, activeProjectId, folder]);
 }

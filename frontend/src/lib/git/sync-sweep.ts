@@ -15,6 +15,7 @@
  * on unreachable machines are skipped instead of timing out one by one.
  */
 import { fetchProject, getProjectGitStatus } from "~/lib/project-actions";
+import { isFolderProject } from "~/lib/project-kind";
 import type { Project } from "~/lib/types";
 import type { WsClient } from "~/lib/ws-client";
 import { useAppStore } from "~/stores/app-store";
@@ -102,6 +103,8 @@ export function fetchSweep(ws: WsClient, projects: Project[], signal?: AbortSign
   // A project without a remote has nothing to fetch from; skipping keeps the
   // sweep proportional to what can actually drift.
   const targets = reachableProjects(projects).filter((p) => {
+    // A plain folder is not a repository at all, so not even the first try.
+    if (isFolderProject(p)) return false;
     const status = useAppStore.getState().projectGitStatus[p.id];
     // Unknown status: try once — the first fetch is also what establishes it.
     return status ? status.hasRemote : true;
