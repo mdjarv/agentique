@@ -767,6 +767,15 @@ utterance (`newUtterance`), which is where the client puts a space; later chunks
 of the same utterance keep the service's own spacing, since a chunk boundary can
 fall inside a word.
 
+**While dictating, the toolbar steps aside for a status line** (`DictationStatus`,
+words from `lib/speech/dictation-status.ts`): a mark, one word for the phase, and
+a mono sub-line saying where the audio goes and that Esc stops it. Nobody reads
+the model picker mid-sentence, so borrowing its slot costs nothing and adds no
+row; it returns when dictation stops. The waveform reads `readMicLevel` on its
+own animation frame, never through React state. The browser route has no level
+and no phases, so it reads "Listening · via the browser" with a pulse. Desktop
+only — the phone's composer carries no mic.
+
 **The model answers anyway, and is ignored.** No instruction stops a Live model
 replying to a closed turn. The transcriber drops everything but input
 transcription, and the next utterance's start interrupts the reply.

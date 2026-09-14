@@ -157,6 +157,20 @@ export function useComposerSpeech({ getText, setText }: UseComposerSpeechParams)
     }
   }, [speech, clearHoldTimer]);
 
+  // Esc stops a dictation from wherever focus is, as the status line says. It
+  // yields to anything that already claimed the key (a menu, a dialog).
+  const { isListening, stop } = speech;
+  useEffect(() => {
+    if (!isListening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      stop();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isListening, stop]);
+
   // Clean up hold timer if the component unmounts mid-press.
   useEffect(() => clearHoldTimer, [clearHoldTimer]);
 

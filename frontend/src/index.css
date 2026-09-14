@@ -1147,3 +1147,25 @@
     stroke-dashoffset: -59.69;
   }
 }
+
+/* Dictation's "writing it down" mark: the words are on their way. */
+.dictation-writing {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--agent) 15%, transparent) 0%,
+    color-mix(in srgb, var(--agent) 55%, transparent) 50%,
+    color-mix(in srgb, var(--agent) 15%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: dictation-writing 1.2s linear infinite;
+}
+@keyframes dictation-writing {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dictation-writing {
+    animation: none;
+  }
+}

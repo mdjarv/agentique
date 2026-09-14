@@ -20,6 +20,7 @@ import type { Attachment, AutoApproveMode } from "~/stores/chat-store";
 import { AttachmentStrip } from "./composer/AttachmentStrip";
 import { ComposerTextarea, type ComposerTextareaHandle } from "./composer/ComposerTextarea";
 import { ComposerToolbar } from "./composer/ComposerToolbar";
+import { DictationStatus } from "./composer/DictationStatus";
 import { FileDropOverlay } from "./composer/FileDropOverlay";
 import { useComposerSend } from "./composer/useComposerSend";
 import { useComposerSpeech } from "./composer/useComposerSpeech";
@@ -347,9 +348,15 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         <div className="border-b border-border/50 bg-muted/20 px-1.5 py-1">{toolbar}</div>
       ) : undefined;
 
+    // While dictating, the toolbar gives its slot to a status line: nobody reads
+    // the model picker mid-sentence, and dictation has more to say than a red mic.
     const bottomBar = useFocusLayout ? null : (
       <div className="flex items-center justify-between px-2 pb-2">
-        {toolbar}
+        {speech.isListening ? (
+          <DictationStatus route={speech.route} phase={speech.phase} />
+        ) : (
+          toolbar
+        )}
         {rightActions}
       </div>
     );
