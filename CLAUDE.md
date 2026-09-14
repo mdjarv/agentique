@@ -1754,6 +1754,27 @@ Symmetrically, **removal tolerates a refused revoke.** A credential the remote
 already rejects is already revoked, and failing there strands an entry that can
 be neither used nor removed.
 
+### Peers — `docs/peers.md`
+
+**One assistant decides what to ask for; the machine that owns a session decides
+what may happen to it.** A paired server acts here only through `/api/peer/*`,
+with a `kind = 'peer'` credential, and `auth.credentialAllowed` is the one scope
+rule: a peer credential is refused everywhere else and a browser credential is
+refused there, judged where every request authenticates. Adding any route means
+adding it to `TestPeerCredentialIsRefusedOutsideThePeerSurface`.
+
+The owner's guard (`peer.JudgeSend`, `peer.JudgeCreate`) holds whatever the body
+says: origin is assistant because of the credential, never a field; worktree
+sessions only; full auto only; per-credential rate and in-flight caps; and
+nothing at all unless `[peer] accept-actions`, nor policy work unless
+`accept-policies`. Opt-in is judged before a session is looked up, so a machine
+that has not opted in reveals nothing about which ids exist.
+
+News goes back through `peer_outbox`, a log per follower read by
+`GET /api/peer/events?since=`, never a queue with read state. `AssistantReport`
+is registered on every server whatever its flags, because the machine a session
+runs on need not run an assistant.
+
 ### The assistant — `docs/assistant.md`
 
 **Uncontained means proposed, never performed.** The assistant's verb table
