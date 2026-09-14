@@ -249,3 +249,84 @@ func TestAssistantVerbsActOnAPairedMachine(t *testing.T) {
 		t.Fatalf("ambiguous create = %v, want a question naming zbook", out)
 	}
 }
+
+// proposalLink is zbook's peer surface for facts and verbs.
+type proposalLink struct {
+	mu     sync.Mutex
+	branch assistant.BranchFacts
+	did    []string
+	doErr  error
+}
+
+func (l *proposalLink) Facts(_ context.Context, _, _, kind string, dst any) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch kind {
+	case "branch":
+		*(dst.(*assistant.BranchFacts)) = l.branch
+	}
+	return nil
+}
+
+func (l *proposalLink) ResolveModel(context.Context, string, string, peer.ResolveModelRequest, any) error {
+	return nil
+}
+
+func (l *proposalLink) Do(_ context.Context, _, sessionID, verb string, _ map[string]any) (string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.doErr != nil {
+		return "", l.doErr
+	}
+	l.did = append(l.did, verb+":"+sessionID)
+	return "merged into the project's branch", nil
+}
+
+// A card about a session on zbook is written from zbook's facts, names zbook,
+// and pressing it performs the verb on zbook — whose own re-check can still
+// turn it into a stale outcome.
+func TestProposalsActOnAPairedMachine(t *testing.T) {
+	rig := newRoutingRig(t)
+	link := &proposalLink{branch: assistant.BranchFacts{Ahead: 2, MergeStatus: "clean"}}
+	actions := &routedActions{local: newAssistantActions(rig.disp.svc, nil, nil, rig.queries, nil), peers: rig.dir.peers, link: link}
+	svc, err := assistant.New(rig.queries, assistant.WithDirectory(rig.dir), assistant.WithDispatcher(rig.disp),
+		assistant.WithActions(actions))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	ctx := context.Background()
+
+	out, err := svc.Invoke(ctx, assistant.VerbMergeSession, map[string]any{"session_id": zbookSession, "rationale": "loader fix is done"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := out["proposal_id"].(string)
+	if id == "" {
+		t.Fatalf("merge proposal = %v", out)
+	}
+	card, err := svc.Proposal(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Evidence["machine"] != "zbook" || card.SessionName != "Plugin Testing" {
+		t.Fatalf("card = %+v, want it to name zbook and the session", card)
+	}
+
+	decided, err := svc.Decide(ctx, "thread", id, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decided.Status != assistant.ProposalAccepted || len(link.did) != 1 || link.did[0] != assistant.VerbMergeSession+":"+zbookSession {
+		t.Fatalf("decided = %+v, did = %v", decided, link.did)
+	}
+
+	// Behind by the time zbook looks: its re-check refuses, and the card says so.
+	out, _ = svc.Invoke(ctx, assistant.VerbMergeSession, map[string]any{"session_id": zbookSession, "rationale": "again"})
+	id, _ = out["proposal_id"].(string)
+	link.doErr = &peerlink.RefusalError{Status: 409, Reason: peer.ReasonOutcome, Message: "the branch is 1 commit behind"}
+	decided, _ = svc.Decide(ctx, "thread", id, true)
+	if decided.Status != assistant.ProposalFailed || !strings.Contains(decided.Outcome, "behind") {
+		t.Fatalf("stale on the owner = %+v", decided)
+	}
+}

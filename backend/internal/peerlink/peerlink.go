@@ -133,6 +133,29 @@ func (c *Client) Transcript(ctx context.Context, machineID, sessionID string) (s
 	return out.Transcript, err
 }
 
+// Facts reads one kind of fact about a session ("branch", "delete", "busy",
+// "settings") into dst, read fresh on that machine.
+func (c *Client) Facts(ctx context.Context, machineID, sessionID, kind string, dst any) error {
+	return c.do(ctx, machineID, http.MethodGet,
+		"/api/peer/sessions/"+url.PathEscape(sessionID)+"/facts/"+url.PathEscape(kind), nil, maxSmallBytes, dst)
+}
+
+// ResolveModel resolves a spoken model family against that machine's catalog.
+func (c *Client) ResolveModel(ctx context.Context, machineID, sessionID string, req peer.ResolveModelRequest, dst any) error {
+	return c.do(ctx, machineID, http.MethodPost,
+		"/api/peer/sessions/"+url.PathEscape(sessionID)+"/models/resolve", req, maxSmallBytes, dst)
+}
+
+// Do asks that machine to perform one uncontained session verb a person
+// accepted here. The machine re-checks it first.
+func (c *Client) Do(ctx context.Context, machineID, sessionID, verb string, args map[string]any) (string, error) {
+	var out peer.DoResponse
+	err := c.do(ctx, machineID, http.MethodPost,
+		"/api/peer/sessions/"+url.PathEscape(sessionID)+"/do/"+url.PathEscape(verb),
+		peer.DoRequest{Args: args}, maxSmallBytes, &out)
+	return out.Outcome, err
+}
+
 // Events polls the machine's outbox for this server after since, waiting up to
 // wait for news. The caller's context must outlive wait.
 func (c *Client) Events(ctx context.Context, machineID string, since int64, wait time.Duration) (peer.EventsResponse, error) {

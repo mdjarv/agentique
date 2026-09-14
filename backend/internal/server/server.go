@@ -996,6 +996,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		peer.WithCatalog(catalog),
 		peer.WithOutbox(peerOutbox),
 		peer.WithTranscripts(queries),
+		peer.WithProposalActions(newAssistantActions(svc, gitSvc, mgr, queries, catalog)),
 	).RegisterRoutes(mux)
 
 	// Persistent memory ("the brain"). Opt-in: [brain] enabled is the master switch
@@ -1222,7 +1223,11 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			// eight verbs refuse in words rather than proposing something
 			// nothing has checked — so it is passed here, where every service
 			// it needs already exists, and never constructed inside the core.
-			assistant.WithActions(newAssistantActions(svc, gitSvc, mgr, queries, catalog)),
+			assistant.WithActions(&routedActions{
+				local: newAssistantActions(svc, gitSvc, mgr, queries, catalog),
+				peers: peerSrc,
+				link:  peerLink,
+			}),
 			assistant.WithRegistry(reportRegistry),
 			assistant.WithBroadcaster(bus),
 			// Autonomy (docs/assistant.md, the M4 contract). The triager is a

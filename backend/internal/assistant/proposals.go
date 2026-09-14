@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -277,6 +278,58 @@ type Actions interface {
 	// whose provider is knowable, where resolving against claude's catalog
 	// would hand a codex session a slug it cannot run.
 	ResolveModel(ctx context.Context, provider, spoken string) (ModelChoice, error)
+}
+
+// SessionModelResolver is implemented by an [Actions] that resolves a model
+// against the catalog of the machine a session runs on, rather than this one's.
+type SessionModelResolver interface {
+	ResolveModelFor(ctx context.Context, sessionID, provider, spoken string) (ModelChoice, error)
+}
+
+// IsSessionProposalVerb reports whether verb is an uncontained verb whose
+// target is a session — the ones a paired machine can be asked to perform.
+func IsSessionProposalVerb(verb string) bool {
+	check, ok := proposalChecks[verb]
+	return ok && check.subject == subjectSession
+}
+
+// CheckProposal runs one session verb's check against actions: the facts it
+// reads, and a refusal in words when they do not allow it.
+//
+// Exported for the OWNER of a session on another machine (docs/peers.md): the
+// acting server's card was judged on facts read over the wire, and the machine
+// that bears the consequences judges them again, with the same function, before
+// anything happens.
+func CheckProposal(ctx context.Context, actions Actions, verb, sessionID string, args map[string]any) (map[string]any, string, error) {
+	check, ok := proposalChecks[verb]
+	if !ok || check.subject != subjectSession {
+		return nil, "", fmt.Errorf("assistant: %q is not a session proposal verb", verb)
+	}
+	return check.check(ctx, ownerService(actions), Proposal{Verb: verb, SessionID: sessionID, Args: args})
+}
+
+// PerformProposal re-checks one session verb against actions and performs it
+// when the facts still allow. A refusal comes back as an [*OutcomeError] whose
+// outcome is the refusal, which is what a stale card shows.
+func PerformProposal(ctx context.Context, actions Actions, verb, sessionID string, args map[string]any) (string, error) {
+	check, ok := proposalChecks[verb]
+	if !ok || check.subject != subjectSession {
+		return "", fmt.Errorf("assistant: %q is not a session proposal verb", verb)
+	}
+	svc := ownerService(actions)
+	p := Proposal{Verb: verb, SessionID: sessionID, Args: args}
+	if _, refusal, err := check.check(ctx, svc, p); err != nil {
+		return "", err
+	} else if refusal != "" {
+		return "", &OutcomeError{Outcome: refusal, Detail: "refused by the owner's re-check"}
+	}
+	return check.exec(ctx, svc, p)
+}
+
+// ownerService is the part of a Service the checks and executors read: the
+// actions and a logger. Nothing else is touched by them.
+func ownerService(actions Actions) *Service {
+	return &Service{actions: actions, log: slog.Default()}
 }
 
 // WithActions gives the assistant the uncontained tier's executor.
@@ -596,6 +649,12 @@ func (s *Service) propose(ctx context.Context, verb string, args map[string]any)
 		return refuse("evidence-refuses:"+verb, fmt.Sprintf("NOTHING WAS PROPOSED, because %s. Say "+
 			"that plainly as the answer -- it is the useful thing to know, not a failure.", refusal)), nil
 	}
+	if machine, ok := p.Args["machine"].(string); ok && machine != "" {
+		if evidence == nil {
+			evidence = map[string]any{}
+		}
+		evidence["machine"] = machine
+	}
 	p.Evidence = evidence
 
 	at := formatTime(s.now())
@@ -712,18 +771,26 @@ func (s *Service) resolveTarget(ctx context.Context, check verbCheck, p *Proposa
 		return refuse("no-directory", "NOTHING WAS PROPOSED: I cannot tell which session that is from "+
 			"here. Tell them it has to be done on screen.")
 	}
-	row, local := s.dir.SessionBrief(ctx, sessionID)
-	if !local {
-		machine := row.MachineName
-		if machine == "" {
-			machine = "another machine"
-		}
-		return refuse("target-not-local", fmt.Sprintf("NOTHING WAS PROPOSED: %s runs on %s, and I can "+
-			"only propose things about sessions on this one. Say which machine it is on.",
-			DisplayFor(row), machine))
+	// Wherever it runs (docs/peers.md). A paired machine's session is judged on
+	// that machine's facts, read over its peer surface, and performed there —
+	// where the owner re-checks before it executes.
+	row, found := s.locate(ctx, sessionID)
+	if !found {
+		return refuse("target-unknown", "NOTHING WAS PROPOSED: no session with that id is known here. "+
+			"Find it again and use the id that comes back.")
+	}
+	if !row.Reach.CanAct() {
+		out := cannotAct("target", row, "changes like that")
+		out["error"] = strings.Replace(out["error"].(string), "NOTHING WAS DONE", "NOTHING WAS PROPOSED", 1)
+		return out
 	}
 	p.SessionID = row.ID
 	p.ProjectID = row.ProjectID
+	if row.Reach.Remote() {
+		// Carried to the evidence once the check has written it: a card names
+		// whose facts it was judged on.
+		p.Args["machine"] = row.MachineName
+	}
 	return nil
 }
 
@@ -1012,7 +1079,7 @@ func (s *Service) proposalFrom(ctx context.Context, row store.AssistantProposal)
 		p.Status = ProposalExpired
 	}
 	if p.SessionID != "" && s.dir != nil {
-		if row, local := s.dir.SessionBrief(ctx, p.SessionID); local {
+		if row, found := s.locate(ctx, p.SessionID); found {
 			p.SessionName = row.Name
 			p.ProjectName = row.ProjectName
 			if p.ProjectName == "" {
@@ -1303,7 +1370,14 @@ func prepareSetModel(ctx context.Context, s *Service, p *Proposal) map[string]an
 		return refuse("model-switch-unsupported", fmt.Sprintf("NOTHING WAS PROPOSED, because %s. Say "+
 			"that plainly as the answer -- it is the useful thing to know, not a failure.", refusal))
 	}
-	choice, err := s.actions.ResolveModel(ctx, settings.Provider, spoken)
+	// A session on a paired machine resolves against THAT machine's catalog,
+	// which is the one that decides what it can run.
+	var choice ModelChoice
+	if routed, ok := s.actions.(SessionModelResolver); ok {
+		choice, err = routed.ResolveModelFor(ctx, p.SessionID, settings.Provider, spoken)
+	} else {
+		choice, err = s.actions.ResolveModel(ctx, settings.Provider, spoken)
+	}
 	if err != nil {
 		var unknown *UnknownModelError
 		if errors.As(err, &unknown) {

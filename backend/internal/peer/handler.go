@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/auth"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/providers"
@@ -55,6 +56,7 @@ type Handler struct {
 	limits    *limiter
 	outbox    *Outbox
 	events    session.TranscriptEvents
+	actions   assistant.Actions
 }
 
 // Option configures a [Handler].
@@ -79,6 +81,14 @@ func WithOutbox(o *Outbox) Option { return func(h *Handler) { h.outbox = o } }
 // its assistant can summarise work running here. Without it the route is absent.
 func WithTranscripts(events session.TranscriptEvents) Option {
 	return func(h *Handler) { h.events = events }
+}
+
+// WithProposalActions serves a session's facts and performs the uncontained
+// session verbs a person accepted on a paired server's card (docs/peers.md),
+// re-checking each with the same check that wrote the card. Without it the
+// routes are absent.
+func WithProposalActions(actions assistant.Actions) Option {
+	return func(h *Handler) { h.actions = actions }
 }
 
 // withClock replaces the limiter's clock, for tests.
@@ -108,6 +118,141 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if h.events != nil {
 		mux.HandleFunc("GET /api/peer/sessions/{id}/transcript", h.handleTranscript)
 	}
+	if h.actions != nil {
+		mux.HandleFunc("GET /api/peer/sessions/{id}/facts/{kind}", h.handleFacts)
+		mux.HandleFunc("POST /api/peer/sessions/{id}/models/resolve", h.handleResolveModel)
+		mux.HandleFunc("POST /api/peer/sessions/{id}/do/{verb}", h.handleDo)
+	}
+}
+
+// ActionsPerHour bounds uncontained verbs per credential: each one is a card a
+// person pressed, so more than this in an hour is not a person pressing cards.
+const ActionsPerHour = 30
+
+// ReasonOutcome is an uncontained verb that ran into the facts: git refused, or
+// the owner's re-check found the card stale. The message is the outcome word.
+const ReasonOutcome = "outcome"
+
+// DoRequest is POST /api/peer/sessions/{id}/do/{verb}: the verb's arguments as
+// the acting server resolved them.
+type DoRequest struct {
+	Args map[string]any `json:"args,omitempty"`
+}
+
+// DoResponse is what the verb did, in one line.
+type DoResponse struct {
+	Outcome string `json:"outcome"`
+}
+
+// ResolveModelRequest names a model family for a session's provider.
+type ResolveModelRequest struct {
+	Provider string `json:"provider"`
+	Spoken   string `json:"spoken"`
+}
+
+// handleFacts answers one kind of fact about a session, read fresh: branch,
+// delete (storage's verdict), busy, settings. Reading is not acting, so it is
+// not gated on accept-actions.
+func (h *Handler) handleFacts(w http.ResponseWriter, r *http.Request) {
+	credential, id, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	var (
+		out any
+		err error
+	)
+	switch r.PathValue("kind") {
+	case "branch":
+		out, err = h.actions.BranchFacts(ctx, id)
+	case "delete":
+		out, err = h.actions.DeleteVerdict(ctx, id)
+	case "busy":
+		out = map[string]bool{"busy": h.actions.Busy(ctx, id)}
+	case "settings":
+		out, err = h.actions.SessionSettings(ctx, id)
+	default:
+		h.refuse(w, r, credential, refuse(http.StatusNotFound, ReasonBadRequest, "no such fact"))
+		return
+	}
+	if err != nil {
+		httperror.RespondError(w, httperror.Internal("read session facts", err))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) handleResolveModel(w http.ResponseWriter, r *http.Request) {
+	credential, _, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	var req ResolveModelRequest
+	if !h.decode(w, r, credential, &req) {
+		return
+	}
+	if len(req.Provider) > maxModelBytes || len(req.Spoken) > maxModelBytes {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "model is too long"))
+		return
+	}
+	choice, err := h.actions.ResolveModel(r.Context(), req.Provider, req.Spoken)
+	if err != nil {
+		var unknown *assistant.UnknownModelError
+		if errors.As(err, &unknown) {
+			h.refuseWithFamilies(w, r, credential, refuse(http.StatusUnprocessableEntity, ReasonUnknownModel,
+				"there is no model called %q here", req.Spoken), unknown.Families)
+			return
+		}
+		httperror.RespondError(w, httperror.Internal("resolve model", err))
+		return
+	}
+	httperror.JSON(w, http.StatusOK, choice)
+}
+
+// handleDo performs one uncontained session verb. The owner's guard: actions
+// accepted, a verb from the closed set, a rate ceiling, and the verb's own
+// check run again here on this machine's facts — an acting server's card can
+// narrow what happens, never widen it.
+func (h *Handler) handleDo(w http.ResponseWriter, r *http.Request) {
+	credential, id, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	verb := r.PathValue("verb")
+	if !assistant.IsSessionProposalVerb(verb) {
+		h.refuse(w, r, credential, refuse(http.StatusNotFound, ReasonBadRequest, "no such verb"))
+		return
+	}
+	var req DoRequest
+	if !h.decode(w, r, credential, &req) {
+		return
+	}
+	if verdict := judgeOptIn(h.settings, ""); verdict.Refused() {
+		h.refuse(w, r, credential, verdict)
+		return
+	}
+	if !h.limits.take(credential+":do", ActionsPerHour, time.Hour) {
+		h.refuse(w, r, credential, refuse(http.StatusTooManyRequests, ReasonRate, "too many changes from this server in the last hour"))
+		return
+	}
+	if req.Args == nil {
+		req.Args = map[string]any{}
+	}
+	outcome, err := assistant.PerformProposal(r.Context(), h.actions, verb, id, req.Args)
+	if err != nil {
+		var typed *assistant.OutcomeError
+		if errors.As(err, &typed) {
+			slog.Info("peer: verb did not go through", "verb", verb, "session", id, "credential", credential,
+				"outcome", typed.Outcome, "detail", typed.Detail)
+			h.refuse(w, r, credential, refuse(http.StatusConflict, ReasonOutcome, "%s", typed.Outcome))
+			return
+		}
+		httperror.RespondError(w, httperror.Internal("perform "+verb, err))
+		return
+	}
+	slog.Info("peer: performed", "verb", verb, "session", id, "credential", credential, "outcome", outcome)
+	httperror.JSON(w, http.StatusOK, DoResponse{Outcome: outcome})
 }
 
 // handleFollow subscribes the credential's server to a session it did not
