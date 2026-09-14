@@ -173,10 +173,14 @@ func (s *Service) IngestPeerTurnEnd(ctx context.Context, machineName, sessionID,
 	if !s.reg.Listening(sessionID) && !s.Following(ctx, sessionID) {
 		return
 	}
-	if name != "" && machineName != "" {
-		name = name + " on " + machineName
+	var extra map[string]any
+	if machineName != "" {
+		extra = map[string]any{"machine": machineName}
+		if name != "" {
+			name = name + " on " + machineName
+		}
 	}
 	// No project: a remote project id means nothing here, and it is what a
 	// memory scope is filed under.
-	s.recordNotice(ctx, sessionID, "", notice, journalKindFor(notice.Kind), name)
+	s.recordNoticeWith(ctx, sessionID, "", notice, journalKindFor(notice.Kind), name, extra)
 }

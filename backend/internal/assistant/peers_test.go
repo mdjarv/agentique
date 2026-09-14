@@ -53,7 +53,7 @@ func TestIngestPeerNewsForFollowedSessionsOnly(t *testing.T) {
 		t.Fatalf("report entry = %+v", rep)
 	}
 	failed, ok := kinds[JournalSessionFailed]
-	if !ok || failed.Payload["name"] != "Plugin Testing on zbook" || failed.ProjectID != "" {
+	if !ok || failed.Payload["name"] != "Plugin Testing on zbook" || failed.Payload["machine"] != "zbook" || failed.ProjectID != "" {
 		t.Fatalf("turn end entry = %+v", failed)
 	}
 

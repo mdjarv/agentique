@@ -121,7 +121,19 @@ func journalKindFor(kind NoticeKind) JournalKind {
 // or the question a session stopped on — so the entry is marked untrusted and
 // every surface renders it as a quotation.
 func (s *Service) recordNotice(ctx context.Context, sessionID, projectID string, notice Notice, kind JournalKind, name string) {
+	s.recordNoticeWith(ctx, sessionID, projectID, notice, kind, name, nil)
+}
+
+// recordNoticeWith is [Service.recordNotice] with extra payload fields — the
+// machine a paired session's turn ended on, which an entry has to say even
+// when the session has no name yet.
+func (s *Service) recordNoticeWith(ctx context.Context, sessionID, projectID string, notice Notice, kind JournalKind,
+	name string, extra map[string]any,
+) {
 	payload := map[string]any{}
+	for k, v := range extra {
+		payload[k] = v
+	}
 	if name != "" {
 		payload["name"] = name
 	}
