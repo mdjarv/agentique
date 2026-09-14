@@ -8,7 +8,47 @@ before you upgrade.
 Starts at v0.4.0. Releases v0.1.0 through v0.3.0 are listed at the bottom with
 links to their own notes, rather than reconstructed here after the fact.
 
-## Unreleased
+## v0.7.2
+
+Nothing to do before upgrading: no migration, no config key, no credential
+change.
+
+### Fixed
+
+- **The assistant finds sessions on paired machines.** Its directory read only
+  this machine's database, so a session the sidebar showed on another machine
+  did not exist for `list_sessions` or `find_session`. The server now reads each
+  paired machine's sessions and projects as its client — identity proof first,
+  then the bearer — cached stale-while-refresh, and a machine that does not
+  answer is named in the reply rather than silently absent. An asleep peer is
+  waited on once, not on every lookup. Remote rows are description only:
+  dispatch still refuses a session on another machine.
+
+- **The assistant can find older sessions and projects by name.** Its directory
+  cut the list to twelve rows before callers matched over it.
+
+## v0.7.1
+
+Nothing to do before upgrading.
+
+### Changed
+
+- **Settings → Sessions chooses where new sessions start**: a linked worktree
+  or the main worktree. Device-local, read once when the New-session panel
+  opens. A `?worktree=` link and a template's own setting still win.
+
+### Fixed
+
+- **A project that is a plain directory no longer toasts git's usage text on
+  every turn.** Its diff is empty, the same as a missing work directory.
+
+## v0.7.0
+
+This section was cut late and covers only the context meter and codex changes
+below; v0.7.0 also shipped the durable assistant (M1–M5), Windows process
+confinement, the tail-loaded session history and much else. The
+[GitHub release](https://github.com/mdjarv/agentique/releases/tag/v0.7.0) has
+the complete list.
 
 ### Changed
 
