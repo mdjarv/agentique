@@ -8,7 +8,7 @@
  * be running, greyed, and gets offered the upgrade when it comes back.
  */
 import { ChevronRight, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -196,6 +196,16 @@ export function UpdateDialog({
   const fetchAll = useUpdateStore((s) => s.fetchAll);
 
   const busy = Object.keys(checking).length > 0;
+
+  // Opening the dialog is asking "what is true now", so every machine
+  // re-checks everything it reports — release, checkout, installed binary and
+  // CLIs — rather than answering from its hourly cache. Keyed on `open` alone:
+  // the catalog is read at that moment, and a machine paired while the dialog
+  // stays open is useUpdateChecks' job, not a second forced round here.
+  useEffect(() => {
+    if (!open) return;
+    void fetchAll(machineKeys(useMachineStore.getState().machines), true);
+  }, [open, fetchAll]);
 
   const rows = useMemo<Row[]>(() => {
     const primary: Row = {
