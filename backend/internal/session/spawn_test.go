@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,22 @@ func (s *SpawnSuite) TestCreateSession_WorktreeInRepoSubfolderRefused() {
 		Worktree:  true,
 	})
 	s.Require().ErrorIs(err, gitops.ErrNotRepository)
+}
+
+// Workers isolate in worktrees, so a swarm in a plain folder is refused as a
+// whole before anything exists — no channel left behind with no members.
+func (s *SpawnSuite) TestCreateSwarm_PlainFolderRefused() {
+	ctx := context.Background()
+	_, err := s.svc.CreateSwarm(ctx, CreateSwarmParams{
+		ProjectID:   s.Project.ID,
+		ChannelName: "crew",
+		Members:     []SwarmMemberSpec{{Name: "W1", Prompt: "x"}},
+	})
+	s.Require().ErrorIs(err, gitops.ErrNotRepository)
+
+	channels, err := s.Queries.ListChannelsByProject(ctx, sql.NullString{String: s.Project.ID, Valid: true})
+	s.Require().NoError(err)
+	s.Empty(channels)
 }
 
 // --- authorizeSpawn unit tests ---

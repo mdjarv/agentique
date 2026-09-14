@@ -28,7 +28,7 @@ func RealGitOps() projectGitOps { return realProjectGitOps{} }
 // realProjectGitOps delegates to the gitops package functions.
 type realProjectGitOps struct{}
 
-func (realProjectGitOps) IsRepoRoot(dir string) bool             { return gitops.IsRepoRoot(dir) }
+func (realProjectGitOps) IsRepoRoot(dir string) bool               { return gitops.IsRepoRoot(dir) }
 func (realProjectGitOps) Fetch(dir string) error                   { return gitops.Fetch(dir) }
 func (realProjectGitOps) CurrentBranch(dir string) (string, error) { return gitops.CurrentBranch(dir) }
 func (realProjectGitOps) PushBranch(dir, branch string) error      { return gitops.PushBranch(dir, branch) }

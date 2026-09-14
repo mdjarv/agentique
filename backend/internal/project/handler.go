@@ -62,7 +62,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		httperror.RespondError(w, httperror.Internal("list projects", err))
 		return
 	}
-	httperror.JSON(w, http.StatusOK, projects)
+	httperror.JSON(w, http.StatusOK, ToWireList(projects))
 }
 
 // HandleCreate creates a new project from the JSON request body.
@@ -142,7 +142,7 @@ func (h *Handler) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	httperror.JSON(w, http.StatusCreated, project)
+	httperror.JSON(w, http.StatusCreated, ToWire(project))
 }
 
 // RefreshRemoteURLs recomputes every project's canonical remote key and
@@ -315,7 +315,7 @@ func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	httperror.JSON(w, http.StatusOK, project)
+	httperror.JSON(w, http.StatusOK, ToWire(project))
 }
 
 // HandleListPresetDefinitions returns the curated preset definitions.

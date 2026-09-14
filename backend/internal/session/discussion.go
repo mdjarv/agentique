@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -181,6 +182,9 @@ func (s *Service) StartDiscussion(ctx context.Context, p StartDiscussionParams) 
 		project, err = s.queries.GetProject(ctx, p.ProjectID)
 		if err != nil {
 			return DiscussionInfo{}, fmt.Errorf("get project: %w", err)
+		}
+		if !gitops.IsRepoRoot(project.Path) {
+			return DiscussionInfo{}, fmt.Errorf("project %q is a plain folder, so a repo-backed discussion has no worktree to share; use a web-only discussion: %w", project.Name, gitops.ErrNotRepository)
 		}
 	}
 

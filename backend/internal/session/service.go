@@ -1573,7 +1573,11 @@ func (s *Service) resumeSession(ctx context.Context, sessionID string) (*Session
 	}
 
 	if freshStart {
-		extraPreamble += preambleConversationReset
+		if gitops.IsRepoRoot(workDir) {
+			extraPreamble += preambleConversationReset
+		} else {
+			extraPreamble += preambleConversationResetFolder
+		}
 	}
 
 	var initialVersion int64

@@ -190,13 +190,24 @@ type fieldInfo struct {
 }
 
 func (g *generator) structFields(ref *typeRef) []fieldInfo {
-	t := ref.goType
-	disc, isVariant := g.discriminants[t]
+	return g.fieldsOf(ref.goType, ref.goType)
+}
+
+// fieldsOf lists t's JSON fields. An untagged embedded struct contributes its
+// own fields at this level, the way encoding/json flattens it — which is how a
+// wire type adds derived fields to a generated sqlc row without restating it.
+// discOwner is the registered type whose discriminant applies.
+func (g *generator) fieldsOf(t, discOwner reflect.Type) []fieldInfo {
+	disc, isVariant := g.discriminants[discOwner]
 
 	var fields []fieldInfo
 	for i := range t.NumField() {
 		sf := t.Field(i)
 		tag := sf.Tag.Get("json")
+		if sf.Anonymous && tag == "" && sf.Type.Kind() == reflect.Struct {
+			fields = append(fields, g.fieldsOf(sf.Type, discOwner)...)
+			continue
+		}
 		if tag == "" || tag == "-" {
 			continue
 		}
@@ -413,7 +424,7 @@ func main() {
 
 	// ── Store types (sqlc — uses snake_case JSON tags) ──
 
-	projectRef := g.register(store.Project{}, "Project")
+	projectRef := g.register(projpkg.Wire{}, "Project")
 	g.register(store.PromptTemplate{}, "PromptTemplate")
 
 	// ── Storage / disk usage ──

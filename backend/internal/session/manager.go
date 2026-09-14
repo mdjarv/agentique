@@ -341,7 +341,7 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.PanelEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background())
+	preamble := buildPreamble(id, params.WorktreeBranch, params.Projects, params.BehaviorPresets, params.ChannelPreambles, params.TeamPreambles, m.GlobalPreamble, params.BrowserEnabled, params.PanelEnabled, params.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + folderPreamble(params.WorkDir)
 
 	mcpConfigs := m.buildMCPConfigs(id, params.MCPConfigs)
 
@@ -514,7 +514,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 	sess.mu.Unlock()
 	sess.pipeline.SetClaudeSessionID(p.ClaudeSessionID)
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + folderPreamble(p.WorkDir) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 
@@ -609,7 +609,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 	sess.autoApproveMode = autoMode
 	sess.mu.Unlock()
 
-	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + p.ExtraPreamble
+	preamble := buildPreamble(p.SessionID, p.WorktreeBranch, p.Projects, p.BehaviorPresets, p.ChannelPreambles, p.TeamPreambles, m.GlobalPreamble, p.BrowserEnabled, p.PanelEnabled, p.SystemPromptAdditions) + m.devURLsPreamble(context.Background()) + folderPreamble(p.WorkDir) + p.ExtraPreamble
 
 	mcpConfigs := m.buildMCPConfigs(p.SessionID, p.MCPConfigs)
 

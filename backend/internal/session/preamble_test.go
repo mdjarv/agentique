@@ -1,6 +1,8 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -451,5 +453,26 @@ func TestBuildWorkerPrompt_EmptyRole(t *testing.T) {
 	got := buildWorkerPrompt("team", "", "lead", nil, "Do stuff.")
 	if !strings.Contains(got, "worker") {
 		t.Error("empty role should default to 'worker'")
+	}
+}
+
+// A session in a plain folder is told so, after the blocks that assume git;
+// a session at a repository root hears nothing extra.
+func TestFolderPreamble(t *testing.T) {
+	plain := t.TempDir()
+	got := folderPreamble(plain)
+	if !strings.Contains(got, plain) || !strings.Contains(got, "not a git repository") {
+		t.Errorf("folderPreamble(plain) = %q, want it to name the folder as not a repository", got)
+	}
+
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := folderPreamble(repo); got != "" {
+		t.Errorf("folderPreamble(repo) = %q, want empty", got)
+	}
+	if got := folderPreamble(""); got != "" {
+		t.Errorf("folderPreamble(\"\") = %q, want empty", got)
 	}
 }

@@ -168,7 +168,7 @@ func (c *conn) handleWireList(msg ClientMessage) {
 }
 
 func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p ProjectSetFavoritePayload) (store.Project, error) {
+	handleRequest(c, msg, func(ctx context.Context, p ProjectSetFavoritePayload) (project.Wire, error) {
 		var fav int64
 		if p.Favorite {
 			fav = 1
@@ -178,15 +178,16 @@ func (c *conn) handleProjectSetFavorite(msg ClientMessage) {
 			ID:       p.ProjectID,
 		})
 		if err != nil {
-			return store.Project{}, fmt.Errorf("update favorite: %w", err)
+			return project.Wire{}, fmt.Errorf("update favorite: %w", err)
 		}
-		c.bus.Publish(p.ProjectID, "project.updated", proj)
-		return proj, nil
+		wire := project.ToWire(proj)
+		c.bus.Publish(p.ProjectID, "project.updated", wire)
+		return wire, nil
 	})
 }
 
 func (c *conn) handleProjectSetPinned(msg ClientMessage) {
-	handleRequest(c, msg, func(ctx context.Context, p ProjectSetPinnedPayload) (store.Project, error) {
+	handleRequest(c, msg, func(ctx context.Context, p ProjectSetPinnedPayload) (project.Wire, error) {
 		var pinned int64
 		if p.Pinned {
 			pinned = 1
@@ -196,9 +197,10 @@ func (c *conn) handleProjectSetPinned(msg ClientMessage) {
 			ID:     p.ProjectID,
 		})
 		if err != nil {
-			return store.Project{}, fmt.Errorf("update pinned: %w", err)
+			return project.Wire{}, fmt.Errorf("update pinned: %w", err)
 		}
-		c.bus.Publish(p.ProjectID, "project.updated", proj)
-		return proj, nil
+		wire := project.ToWire(proj)
+		c.bus.Publish(p.ProjectID, "project.updated", wire)
+		return wire, nil
 	})
 }

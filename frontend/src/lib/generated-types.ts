@@ -434,6 +434,7 @@ export interface Project {
   max_sessions: number;
   pinned: number;
   remote_url: string;
+  kind?: string;
 }
 
 export interface PromptTemplate {

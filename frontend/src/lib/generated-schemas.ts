@@ -436,6 +436,7 @@ export const ProjectSchema = z.object({
   max_sessions: z.number(),
   pinned: z.number(),
   remote_url: z.string(),
+  kind: z.string().optional(),
 });
 
 export const PromptTemplateSchema = z.object({

@@ -11,6 +11,7 @@ import (
 
 	claudecli "github.com/allbin/claudecli-go"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -946,6 +947,22 @@ func buildWorkerPrompt(channelName, workerRole, leadName string, peerNames []str
 	return header + "\n\n## Task\n\n" + rawPrompt
 }
 
+// requireWorktreeProject refuses work that isolates its sessions in worktrees —
+// swarm workers, a repo-backed discussion — in a project whose folder is not a
+// repository root. Checked once, before anything is created, so the refusal
+// reaches the caller as one sentence rather than a channel with no members
+// and a per-worker git error each.
+func (s *Service) requireWorktreeProject(ctx context.Context, projectID string) error {
+	project, err := s.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("get project: %w", err)
+	}
+	if !gitops.IsRepoRoot(project.Path) {
+		return fmt.Errorf("project %q is a plain folder, and workers need worktrees to stay out of each other's way: %w", project.Name, gitops.ErrNotRepository)
+	}
+	return nil
+}
+
 // CreateSwarm creates a channel and N worker sessions in one operation.
 // The lead session (if provided) joins as "lead". Each member gets its own
 // worktree and immediately receives the first query. Supports partial success.
@@ -955,6 +972,10 @@ func (s *Service) CreateSwarm(ctx context.Context, p CreateSwarmParams) (CreateS
 		"lead_id", p.LeadSessionID,
 		"worker_count", len(p.Members),
 	)
+
+	if err := s.requireWorktreeProject(ctx, p.ProjectID); err != nil {
+		return CreateSwarmResult{}, err
+	}
 
 	// 1. Create the channel.
 	ch, err := s.CreateChannel(ctx, p.ProjectID, p.ChannelName)
@@ -1177,6 +1198,10 @@ func (s *Service) executeSpawn(ctx context.Context, senderID, projectID string, 
 func (s *Service) extendSwarm(ctx context.Context, projectID, channelID, senderID, leadName string, members []SwarmMemberSpec) error {
 	slog.Info("swarm: extending existing channel",
 		"channel_id", channelID, "lead_id", senderID, "worker_count", len(members))
+
+	if err := s.requireWorktreeProject(ctx, projectID); err != nil {
+		return err
+	}
 
 	ch, err := s.queries.GetChannel(ctx, channelID)
 	if err != nil {

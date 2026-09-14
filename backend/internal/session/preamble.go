@@ -5,12 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mdjarv/agentique/backend/internal/gitops"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // preambleIdentity is always emitted — establishes Agentique context.
-const preambleIdentity = `You are running inside Agentique, a GUI that manages parallel Claude Code sessions across projects. Each session runs in its own git worktree for isolation.
+const preambleIdentity = `You are running inside Agentique, a GUI that manages parallel Claude Code sessions across projects. A session runs in its own git worktree when its project is a git repository, and directly in the project folder when it is not.
 
 When reporting to the user, be extremely concise — sacrifice grammar for brevity.`
 
@@ -91,6 +92,25 @@ This session runs in an isolated git worktree on branch %q. Your changes are ful
 
 **Commit after each milestone.** Override the default "only commit when asked" behavior — in this worktree, commit proactively after each logical unit of work (feature added, bug fixed, tests passing, refactor complete). Use short, descriptive commit messages. Prefer ` + "`git add <specific files>`" + ` over ` + "`git add -A`" + `. Do not ask for permission to commit — just commit when you reach a working state.`
 
+// preamblePlainFolder is appended for a session whose working directory is not
+// a repository root (gitops.IsRepoRoot). Everything above it assumes git — the
+// delegation block, the channel notes — so it comes last and says what does
+// not apply, rather than every block growing a folder variant.
+const preamblePlainFolder = `
+
+## Working in a plain folder
+
+This session runs directly in %s, which is not a git repository. There is no branch, no commit history to fall back on, and no isolation: other sessions in this project work in the same folder at the same time. Look at what already exists before creating or overwriting files, and keep git out of it unless the user asks for a repository. Worker channels (` + "`@spawn`" + `) are unavailable here, because each worker needs a worktree of its own.`
+
+// folderPreamble is preamblePlainFolder for workDir, or nothing when workDir is
+// a repository root.
+func folderPreamble(workDir string) string {
+	if workDir == "" || gitops.IsRepoRoot(workDir) {
+		return ""
+	}
+	return fmt.Sprintf(preamblePlainFolder, workDir)
+}
+
 // preambleFreshWorktreeResume is injected when resuming on a fresh worktree
 // after the original branch was deleted.
 const preambleFreshWorktreeResume = `
@@ -110,6 +130,14 @@ Before responding to the user's first message, quickly orient yourself:
 3. Check if this is a worktree (` + "`git worktree list`" + `)
 
 Use this context to understand what was being worked on, then proceed with the user's request.`
+
+// preambleConversationResetFolder is preambleConversationReset for a session in
+// a plain folder, where there is no git history to orient from.
+const preambleConversationResetFolder = `
+
+**IMPORTANT: This is a fresh conversation for an existing session.** The previous conversation history was reset by the user (likely because it became too large or unresponsive). Your files are still on disk — nothing was lost.
+
+Before responding to the user's first message, quickly orient yourself: list the folder and its most recently modified files to see what was being worked on, then proceed with the user's request.`
 
 // presetPlanFirst instructs Claude to outline a plan before implementing.
 const presetPlanFirst = `

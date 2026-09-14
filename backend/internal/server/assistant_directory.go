@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/project"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
 	"github.com/mdjarv/agentique/backend/internal/store"
@@ -246,12 +247,18 @@ func (d *assistantDirectory) CreateSession(ctx context.Context, projectID, model
 		return assistant.SessionRow{}, err
 	}
 
+	proj, err := d.queries.GetProject(ctx, projectID)
+	if err != nil {
+		return assistant.SessionRow{}, fmt.Errorf("get project %q: %w", projectID, err)
+	}
+
 	result, err := d.svc.CreateSession(ctx, session.CreateSessionParams{
 		ProjectID: projectID,
 		Model:     slug,
 		// The composer's default, so a session started by voice is the same
-		// thing as one started on screen.
-		Worktree:        true,
+		// thing as one started on screen: a worktree where the project is a
+		// repository, the folder itself where it is not.
+		Worktree:        project.KindOf(proj.Path) == project.KindGit,
 		AutoApproveMode: "fullAuto",
 		// Where the work came from, carried INTO creation rather than stamped
 		// after it: the row is pushed to every open client as part of being
