@@ -939,6 +939,14 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 	s.queryMu.Lock()
 	defer s.queryMu.Unlock()
 
+	// A turn the runtime still reports running is refused below whatever the
+	// wait does, and it will not drain inside the wait either — so refuse it
+	// now rather than holding queryMu for the full timeout first, which made
+	// every busy refusal take five seconds and stalled turn starts behind it.
+	if err := s.refuseRunningRuntime(); err != nil {
+		return 0, nil, err
+	}
+
 	// The runtime flips Idle and fires the state hook BEFORE the pipeline
 	// processes the TurnCompletedEvent (agentkit finishTurn broadcasts the
 	// StateChange from inside the completion's dispatch). Starting a turn in
@@ -991,6 +999,21 @@ func (s *Session) queryInternal(_ context.Context, prompt string, attachments []
 		return 0, nil, queryErr
 	}
 	return turnIndex, outcome, nil
+}
+
+// refuseRunningRuntime returns ErrBusy while the runtime has a turn running.
+// It reads only the runtime's own state, never s.state: s.state lags, and in
+// the window WaitTurnClosed exists for it can still say running after the
+// runtime has gone idle. validateAndPrepareQuery repeats the check after the
+// wait, under the same queryMu.
+func (s *Session) refuseRunningRuntime() error {
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt != nil && rt.State() == runtime.StateRunning {
+		return fmt.Errorf("session %s: cannot Query in state %s: %w", s.ID, StateRunning, ErrBusy)
+	}
+	return nil
 }
 
 // validateAndPrepareQuery checks the runtime is connected and preserves prior

@@ -176,9 +176,12 @@ func (s *LifecycleSuite) TestConcurrentQueryRejected() {
 	s.Require().NoError(sess.Query(context.Background(), "first", nil))
 	s.Equal(StateRunning, sess.State())
 
-	// Second query while running should fail.
+	// Second query while running should fail, and at once: a running turn is
+	// not the drain window WaitTurnClosed waits out.
+	start := time.Now()
 	err := sess.Query(context.Background(), "second", nil)
-	s.Error(err, "concurrent query should be rejected")
+	s.ErrorIs(err, ErrBusy, "concurrent query should be rejected")
+	s.Less(time.Since(start), 2*time.Second, "a busy refusal must not sit out the turn-drain timeout")
 }
 
 func (s *LifecycleSuite) TestManagerStop() {
