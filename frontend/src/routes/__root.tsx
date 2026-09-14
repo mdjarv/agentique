@@ -89,10 +89,15 @@ function AuthenticatedLayout() {
   return (
     <ErrorBoundary>
       <TooltipProvider>
-        <div className="flex h-dvh">
+        {/* index.html asks for viewport-fit=cover and a translucent status
+            bar, so an installed PWA draws under the clock, the Dynamic Island
+            and the landscape notch. The shell gives those insets back once,
+            here, so no page has to; the bottom inset stays with the surfaces
+            that sit on it (the composer), which paint into it on purpose. */}
+        <div className="flex h-dvh pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
           {isMobile ? (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-              <SheetContent side="left" className="w-[85vw] p-0" showCloseButton={false}>
+              <SheetContent side="left" className="w-[85vw]" showCloseButton={false}>
                 <SheetTitle className="sr-only">Navigation</SheetTitle>
                 <SheetDescription className="sr-only">
                   Project and session navigation
@@ -117,6 +122,7 @@ function AuthenticatedLayout() {
           <Toaster
             theme={resolvedTheme}
             position={isMobile ? "top-center" : "bottom-right"}
+            mobileOffset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
             swipeDirections={isMobile ? ["top", "left", "right"] : ["right", "bottom"]}
             toastOptions={{
               style: {

@@ -857,7 +857,7 @@ export function ChatPanel({
             fragmented in the first place. */}
         {isMobile && (
           <Sheet open={dockOpen && !!dockElement} onOpenChange={(open) => !open && closeDock()}>
-            <SheetContent side="right" className="w-[92vw] p-0" showCloseButton={false}>
+            <SheetContent side="right" className="w-[92vw]" showCloseButton={false}>
               <SheetTitle className="sr-only">Session dock</SheetTitle>
               <SheetDescription className="sr-only">
                 Todos, agents, changes and loops for this session
