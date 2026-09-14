@@ -31,7 +31,7 @@ import (
 
 // inlineImageTypes is the set of media types this endpoint will serve
 // inline. It mirrors the raster half of the session-files allowlist
-// (files_content_type.go) for the same reason: these bytes are agent-written
+// (httpsecurity/untrusted_file.go) for the same reason: these bytes are agent-written
 // and served from the app's own origin, so only types that cannot execute
 // are rendered; anything else is a download.
 var inlineImageTypes = map[string]bool{

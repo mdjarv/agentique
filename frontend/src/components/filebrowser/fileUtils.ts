@@ -74,6 +74,10 @@ export function isImageFile(name: string): boolean {
   return IMAGE_EXTS.has(ext(name));
 }
 
+export function isSvgFile(name: string): boolean {
+  return ext(name) === ".svg";
+}
+
 export function isMarkdownFile(name: string): boolean {
   return MARKDOWN_EXTS.has(ext(name));
 }

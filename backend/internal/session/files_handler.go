@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
+	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/paths"
 )
 
@@ -83,17 +84,8 @@ func (h *FilesHandler) HandleServe(w http.ResponseWriter, r *http.Request) {
 
 	// This content is agent-written and this origin is the application's own,
 	// so decide the type here instead of letting the extension (or the
-	// sniffer) decide it. See files_content_type.go.
-	contentType, disposition := sessionFileDisposition(resolvedPath)
-	w.Header().Set("Content-Type", contentType)
-	if disposition != "" {
-		w.Header().Set("Content-Disposition", disposition)
-	}
-	// nosniff makes the declared type binding; the sandbox CSP is the backstop
-	// if it ever is not — a sandboxed document has an opaque origin and no
-	// script, so it cannot reach the API even if a browser renders it.
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	// sniffer) decide it. See httpsecurity/untrusted_file.go.
+	httpsecurity.SetUntrustedFileHeaders(w, resolvedPath)
 
 	// ServeFile keeps a Content-Type we already set, and adds range/caching.
 	http.ServeFile(w, r, resolvedPath)

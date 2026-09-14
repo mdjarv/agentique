@@ -3,8 +3,6 @@ package filebrowser
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -123,7 +122,8 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleContent serves a file's raw content within a project's root.
+// HandleContent serves a file's raw content within a project's root. Only
+// provably inert types render inline; see httpsecurity.SetUntrustedFileHeaders.
 // GET /api/projects/{id}/files/content?path=relative/path
 func (h *Handler) HandleContent(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
@@ -159,9 +159,9 @@ func (h *Handler) HandleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ct := contentType(absPath)
+	contentType, _ := httpsecurity.UntrustedFileDisposition(absPath)
 	limit := maxTextBytes
-	if isImageContentType(ct) {
+	if isImageContentType(contentType) {
 		limit = maxImageBytes
 	}
 
@@ -177,25 +177,12 @@ func (h *Handler) HandleContent(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	w.Header().Set("Content-Type", ct)
+	// A project directory is written by agents, and this route answers on the
+	// app's own origin, so the type comes from the allowlist and never from
+	// the extension table or the sniffer. The file browser fetches the bytes
+	// itself, so a download disposition costs it nothing.
+	httpsecurity.SetUntrustedFileHeaders(w, absPath)
 	http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
-}
-
-func contentType(path string) string {
-	ext := filepath.Ext(path)
-	if ct := mime.TypeByExtension(ext); ct != "" {
-		return ct
-	}
-	// Fallback: read first 512 bytes to sniff.
-	f, err := os.Open(path)
-	if err != nil {
-		return "application/octet-stream"
-	}
-	defer f.Close()
-
-	buf := make([]byte, 512)
-	n, _ := io.ReadFull(f, buf)
-	return http.DetectContentType(buf[:n])
 }
 
 func isImageContentType(ct string) bool {

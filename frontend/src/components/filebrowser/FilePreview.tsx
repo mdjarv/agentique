@@ -14,6 +14,7 @@ import {
   isImageFile,
   isMarkdownFile,
   isPreviewable,
+  isSvgFile,
 } from "./fileUtils";
 
 interface FilePreviewProps {
@@ -44,6 +45,12 @@ export function FilePreview({ projectId, filePath, onClose, hideHeader }: FilePr
   // Images load as blob object URLs: an <img src> cannot carry the bearer
   // header remote machines require, and the blob path works identically for
   // the primary (cookie) machine.
+  //
+  // SVG is the exception. The server sends it as an octet-stream download
+  // (it is active content), which an <img> will not decode, and a blob URL
+  // typed image/svg+xml would be a same-origin document that runs its script
+  // if opened in a new tab. A data: URL renders in <img> the same and has an
+  // opaque origin anywhere it is navigated to.
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!isImage) return;
@@ -52,8 +59,14 @@ export function FilePreview({ projectId, filePath, onClose, hideHeader }: FilePr
     setImageUrl(null);
     setError("");
     getFileBlob(projectId, filePath)
-      .then((blob) => {
+      .then(async (blob) => {
         if (cancelled) return;
+        if (isSvgFile(name)) {
+          const markup = await blob.text();
+          if (!cancelled)
+            setImageUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`);
+          return;
+        }
         objectUrl = URL.createObjectURL(blob);
         setImageUrl(objectUrl);
       })
@@ -64,7 +77,7 @@ export function FilePreview({ projectId, filePath, onClose, hideHeader }: FilePr
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [projectId, filePath, isImage]);
+  }, [projectId, filePath, isImage, name]);
 
   useEffect(() => {
     if (isImage || !canPreview) return;

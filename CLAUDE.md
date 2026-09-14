@@ -100,11 +100,13 @@ parameter for what it is (a UUID, a timestamp) *before* the join, and never by
 comparing the joined result against a root derived from the same untrusted value.
 Record ids are also glob patterns in `filestore`, so `*` and `?` are rejected too.
 
-**Agent-written bytes are never served as active content.** Session files come
-from agents and are served from the app's own origin, where script can drive the
-whole authenticated API. `internal/session/files_content_type.go` allowlists
-provably inert types; everything else is an octet-stream attachment. Adding
-`.html`, `.svg`, or any sniffable type to that list is a stored-XSS hole.
+**Agent-written bytes are never served as active content.** Session files and
+project files (the file browser's content route) come from agents and are served
+from the app's own origin, where script can drive the whole authenticated API.
+Both go through `httpsecurity.SetUntrustedFileHeaders`, which allowlists provably
+inert types by extension, never by sniffing, and sends everything else as an
+octet-stream attachment under a sandbox CSP. Adding `.html`, `.svg`, or any
+sniffable type to that list is a stored-XSS hole.
 Response headers (`nosniff`, `frame-ancestors`, `Referrer-Policy`, the SPA CSP)
 live in one middleware so new routes inherit them, and `script-src` allows
 index.html's bootstrap by **hash computed from the embedded bundle**, never

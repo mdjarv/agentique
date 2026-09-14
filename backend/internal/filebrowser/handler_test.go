@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mdjarv/agentique/backend/internal/filebrowser"
@@ -203,4 +204,72 @@ func TestHandleContent_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
+}
+
+// A project directory is agent-written, so an .html or .svg in it (or a file
+// whose bytes merely look like HTML) must never come back as a document on the
+// app's own origin.
+func TestHandleContent_ActiveTypesServedInert(t *testing.T) {
+	h, pid, root := setup(t)
+
+	files := map[string]string{
+		"evil.html": `<script>fetch("/api/projects")</script>`,
+		"evil.svg":  `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
+		"noext":     `<html><script>alert(1)</script>`,
+	}
+	for name, body := range files {
+		os.WriteFile(filepath.Join(root, name), []byte(body), 0o644)
+	}
+
+	for name, body := range files {
+		w := serveContent(t, h, pid, name)
+		if w.Code != 200 {
+			t.Fatalf("%s: status %d: %s", name, w.Code, w.Body.String())
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "application/octet-stream" {
+			t.Errorf("%s: Content-Type = %q, want application/octet-stream", name, ct)
+		}
+		if d := w.Header().Get("Content-Disposition"); !strings.HasPrefix(d, "attachment") {
+			t.Errorf("%s: Content-Disposition = %q, want an attachment", name, d)
+		}
+		// The file browser fetches the bytes itself; they must still arrive.
+		if w.Body.String() != body {
+			t.Errorf("%s: body = %q, want %q", name, w.Body.String(), body)
+		}
+	}
+}
+
+func TestHandleContent_SecurityHeaders(t *testing.T) {
+	h, pid, root := setup(t)
+	os.WriteFile(filepath.Join(root, "shot.png"), []byte("PNG"), 0o644)
+	os.WriteFile(filepath.Join(root, "evil.html"), []byte("<script></script>"), 0o644)
+
+	for _, name := range []string{"shot.png", "evil.html"} {
+		w := serveContent(t, h, pid, name)
+		for header, want := range map[string]string{
+			"X-Content-Type-Options":  "nosniff",
+			"Content-Security-Policy": "default-src 'none'; sandbox",
+		} {
+			if got := w.Header().Get(header); got != want {
+				t.Errorf("%s: %s = %q, want %q", name, header, got, want)
+			}
+		}
+	}
+
+	png := serveContent(t, h, pid, "shot.png")
+	if ct := png.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("shot.png: Content-Type = %q, want image/png", ct)
+	}
+	if d := png.Header().Get("Content-Disposition"); d != "" {
+		t.Errorf("shot.png must render inline, got disposition %q", d)
+	}
+}
+
+func serveContent(t *testing.T, h *filebrowser.Handler, pid, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/projects/"+pid+"/files/content?path="+path, nil)
+	req.SetPathValue("id", pid)
+	w := httptest.NewRecorder()
+	h.HandleContent(w, req)
+	return w
 }
