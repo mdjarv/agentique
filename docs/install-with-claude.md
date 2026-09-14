@@ -15,6 +15,12 @@ Work in four steps: **survey**, **ask**, **act**, **verify**. The survey is
 read-only. Nothing is installed, written or restarted until the person has
 picked what they want from what you found.
 
+Expect a **half-finished install**. People often start by hand — the install
+script, `agentique setup`, a foreground `agentique serve`, `tailscale up` — and
+abort partway before asking you. Treat every step below as **reconcile**, not
+install: find what already exists, keep what is valid, repair what is
+inconsistent, and add only what is missing.
+
 ## Rules that hold in every step
 
 - **Root is consent-gated.** Userspace installs you can run. Anything needing
@@ -28,8 +34,10 @@ picked what they want from what you found.
   Claude Code they can run a command inside this conversation by prefixing it with
   `!`.
 - **A restart ends in-flight turns.** Restarting or upgrading a running server
-  kills every agent turn in progress on it; sessions themselves survive. Check
-  `agentique sessions` for running ones and ask before any restart. If
+  kills every agent turn in progress on it; sessions themselves survive. Ask
+  before any restart. With authentication on, the CLI cannot see sessions
+  (`agentique sessions` answers 401), so ask the person whether anything is
+  running in the UI rather than concluding nothing is. If
   `AGENTIQUE_OWNER_DATADIR` is set in your environment, you are yourself a session
   of that server, and restarting it ends this conversation's turn: finish every
   other step first, say so, and make the restart the last command.
@@ -39,12 +47,26 @@ picked what they want from what you found.
 - **One server per data directory.** Never start `agentique serve` in the
   foreground while a service is running. They share one database and the second
   one reaps the first one's processes.
+- **Survey through the running server, not the database.** `agentique auth
+  status`, `rekey` and `reset` open the database directly and run migrations, so
+  a newly installed binary pointed at an older server's data upgrades its schema
+  underneath it. Read state over HTTP (`/api/health`, `/api/auth/status`) and
+  reserve the database commands
+  for a stopped server whose binary is the one that will run next.
+- **The data directory is kept.** It holds the database — a registered passkey,
+  projects, possibly sessions from a run you did not see. Never delete it, the
+  database or `machine-id`/`machine-identity-key.pem` to get a clean slate; a
+  leftover is repaired in place. If the person explicitly wants to start over,
+  move the directory aside with a timestamp rather than removing it.
 
 ## 1. Survey
 
 Collect the current state. Run each probe and tolerate failures — a missing tool
 is a finding, not an error. The step is done when every row of the table below
 holds a value or the word `unknown`.
+
+The probes assume the default port 9201. If a config exists, read its `addr`
+first and use that port instead; the service may be answering somewhere else.
 
 Linux and macOS:
 
@@ -53,7 +75,6 @@ uname -sm; echo "shell=$SHELL"; env | grep -q AGENTIQUE_OWNER_DATADIR && echo "i
 command -v agentique && agentique --version
 agentique doctor            # dependency table; last line says whether required checks passed
 agentique service status
-agentique sessions 2>/dev/null | head -20
 cat ~/.config/agentique/config.toml 2>/dev/null \
   || cat ~/Library/Application\ Support/agentique/config.toml 2>/dev/null   # mask secrets before showing
 curl -fsS  http://localhost:9201/api/health; echo
@@ -61,12 +82,27 @@ curl -fsSk https://localhost:9201/api/health; echo
 command -v tailscale && tailscale status --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["BackendState"], d["Self"]["DNSName"].rstrip("."), "certs:", d.get("CertDomains"))'
 command -v tailscale && tailscale serve status
 command -v node npx gh codex just
+
+# Leftovers from an aborted attempt
+which -a agentique; ls -la ~/.local/bin/agentique* /usr/local/bin/agentique* 2>/dev/null
+ls -la ~/.local/share/agentique ~/Library/Application\ Support/agentique 2>/dev/null
+pgrep -af 'agentique (serve|tray)'                       # a serve whose PID is not the service's runs outside it
+cat ~/.local/share/agentique/agentique.pid 2>/dev/null   # compare with pgrep: a pid that is gone is stale
+curl -fsS http://localhost:9201/api/auth/status; echo  # authEnabled false = auth off; credentialCount 0 = nobody registered
+systemctl --user cat agentique 2>/dev/null | grep -E '^(ExecStart|Environment=PATH)'
+systemctl --user is-failed agentique; journalctl --user -u agentique -n 30 --no-pager
+loginctl show-user "$USER" -p Linger
+launchctl list 2>/dev/null | grep -i agentique           # macOS
+(ss -ltnp 2>/dev/null || lsof -nP -iTCP -sTCP:LISTEN) | grep -E ':(9201|443)\b'
 ```
 
 Windows (PowerShell): `Get-Command agentique,claude,git,gh,node,codex,tailscale`,
 `agentique doctor`, `agentique service status`, the config at
 `$env:LOCALAPPDATA\agentique\config.toml`, and the same health and `tailscale`
-calls. Only amd64 binaries are published.
+calls; for leftovers, `schtasks /Query /TN agentique`,
+`Get-Process agentique`, and whether
+`$env:LOCALAPPDATA\Programs\agentique` is on the user `PATH` yet (the installer
+adds it, but only new shells see it). Only amd64 binaries are published.
 
 If `agentique` is absent, `doctor` is too: check `claude --version`,
 `claude auth status`, `git --version`, `gh auth status` directly.
@@ -75,25 +111,58 @@ If `agentique` is absent, `doctor` is too: check `claude --version`,
 |---|---|
 | Platform | OS and arch; whether a published binary exists (linux amd64/arm64, darwin arm64, windows amd64) |
 | agentique | not installed, or version and install path; latest release from `curl -fsSL https://api.github.com/repos/mdjarv/agentique/releases/latest` |
-| Server | running as a service, running in the foreground, or stopped; health response; busy sessions |
+| Server | running as a service, running in the foreground, or stopped; health response |
 | Config | path, or none; listen address, TLS, `rp-id`/`rp-origin`, `machine-label` |
 | Reachability | localhost only, LAN, tailnet (by `tailscale serve` or its own TLS), or a reverse proxy |
-| Registered | whether a passkey user exists — `agentique auth status` once a server runs |
+| Registered | `credentialCount` from `/api/auth/status` on a running server |
 | claude | installed version (>= 2.0.0 required) and authenticated account |
 | git | version |
 | Tailscale | not installed, logged out, running; MagicDNS name; HTTPS certificates enabled (`CertDomains` non-empty) |
 | Extras | `gh` and its auth, `codex` and its auth, `node`/`npx`, shell completions |
+| Leftovers | every row of the table below that matches, or none |
 | Constraints | running inside an agentique session; root available; headless or desktop |
+
+### Leftovers
+
+A leftover is state that exists but does not add up to a working setup. Match the
+survey against this table; each row names what it looks like and how it is
+repaired, and repairs go through the ask step like everything else. When
+something matches no row, describe it plainly and ask whether it was deliberate
+before touching it.
+
+| Looks like | Repair |
+|---|---|
+| Binary present but `command -v agentique` fails | Not on `PATH` yet. Add `~/.local/bin` (or the `INSTALL_DIR` used) to the shell config, and call the binary by absolute path meanwhile. |
+| Two or more binaries on `PATH` (`which -a`, `/usr/local/bin` and `~/.local/bin`) | Pick one with the person, normally the newest in `~/.local/bin`. The service unit's `ExecStart` must name that one; reinstall the service after removing the other. |
+| `agentique --version` newer than the `version` in `/api/health` | The installer ran but the running server was never restarted onto it. Restart under the restart rule. |
+| Config written, no service | Usually `agentique setup` aborted after saving. Review the config against the goal, then install the service. |
+| `disable-auth = true` in config | What setup writes for "localhost only". Fine for localhost; it must become `false` before any tailnet or proxy access, which it refuses by design. |
+| `tls-cert` under the data dir's `certs/` | Setup's self-signed `localhost` certificate. Browsers will not run passkeys on it under any other name; replace it with Tailscale when remote access is wanted. |
+| `rp-id`/`rp-origin` not matching the address the person uses | Passkeys fail with what looks like a broken authenticator. Correct both, then restart. Credentials registered under the old `rp-id` stop working: `agentique auth rekey` (server stopped) prints recovery codes. |
+| A foreground `agentique serve` running | It holds the data directory. Ask the person to stop it (Ctrl-C in its terminal) before installing or restarting a service; kill it yourself only after a yes. |
+| Stale `agentique.pid` or `agentique.lock` | Harmless: the lock is released by the OS when a process dies, and the pid file is ignored when its process is gone. Leave both. |
+| Something else listening on 9201 | Not agentique if no agentique process owns it. Choose another port in `addr` rather than stopping the other program. |
+| Service installed but failed or restarting | Read the journal lines. Common causes: `claude` missing from the unit's `Environment=PATH` (reinstall the service from a shell where `claude` is on `PATH`), a config error, or the binary path in `ExecStart` no longer existing. |
+| `Linger=no` on a headless machine | The service stops at logout. `loginctl enable-linger "$USER"`, which `service install` normally runs. |
+| Server answering, `credentialCount` 0 | Unfinished first run. On a network listener this is urgent: the first browser to register becomes admin. Register now, or bind to `localhost` until the person can. |
+| A user registered, passkey lost | `agentique auth rekey` with the server stopped; register again with the printed code. |
+| `agentique.prev` beside the binary | The copy an in-app upgrade keeps for `agentique rollback`. Deliberate; leave it. |
+| The home directory shows up as a project in the UI | The first start ran without `initial-project`. Harmless; the person can remove it in the UI and add the repo they meant. |
+| Tailscale `BackendState` is `NeedsLogin` or `Stopped` | `tailscale up` was aborted or the node logged out. Rerun it; the person opens the URL. |
+| `tailscale serve status` proxies a different port, or a stale entry | Point it at the port in `addr`. Remove only the entry that belongs to agentique; serve can carry other services. |
+| `tailscale cert` files present, expired or for another name | Regenerate for the current MagicDNS name, or move to `tailscale serve` and drop `tls-cert`/`tls-key` from the config. |
 
 ## 2. Ask
 
 Show the table, then give a short read of it: what is missing, what is broken,
-and what looks unfinished (a network listener with no user registered is urgent —
-the first browser to register becomes the admin). Then ask what the person wants
+which leftovers you found and what you think happened ("the installer finished,
+setup was abandoned before the service step"). Lead with anything urgent, such
+as a network listener nobody has registered on. Then ask what the person wants
 help with, as a multi-select question (`AskUserQuestion` in Claude Code). Offer
 only the options that apply to what you found, and mark the ones you recommend:
 
 - **Install or upgrade agentique**
+- **Repair leftovers** — each matched row, named, so the person can accept some and not others
 - **Fix required dependencies** — whatever `doctor` failed
 - **Run it as a background service**, localhost only
 - **Reach it from other devices over Tailscale**
@@ -170,7 +239,7 @@ sessions give their memory back.
 
 Check: `curl -fsS http://localhost:9201/api/health` returns `"status":"ok"`.
 Then the person opens http://localhost:9201 and registers a passkey right away;
-confirm with `agentique auth status`.
+confirm `credentialCount` is at least 1 on `/api/auth/status`.
 
 ### Tailscale
 
@@ -245,7 +314,7 @@ and, if nobody has registered yet, registers a passkey immediately.
 One agentique UI can drive several machines. The machine whose page the person
 opens is the **primary**; ask which one that is. Both machines must be reachable
 over HTTPS from the device running the browser, and the machine being added needs
-a registered user first (`agentique auth status`).
+a registered user first (`credentialCount` on `/api/auth/status`).
 
 On the machine being added:
 
@@ -282,7 +351,8 @@ The install is done when all of these hold for what was chosen:
 - `agentique doctor` exits 0.
 - `agentique service status` reports running (if a service was chosen).
 - The health endpoint answers ok on every address the person means to use.
-- `agentique auth status` shows a registered user on every network-reachable
+- Re-running the leftover probes matches no row except those the person chose to keep.
+- `/api/auth/status` reports `credentialCount` of at least 1 on every network-reachable
   server.
 - Each pairing shows up in `agentique auth sessions`.
 
