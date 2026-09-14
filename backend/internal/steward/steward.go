@@ -149,10 +149,13 @@ type Backup struct {
 }
 
 // The thresholds. A disk floor, not a percentage: a small disk at 88% is its
-// normal state (usage.md), where 2 GB free is what a session's worktree and a
-// node_modules need to land. The others are "longer than a person means".
+// normal state (usage.md). The floor is the frontend's LOW_DISK_BYTES
+// (lib/storage/fleet.ts), the one predicate the disk meter and its notch read —
+// under 3 GiB the next dependency install in a worktree fails — because a
+// finding that opens at a different level from the amber meter reports two
+// things about one disk. The others are "longer than a person means".
 const (
-	DiskFloorBytes    = 2 << 30
+	DiskFloorBytes    = 3 << 30
 	BlockedAfter      = 30 * time.Minute
 	BackupMissedAfter = 3
 )
