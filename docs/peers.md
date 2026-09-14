@@ -19,8 +19,8 @@ record for the verb table, tiers, budgets and the journal.
 The operator's sidebar shows every machine's sessions, because the browser dials
 each machine itself. The assistant asks one server, and until 0f7e58c7 that server
 knew only its own database: a session running on zbook did not exist for
-`list_sessions` or `find_session`. Listing is now fixed (`peer_sessions.go`), but
-everything that acts still stops at the database, by construction:
+`list_sessions` or `find_session`. Listing was fixed first (`peer_sessions.go`),
+and then everything that acts still stopped at the database, by construction:
 
 | Where | What assumes one machine |
 |---|---|
