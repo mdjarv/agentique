@@ -1,3 +1,4 @@
+import { isFolderProjectId } from "~/lib/project-kind";
 import { createSession } from "~/lib/session/actions";
 import type { WsClient } from "~/lib/ws-client";
 import { define, MEDIUM } from "~/lib/ws-rpc";
@@ -144,7 +145,7 @@ export const listPersonaInteractions = define<
 
 export function launchAgentProfile(ws: WsClient, profile: AgentProfileInfo): Promise<string> {
   const config = profile.config ?? {};
-  return createSession(ws, profile.projectId, profile.name, true, {
+  return createSession(ws, profile.projectId, profile.name, !isFolderProjectId(profile.projectId), {
     model: config.model,
     autoApproveMode: config.autoApproveMode,
     effort: config.effort,

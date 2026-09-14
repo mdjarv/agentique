@@ -476,7 +476,10 @@ export function ProfileForm({ profile, onSaved, onCancel }: ProfileFormProps) {
                 </option>
               ))}
             </select>
-            <Helper>Sessions launched from this profile start in this project's worktree.</Helper>
+            <Helper>
+              Sessions launched from this profile start in this project — in a worktree of their own
+              when it is a git repository, in its folder when it is not.
+            </Helper>
           </Field>
 
           {projectId && (

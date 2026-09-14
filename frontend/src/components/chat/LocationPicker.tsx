@@ -27,7 +27,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { machineHue } from "~/lib/machine-colors";
 import { getMachineIcon } from "~/lib/machines/icons";
 import { platformGlyph, resolveMachineGlyph } from "~/lib/machines/platform";
-import { WORKTREE_LABEL } from "~/lib/session/location";
+import { WORKTREE_GLYPH, WORKTREE_LABEL, worktreeZone } from "~/lib/session/location";
 import type { Project } from "~/lib/types";
 import { cn } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
@@ -43,6 +43,12 @@ interface LocationPickerProps {
   onWorktreeChange: (value: boolean) => void;
   /** The project checkout's branch — what the main worktree is named by. */
   projectBranch?: string;
+  /**
+   * The chosen checkout is a plain folder, not a repository. There is nothing
+   * to toggle, so the zone states the folder instead of offering a worktree
+   * the server would refuse.
+   */
+  folder?: boolean;
   disabled?: boolean;
 }
 
@@ -56,6 +62,7 @@ export function LocationPicker({
   worktree,
   onWorktreeChange,
   projectBranch,
+  folder,
   disabled,
 }: LocationPickerProps) {
   const machines = useMachineStore((s) => s.machines);
@@ -129,29 +136,48 @@ export function LocationPicker({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Worktree vs main is one bit with no third option coming, so the zone
+      {folder ? (
+        <FolderZone />
+      ) : (
+        /* Worktree vs main is one bit with no third option coming, so the zone
           is a toggle rather than a menu — a dropdown was two clicks and a read
           for a choice the glyph and tint already state. The title carries what
-          each side means and what a click does. */}
-      <button
-        type="button"
-        disabled={disabled}
-        aria-pressed={!worktree}
-        onClick={() => onWorktreeChange(!worktree)}
-        className={cn(
-          ZONE,
-          "border-l border-border/50 cursor-pointer hover:brightness-110 disabled:cursor-default",
-          worktree ? "text-muted-foreground" : "bg-warning/15 text-warning font-medium",
-        )}
-        title={
-          worktree
-            ? "A new linked worktree — its own branch and directory, edits are isolated. Click to work in the main worktree instead."
-            : `The main worktree${projectBranch ? ` (${projectBranch})` : ""} — edits land in the checkout everything else is linked to. Click to work in a new linked worktree instead.`
-        }
-      >
-        <WorktreeGlyph className="size-3 shrink-0" />
-        <span className="truncate max-w-[16ch]">{worktreeLabel}</span>
-      </button>
+          each side means and what a click does. */
+        <button
+          type="button"
+          disabled={disabled}
+          aria-pressed={!worktree}
+          onClick={() => onWorktreeChange(!worktree)}
+          className={cn(
+            ZONE,
+            "border-l border-border/50 cursor-pointer hover:brightness-110 disabled:cursor-default",
+            worktree ? "text-muted-foreground" : "bg-warning/15 text-warning font-medium",
+          )}
+          title={
+            worktree
+              ? "A new linked worktree — its own branch and directory, edits are isolated. Click to work in the main worktree instead."
+              : `The main worktree${projectBranch ? ` (${projectBranch})` : ""} — edits land in the checkout everything else is linked to. Click to work in a new linked worktree instead.`
+          }
+        >
+          <WorktreeGlyph className="size-3 shrink-0" />
+          <span className="truncate max-w-[16ch]">{worktreeLabel}</span>
+        </button>
+      )}
+    </span>
+  );
+}
+
+/** The worktree zone for a plain folder: a statement, not a control. */
+function FolderZone() {
+  const zone = worktreeZone({ folder: true });
+  const Glyph = WORKTREE_GLYPH.folder;
+  return (
+    <span
+      className={cn(ZONE, "border-l border-border/50 text-muted-foreground")}
+      title={`${zone.title}. Worktrees need the project folder to be a repository root.`}
+    >
+      <Glyph className="size-3 shrink-0" />
+      <span className="truncate max-w-[16ch]">{zone.label}</span>
     </span>
   );
 }

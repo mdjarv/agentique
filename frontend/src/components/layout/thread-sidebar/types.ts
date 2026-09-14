@@ -73,8 +73,8 @@ export interface ThreadRowVM {
   projectLabel: string;
   projectInitials: string;
   /**
-   * Which worktree the session edits — its own linked one, or the project's
-   * main one. Derived by `worktreeKind` from the same field the session
+   * Which worktree the session edits — its own linked one, the project's main
+   * one, or the plain folder of a project that is not a repository. Derived by `worktreeKind` from the same field the session
    * header's location pill reads, so one session cannot read as linked in the
    * rail and main in the pane it opens.
    */

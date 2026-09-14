@@ -21,6 +21,7 @@ import { groupProjects } from "~/lib/machines/grouping";
 import { displaySlug } from "~/lib/machines/slug";
 import { sessionModelLabel } from "~/lib/model-catalog";
 import { getProjectColor } from "~/lib/project-colors";
+import { isFolderProject } from "~/lib/project-kind";
 import { projectInitials, projectLabel } from "~/lib/project-label";
 import { worktreeKind } from "~/lib/session/location";
 import { deriveRestToken, isParked } from "~/lib/session/rest-state";
@@ -186,7 +187,7 @@ export function useThreadGroups(searchQuery: string): ThreadGroups {
         projectSlug: project.slug,
         projectLabel: repLabel,
         projectInitials: projectInitials(repLabel),
-        workspace: worktreeKind(meta.worktreeBranch),
+        workspace: worktreeKind(meta.worktreeBranch, isFolderProject(project)),
         projectColorBg: color.bg,
         projectColorFg: color.fg,
         projectIconId: rep.icon || undefined,

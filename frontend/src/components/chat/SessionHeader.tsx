@@ -34,6 +34,7 @@ import { useNow } from "~/hooks/useNow";
 import { useTheme } from "~/hooks/useTheme";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { machineHue, machineWash } from "~/lib/machine-colors";
+import { useIsFolderProject } from "~/lib/project-kind";
 import type { ScheduleInfo } from "~/lib/schedule-actions";
 import { archiveSession, setSessionPinned, unarchiveSession } from "~/lib/session/actions";
 import { sublineSubject } from "~/lib/session/subline";
@@ -114,6 +115,7 @@ export function SessionHeader({
 
   const projectSlug = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.slug);
   const projectPath = useAppStore((s) => s.projects.find((p) => p.id === meta.projectId)?.path);
+  const folder = useIsFolderProject(meta.projectId);
   const shortId = sessionShortId(meta.id);
   const sessionRef = projectSlug ? `${projectSlug}/${shortId}` : shortId;
 
@@ -257,6 +259,7 @@ export function SessionHeader({
               worktreePath={meta.worktreePath}
               projectBranch={projectGitStatus?.branch}
               projectPath={projectPath}
+              folder={folder}
             />
 
             {/* Actions zone */}
@@ -290,6 +293,7 @@ export function SessionHeader({
         open={activeDialog === "delete"}
         onOpenChange={(open) => setActiveDialog(open ? "delete" : "none")}
         sessionName={meta.name}
+        inWorktree={!!meta.worktreeBranch}
         onDelete={async () => {
           if (await actions.handleDelete()) setActiveDialog("none");
         }}
@@ -482,6 +486,7 @@ function MobileSubline({
   const machine = useProjectMachine(meta.projectId);
   const machineStatus = useMachineStatus(machine?.machineId);
   const machineFault = useMachineFault(machine?.machineId);
+  const folder = useIsFolderProject(meta.projectId);
   // Parked loop session: "Stopped" would read as dead — show the next fire
   // and which schedule owns it instead.
   const nextSchedule = useNextSchedule(meta.id);
@@ -522,6 +527,7 @@ function MobileSubline({
         branchMissing={meta.branchMissing}
         worktreePath={meta.worktreePath}
         projectBranch={projectBranch}
+        folder={folder}
         compact
       />
       {ahead > 0 && (

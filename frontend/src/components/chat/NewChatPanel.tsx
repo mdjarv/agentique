@@ -20,6 +20,7 @@ import type { BehaviorPresets, PromptTemplate } from "~/lib/generated-types";
 import { groupProjects } from "~/lib/machines/grouping";
 import { preferredMember } from "~/lib/machines/launch-targets";
 import { useNavigationGuard } from "~/lib/navigation";
+import { isFolderProject } from "~/lib/project-kind";
 import { createSession, type ModelId, type ProviderId, submitQuery } from "~/lib/session/actions";
 import { newSessionDraftKey } from "~/lib/session/new-session-draft";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
@@ -157,6 +158,10 @@ export function NewChatPanel({
     pickedProjectId ??
     (openedIsReachable ? projectId : (preferredMember(logicalRow)?.projectId ?? projectId));
   const target = members.find((m) => m.id === targetProjectId) ?? project;
+  // A plain folder has no worktree to give, whatever the setting, a template or
+  // a link asked for — the server refuses the request, so it is never sent.
+  const folder = isFolderProject(target);
+  const useWorktree = worktree && !folder;
 
   // A repo that lives ONLY on a machine that is away has no picker to grey
   // out — the panel itself has to say so, or it accepts a prompt and fails on
@@ -199,7 +204,7 @@ export function NewChatPanel({
     try {
       const behaviorPresets = projectPresets ?? DEFAULT_PRESETS;
 
-      const sessionId = await createSession(ws, target?.id ?? projectId, "", worktree, {
+      const sessionId = await createSession(ws, target?.id ?? projectId, "", useWorktree, {
         provider,
         model,
         planMode,
@@ -343,6 +348,7 @@ export function NewChatPanel({
                 worktree={worktree}
                 onWorktreeChange={setWorktree}
                 projectBranch={gitStatus?.branch}
+                folder={folder}
                 disabled={sending}
               />
               <p className="text-xs text-muted-foreground-faint pt-1">

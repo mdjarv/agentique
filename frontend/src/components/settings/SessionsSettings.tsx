@@ -1,12 +1,12 @@
 /** Settings › Sessions — where new sessions start. Device-local, in the UI store. */
 import { SettingsRow, SettingsSection } from "~/components/settings/SettingsLayout";
-import { WORKTREE_GLYPH, type WorktreeKind } from "~/lib/session/location";
+import { WORKTREE_GLYPH } from "~/lib/session/location";
 import { cn } from "~/lib/utils";
-import { useUIStore } from "~/stores/ui-store";
+import { type NewSessionWorktree, useUIStore } from "~/stores/ui-store";
 
 // Git's own words (docs: "Where a session's code lives"), never "local" — that
 // word means the machine.
-const KINDS: { id: WorktreeKind; label: string }[] = [
+const KINDS: { id: NewSessionWorktree; label: string }[] = [
   { id: "linked", label: "Linked worktree" },
   { id: "main", label: "Main worktree" },
 ];
@@ -21,9 +21,10 @@ export function SessionsSettings() {
         <SettingsRow
           label="Start in"
           description={
-            kind === "linked"
+            (kind === "linked"
               ? "Each session gets its own branch and directory, so edits are isolated."
-              : "Edits land in the project's own checkout, beside anything open in your editor."
+              : "Edits land in the project's own checkout, beside anything open in your editor.") +
+            " A project that is not a git repository always runs in its folder."
           }
           control={
             <div className="flex gap-1 rounded-lg border border-border/60 p-0.5">

@@ -15,6 +15,12 @@ describe("worktreeKind", () => {
     expect(worktreeKind(null)).toBe("main");
     expect(worktreeKind("")).toBe("main");
   });
+
+  it("a project that is not a repository runs in the folder, but a branch still wins", () => {
+    expect(worktreeKind(undefined, true)).toBe("folder");
+    expect(worktreeKind("session-3f5", true)).toBe("linked");
+    expect(worktreeKind(undefined, false)).toBe("main");
+  });
 });
 
 describe("worktreeZone", () => {
@@ -46,8 +52,15 @@ describe("worktreeZone", () => {
     expect(worktreeZone({ branchMissing: true, projectBranch: "master" }).tone).toBe("warn");
   });
 
-  it("gives every kind a glyph", () => {
-    expect(Object.keys(WORKTREE_GLYPH).sort()).toEqual(["linked", "main"]);
+  it("a folder says so quietly, never the main worktree's warning or its fallback words", () => {
+    const z = worktreeZone({ folder: true, projectBranch: "" });
+    expect(z).toMatchObject({ kind: "folder", label: "folder", tone: "quiet" });
+    expect(z.title).toContain("not a git repository");
+  });
+
+  it("gives every kind a glyph and a name", () => {
+    expect(Object.keys(WORKTREE_GLYPH).sort()).toEqual(["folder", "linked", "main"]);
+    expect(Object.keys(WORKTREE_LABEL).sort()).toEqual(["folder", "linked", "main"]);
   });
 });
 

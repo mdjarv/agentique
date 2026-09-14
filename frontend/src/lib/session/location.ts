@@ -20,19 +20,28 @@
  * when the project's branch has not arrived yet does the main case fall back to
  * words.
  *
+ * A project that is not a git repository has neither: its sessions run in the
+ * **folder** itself (`lib/project-kind.ts`). That is a third kind rather than
+ * the main worktree with no branch, because the main worktree's whole warning —
+ * "edits land in the checkout everything else is linked to" — is about linked
+ * worktrees that a folder cannot have, and the branch fallback words would
+ * otherwise never be replaced.
+ *
  * The union is closed for the reason `REST_GLYPH`'s is: every surface that
  * shows a session reads this one table, so a new situation has to choose its
  * mark rather than inherit a blank.
  */
-import { FolderOpen, GitBranch, type LucideIcon } from "lucide-react";
+import { Folder, FolderOpen, GitBranch, type LucideIcon } from "lucide-react";
 
-/** Which worktree of the project this session edits. */
-export type WorktreeKind = "linked" | "main";
+/** Which worktree of the project this session edits — or the plain folder. */
+export type WorktreeKind = "linked" | "main" | "folder";
 
 /**
  * How loudly a zone speaks. `warn` is the main worktree — edits land in the
  * checkout the operator has open in an editor — and `fault` is a branch git can
  * no longer find. Everything else is quiet, because the common case is correct.
+ * A folder is quiet too: for a folder project it is the only place a session
+ * can run, and a warning that is always on stops being read.
  */
 export type ZoneTone = "quiet" | "warn" | "fault" | "hue";
 
@@ -51,6 +60,8 @@ export interface LocationInput {
   branchMissing?: boolean;
   /** The project checkout's current branch, for the main-worktree case. */
   projectBranch?: string | null;
+  /** The project is a plain folder, not a repository (`isFolderProject`). */
+  folder?: boolean;
 }
 
 export const WORKTREE_GLYPH: Record<WorktreeKind, LucideIcon> = {
@@ -59,21 +70,28 @@ export const WORKTREE_GLYPH: Record<WorktreeKind, LucideIcon> = {
   // folder collapses into noise, and the two glyphs then differ by a detail too
   // small to see. Open-vs-branch is the distinction, so draw that.
   main: FolderOpen,
+  // Closed where main is open, and quiet where main is amber: the colour does
+  // the separating at 10px, the silhouette only has to not claim "branch".
+  folder: Folder,
 };
 
 /** What a kind is called in prose — tooltips, popovers, aria labels. */
 export const WORKTREE_LABEL: Record<WorktreeKind, string> = {
   linked: "linked worktree",
   main: "main worktree",
+  folder: "project folder",
 };
 
 /**
  * A session is in a linked worktree iff it has a branch of its own. Absent
- * means the main worktree — which is why this reads the branch rather than the
- * path: `worktreePath` is set for both.
+ * means the main worktree, or the folder when the project is not a repository —
+ * which is why this reads the branch rather than the path: `worktreePath` is
+ * set for both. A branch wins over `folder`, so a session made before its
+ * project's `.git` went away still names the branch it has.
  */
-export function worktreeKind(worktreeBranch?: string | null): WorktreeKind {
-  return worktreeBranch ? "linked" : "main";
+export function worktreeKind(worktreeBranch?: string | null, folder?: boolean): WorktreeKind {
+  if (worktreeBranch) return "linked";
+  return folder ? "folder" : "main";
 }
 
 /**
@@ -83,7 +101,17 @@ export function worktreeKind(worktreeBranch?: string | null): WorktreeKind {
  * branch is gone, so naming it would be naming something that is not there.
  */
 export function worktreeZone(input: LocationInput): WorktreeZone {
-  const kind = worktreeKind(input.worktreeBranch);
+  const kind = worktreeKind(input.worktreeBranch, input.folder);
+
+  if (kind === "folder") {
+    return {
+      kind,
+      label: "folder",
+      tone: "quiet",
+      title:
+        "A plain folder, not a git repository — sessions work directly in it, with no branch and no isolation from each other",
+    };
+  }
 
   if (kind === "linked") {
     if (input.branchMissing) {

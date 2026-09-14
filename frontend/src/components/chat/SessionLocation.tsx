@@ -55,6 +55,8 @@ export interface SessionLocationProps {
   projectBranch?: string | null;
   /** Repo path, shown in the worktree popover. */
   projectPath?: string | null;
+  /** The project is a plain folder, not a repository (`isFolderProject`). */
+  folder?: boolean;
   className?: string;
   /** Smaller type, for the mobile subline. */
   compact?: boolean;
@@ -86,6 +88,7 @@ export const SessionLocation = memo(function SessionLocation({
   worktreePath,
   projectBranch,
   projectPath,
+  folder,
   className,
   compact = false,
 }: SessionLocationProps) {
@@ -97,7 +100,7 @@ export const SessionLocation = memo(function SessionLocation({
   const allIds = useAllMachineIds();
 
   const hue = machineHue(machine?.machineId, allIds, resolvedTheme === "dark" ? "dark" : "light");
-  const zone = worktreeZone({ worktreeBranch, branchMissing, projectBranch });
+  const zone = worktreeZone({ worktreeBranch, branchMissing, projectBranch, folder });
   const WorktreeGlyph = WORKTREE_GLYPH[zone.kind];
   // A user-picked icon wins; otherwise the machine's own OS marks it. The
   // primary keeps Monitor as its floor — "this machine" is not a Server.
@@ -311,6 +314,14 @@ function MachineSection({
   );
 }
 
+/** What the popover says about where edits land, per kind. */
+const WORKTREE_SECTION_NOTE: Record<WorktreeZone["kind"], string> = {
+  linked: "Edits are isolated from the project checkout.",
+  main: "Edits land in the checkout everything else is linked to.",
+  folder:
+    "Not a git repository. Edits land directly in the folder, which every session in this project shares.",
+};
+
 function WorktreeSection({
   zone,
   worktreePath,
@@ -323,19 +334,15 @@ function WorktreeSection({
   const Glyph = WORKTREE_GLYPH[zone.kind];
   return (
     <div className="space-y-1">
-      <SectionLabel>Worktree</SectionLabel>
+      <SectionLabel>{zone.kind === "folder" ? "Folder" : "Worktree"}</SectionLabel>
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Glyph className={cn("size-3.5 shrink-0", zone.kind === "main" && "text-warning")} />
         <span className="truncate">
           {WORKTREE_LABEL[zone.kind]}
-          {zone.kind === "main" ? "" : ` · ${zone.label}`}
+          {zone.kind === "linked" ? ` · ${zone.label}` : ""}
         </span>
       </div>
-      <div className="text-[11px] text-muted-foreground">
-        {zone.kind === "main"
-          ? "Edits land in the checkout everything else is linked to."
-          : "Edits are isolated from the project checkout."}
-      </div>
+      <div className="text-[11px] text-muted-foreground">{WORKTREE_SECTION_NOTE[zone.kind]}</div>
       {worktreePath && <CopyRow value={worktreePath} />}
       {!worktreePath && projectPath && <CopyRow value={projectPath} />}
     </div>

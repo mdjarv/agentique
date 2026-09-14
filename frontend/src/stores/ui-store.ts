@@ -6,6 +6,9 @@ import { type DockView, MAX_DOCK_WIDTH, MIN_DOCK_WIDTH } from "~/lib/session/doc
 import type { WorktreeKind } from "~/lib/session/location";
 import type { AutoApproveMode } from "~/stores/chat-store";
 
+/** A setting for where new sessions start. `folder` is a project's kind, not a choice. */
+export type NewSessionWorktree = Exclude<WorktreeKind, "folder">;
+
 export type Theme = "light" | "dark" | "system";
 
 const LEGACY_COLLAPSED_KEY = "agentique:collapsed-projects";
@@ -132,7 +135,8 @@ interface UIState {
    * phone and a desktop may differ. An explicit `?worktree=` link and a
    * template's own setting still win over it.
    */
-  newSessionWorktree: WorktreeKind;
+  /** Where new sessions start. Never `folder`: that is the project's kind, not a choice. */
+  newSessionWorktree: NewSessionWorktree;
   theme: Theme;
 
   setDraft: (sessionId: string, text: string) => void;
@@ -152,7 +156,7 @@ interface UIState {
   setHandsFree: (handsFree: boolean) => void;
   /** Call once a session has been created with these. Never on selection. */
   recordLastUsed: (settings: LastUsedSettings) => void;
-  setNewSessionWorktree: (kind: WorktreeKind) => void;
+  setNewSessionWorktree: (kind: NewSessionWorktree) => void;
   setTheme: (theme: Theme) => void;
 }
 

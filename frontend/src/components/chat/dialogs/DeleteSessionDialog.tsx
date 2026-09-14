@@ -13,12 +13,19 @@ export function DeleteSessionDialog({
   open,
   onOpenChange,
   sessionName,
+  inWorktree,
   onDelete,
   deleting,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionName: string;
+  /**
+   * The session has a linked worktree of its own. Only then does deleting it
+   * take a worktree and a branch; a session in the main worktree or a plain
+   * folder leaves the files where they are.
+   */
+  inWorktree: boolean;
   onDelete: () => void;
   deleting: boolean;
 }) {
@@ -28,8 +35,10 @@ export function DeleteSessionDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete session</AlertDialogTitle>
           <AlertDialogDescription>
-            Delete &quot;{sessionName || "Untitled"}&quot;? This removes the worktree, branch, and
-            all session data.
+            Delete &quot;{sessionName || "Untitled"}&quot;?{" "}
+            {inWorktree
+              ? "This removes the worktree, branch, and all session data."
+              : "This removes the session and its history. Files it changed in the project stay where they are."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

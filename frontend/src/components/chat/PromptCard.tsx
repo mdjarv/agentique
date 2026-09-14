@@ -19,6 +19,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useLaunchTargets } from "~/hooks/useLaunchTargets";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { createSwarm, type SwarmMemberSpec } from "~/lib/channel-actions";
+import { isFolderProjectId } from "~/lib/project-kind";
 // Re-export the prompt-parsing API from its new home so existing imports
 // (`~/components/chat/PromptCard`) keep working. The actual parser lives in
 // `~/lib/prompt-parsing.ts`.
@@ -127,7 +128,8 @@ export function PromptGroupProvider({
       setCardStates((prev) => ({ ...prev, [title]: { state: "creating" } }));
       void (async () => {
         try {
-          const sid = await createSession(ws, pid, title, true, opts);
+          // A plain folder has no worktree to give; the session runs in it.
+          const sid = await createSession(ws, pid, title, !isFolderProjectId(pid), opts);
           await submitQuery(ws, sid, prompt);
           setCardStates((prev) => ({ ...prev, [title]: { state: "started", sessionId: sid } }));
         } catch (err) {
@@ -166,6 +168,13 @@ export function PromptGroupProvider({
     // Cross-project prompts: individual sessions (can't join same channel)
     for (const { block, targetId } of crossProject) {
       startPrompt(block.title, block.prompt, targetId);
+    }
+
+    // A plain folder cannot host a channel of workers — each needs a worktree —
+    // so there the cards start as separate sessions in the folder instead.
+    if (isFolderProjectId(projectId)) {
+      for (const p of swarmEligible) startPrompt(p.title, p.prompt);
+      return;
     }
 
     // Same-project prompts: create as a channel via createSwarm
