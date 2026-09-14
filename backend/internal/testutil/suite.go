@@ -5,13 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
 	claudecli "github.com/allbin/claudecli-go"
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/stretchr/testify/suite"
 )
@@ -30,12 +28,7 @@ type DBSuite struct {
 // SetupTest creates a fresh temp DB + default project before each test method.
 func (s *DBSuite) SetupTest() {
 	t := s.T()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath)
-	s.Require().NoError(err)
-	t.Cleanup(func() { db.Close() })
-
-	s.Require().NoError(store.RunMigrations(db, dbpkg.Migrations))
+	db := OpenMigratedDB(t)
 
 	s.DB = db
 	s.Queries = store.New(db)

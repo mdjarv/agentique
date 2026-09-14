@@ -3,11 +3,9 @@ package testutil
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
-	dbpkg "github.com/mdjarv/agentique/backend/db"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
@@ -16,15 +14,7 @@ import (
 // Returns both the raw *sql.DB (for transactions) and the generated Queries.
 func SetupDB(t *testing.T) (*sql.DB, *store.Queries) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.RunMigrations(db, dbpkg.Migrations); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
+	db := OpenMigratedDB(t)
 	return db, store.New(db)
 }
 
