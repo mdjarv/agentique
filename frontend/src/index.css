@@ -991,6 +991,8 @@
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    /* Pans and taps only: a page zoom scales the fixed shell (usePreventPageZoom). */
+    touch-action: pan-x pan-y;
   }
   #root {
     height: 100dvh;

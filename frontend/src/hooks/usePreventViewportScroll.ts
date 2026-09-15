@@ -17,7 +17,9 @@ export function usePreventViewportScroll(): void {
     const resetScroll = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        if (vv.offsetTop > 0) {
+        // A zoomed viewport is offset on purpose; snapping it back mid-pinch
+        // fights the gesture and strands the layout.
+        if (vv.scale === 1 && vv.offsetTop > 0) {
           window.scrollTo(0, 0);
         }
       });

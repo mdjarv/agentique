@@ -15,6 +15,7 @@ import { useFileDropGuard } from "~/hooks/useFileDrop";
 import { useGlobalSubscriptions } from "~/hooks/useGlobalSubscriptions";
 import { useIsMobile } from "~/hooks/useIsMobile";
 import { useMachineConnections } from "~/hooks/useMachineConnections";
+import { usePreventPageZoom } from "~/hooks/usePreventPageZoom";
 import { usePreventViewportScroll } from "~/hooks/usePreventViewportScroll";
 import { useProjects } from "~/hooks/useProjects";
 import { useTheme } from "~/hooks/useTheme";
@@ -62,6 +63,7 @@ function AuthenticatedLayout() {
   useActiveProjectFetch();
   useUpdateChecks();
   usePreventViewportScroll();
+  usePreventPageZoom();
   // A file dropped anywhere the composer is not listening would otherwise be
   // the browser's, and the browser navigates away to it.
   useFileDropGuard();
