@@ -30,7 +30,7 @@ function AttachmentImage({
   attachment: Attachment;
   onOpen: (src: string) => void;
 }) {
-  const src = useSessionImageSrc(attachment.previewUrl ?? attachment.dataUrl);
+  const { src, onError } = useSessionImageSrc(attachment.previewUrl ?? attachment.dataUrl);
   if (!src) return null;
   return (
     <button
@@ -38,7 +38,12 @@ function AttachmentImage({
       className="p-0 border-none bg-transparent cursor-pointer"
       onClick={() => onOpen(src)}
     >
-      <img src={src} alt={attachment.name} className="h-20 max-w-[200px] object-cover rounded" />
+      <img
+        src={src}
+        alt={attachment.name}
+        onError={onError}
+        className="h-20 max-w-[200px] object-cover rounded"
+      />
     </button>
   );
 }

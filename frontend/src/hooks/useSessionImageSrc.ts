@@ -1,26 +1,41 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch, sessionFileMachineId, sessionFilePath } from "~/lib/machines/api";
+
+export interface SessionImageSrc {
+  /** What the <img> loads; null while a fallback fetch is in flight. */
+  src: string | null;
+  /** Pass to the <img>: a relayed image that fails gets one direct try. */
+  onError?: () => void;
+}
 
 /**
  * The src an <img> can load for an image the transcript refers to.
  *
- * Three shapes arrive here: a data URL (a live tool result, or an attachment
- * still in the composer), a session-content path on the primary
- * (`/api/sessions/{id}/files/…` or `/events/…/images/…`, cookie-authenticated
- * and loadable as-is), and the same path for a session on a paired machine,
- * which the browser cannot load directly because that machine wants a bearer.
- * The last is fetched through the machine-aware client into an object URL.
+ * Two shapes arrive here: a data URL (a live tool result, or an attachment
+ * still in the composer), and a session-content path
+ * (`/api/sessions/{id}/files/…` or `/events/…/images/…`). A path loads as-is,
+ * relative to this page, for every session wherever it runs: the server that
+ * served the page relays a paired machine's content (docs/multi-machine.md,
+ * "Session files"). An absolute-localhost variant an agent wrote is normalised
+ * to that relative form.
  *
- * Returns null while a remote image is still in flight, and revokes the
- * object URL when the source changes or the component unmounts.
+ * The one exception is a paired machine on a release from before the relay,
+ * which the server answers 501 for. The <img> cannot see the status, so any
+ * failure on a remote session's path falls back once to fetching from that
+ * machine directly with its bearer into an object URL — which works only where
+ * this browser can reach the machine. Contract once no paired release
+ * predates the relay.
  */
-export function useSessionImageSrc(src: string | undefined): string | null {
-  const machineId = src ? sessionFileMachineId(src) : undefined;
+export function useSessionImageSrc(src: string | undefined): SessionImageSrc {
   const filePath = src ? sessionFilePath(src) : undefined;
+  const machineId = src ? sessionFileMachineId(src) : undefined;
+  // Which path fell back, so a new source starts on the relay again.
+  const [directFor, setDirectFor] = useState<string | null>(null);
+  const direct = filePath !== undefined && directFor === filePath;
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!machineId || !filePath) return;
+    if (!direct || !machineId || !filePath) return;
     let cancelled = false;
     let objectUrl: string | null = null;
     apiFetch(machineId, filePath)
@@ -36,14 +51,12 @@ export function useSessionImageSrc(src: string | undefined): string | null {
       setBlobUrl(null);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [machineId, filePath]);
+  }, [direct, machineId, filePath]);
 
-  if (!src) return null;
-  if (!machineId) {
-    // A primary session's path: normalize an absolute-localhost variant to
-    // the relative form so it loads from any device. Anything unrecognized
-    // (a data URL, an external image) passes through untouched.
-    return filePath ?? src;
-  }
-  return blobUrl;
+  const onError = useCallback(() => setDirectFor(filePath ?? null), [filePath]);
+
+  if (!src) return { src: null };
+  if (!filePath) return { src };
+  if (direct) return { src: blobUrl };
+  return { src: filePath, onError: machineId ? onError : undefined };
 }

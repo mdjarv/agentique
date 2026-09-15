@@ -24,7 +24,7 @@ import { useSessionMachineId } from "~/components/chat/SessionMachineContext";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useSessionImageSrc } from "~/hooks/useSessionImageSrc";
 import { useTheme } from "~/hooks/useTheme";
-import { rewriteRemoteLocalhost } from "~/lib/machines/api";
+import { rewriteRemoteLocalhost, sessionFilePath } from "~/lib/machines/api";
 import { getSyntaxTheme } from "~/lib/syntax-theme";
 import { cn } from "~/lib/utils";
 
@@ -198,10 +198,17 @@ function MarkdownLink({
 }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
   const { node: _, ...rest } = props;
   const machineId = useSessionMachineId();
-  if (isInternalMarkdownHref(href)) {
+  // A session file resolves against this page's server, which relays a paired
+  // machine's; an absolute-localhost spelling of one is normalised first, or
+  // it would be rewritten to the machine's own host below.
+  const filePath = href ? sessionFilePath(href) : undefined;
+  if (filePath && MARKDOWN_HREF_RE.test(filePath)) {
+    return <MarkdownFileLink href={filePath}>{children}</MarkdownFileLink>;
+  }
+  if (!filePath && isInternalMarkdownHref(href)) {
     return <MarkdownFileLink href={href}>{children}</MarkdownFileLink>;
   }
-  const resolved = href ? rewriteRemoteLocalhost(href, machineId) : href;
+  const resolved = filePath ?? (href ? rewriteRemoteLocalhost(href, machineId) : href);
   return (
     <a
       href={resolved}
@@ -215,19 +222,19 @@ function MarkdownLink({
   );
 }
 
-/** Inline images: a session-file src (screenshots agents embed) belonging to
- *  a remote machine loads as a blob object URL — an <img src> cannot carry
- *  the bearer header that machine requires. Everything else renders as-is. */
+/** Inline images: a session-file src (screenshots agents embed) loads through
+ *  this page's server whichever machine owns the session; see
+ *  useSessionImageSrc. Everything else renders as-is. */
 function MarkdownImage({
   src,
   alt,
   ...props
 }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
   const { node: _, ...rest } = props;
-  const resolved = useSessionImageSrc(typeof src === "string" ? src : undefined);
+  const { src: resolved, onError } = useSessionImageSrc(typeof src === "string" ? src : undefined);
 
   if (!resolved) return <span className="text-xs text-muted-foreground">{alt || "image"}…</span>;
-  return <ZoomableImage src={resolved} alt={alt ?? ""} {...rest} />;
+  return <ZoomableImage src={resolved} alt={alt ?? ""} {...rest} onError={onError} />;
 }
 
 /** An image in the transcript opens full-screen, where it can be zoomed and

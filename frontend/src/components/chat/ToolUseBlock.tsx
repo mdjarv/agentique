@@ -348,7 +348,7 @@ function ToolResultImage({
   url?: string;
   onImageClick?: (src: string) => void;
 }) {
-  const src = useSessionImageSrc(url);
+  const { src, onError } = useSessionImageSrc(url);
   if (!src) return null;
   return (
     <button
@@ -359,6 +359,7 @@ function ToolResultImage({
       <img
         src={src}
         alt="Tool result"
+        onError={onError}
         className="max-h-64 max-w-full rounded border object-contain"
       />
     </button>

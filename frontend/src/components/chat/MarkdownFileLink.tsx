@@ -21,18 +21,17 @@ function fileNameFromHref(href: string): string {
   }
 }
 
-/** Session-file links from a remote machine's agent must be fetched from
- *  that machine (with its bearer), not the primary — resolve by session id. */
-function fetchFileHref(href: string): Promise<Response> {
-  try {
-    const url = new URL(href, window.location.origin);
-    if (url.origin === window.location.origin) {
-      return apiFetch(sessionFileMachineId(href), url.pathname + url.search);
-    }
-  } catch {
-    // fall through to a plain fetch
-  }
-  return fetch(href);
+/** A session file is fetched from this page's server, which relays a paired
+ *  machine's. A 501 is a paired machine on a release from before the relay,
+ *  and only then is the machine asked directly with its bearer — which works
+ *  only where this browser can reach it. Contract once no paired release
+ *  predates the relay. */
+async function fetchFileHref(href: string): Promise<Response> {
+  const res = await fetch(href);
+  const machineId = sessionFileMachineId(href);
+  if (res.status !== 501 || !machineId) return res;
+  const url = new URL(href, window.location.origin);
+  return apiFetch(machineId, url.pathname + url.search);
 }
 
 export function MarkdownFileLink({ href, children }: MarkdownFileLinkProps) {
