@@ -5,6 +5,7 @@ import {
   applyAssistantMessage,
   applyAssistantPolicy,
   applyAssistantProposal,
+  applyAssistantStep,
 } from "~/lib/assistant/apply-push";
 import { useAssistantStore } from "~/stores/assistant-store";
 
@@ -31,6 +32,52 @@ describe("assistant push applier", () => {
 
     applyAssistantMessage({ id: "m2", role: "assistant", text: "one two" });
     expect(useAssistantStore.getState().streaming).toBeNull();
+  });
+
+  it("merges a verb's running and settled pushes into one live step", () => {
+    useAssistantStore.getState().beginReply();
+    applyAssistantStep({
+      surface: "thread",
+      step: { seq: 1, kind: "verb", verb: "recall", status: "running" },
+    });
+    applyAssistantStep({
+      surface: "thread",
+      step: { seq: 1, kind: "verb", verb: "recall", status: "done" },
+    });
+    const live = useAssistantStore.getState().liveSteps;
+    expect(live).toHaveLength(1);
+    expect(live[0]?.status).toBe("done");
+  });
+
+  it("drops the live steps when the reply that carries them lands", () => {
+    useAssistantStore.getState().beginReply();
+    applyAssistantStep({ step: { seq: 1, kind: "thought", encrypted: true } });
+    applyAssistantMessage({
+      id: "m3",
+      role: "assistant",
+      text: "done",
+      steps: [{ seq: 1, kind: "thought" }],
+    });
+    expect(useAssistantStore.getState().liveSteps).toHaveLength(0);
+    expect(useAssistantStore.getState().messages[0]?.steps).toHaveLength(1);
+  });
+
+  it("never arms the reply gate from a step alone", () => {
+    applyAssistantStep({
+      step: { seq: 1, kind: "verb", verb: "list_sessions", status: "running" },
+    });
+    expect(useAssistantStore.getState().streaming).toBeNull();
+  });
+
+  it("drops a heartbeat turn's live steps when its wake-up comes back carrying them", () => {
+    applyAssistantStep({ step: { seq: 1, kind: "verb", verb: "list_sessions", status: "done" } });
+    applyAssistantMessage({
+      id: "w1",
+      role: "system",
+      kind: "heartbeat",
+      steps: [{ seq: 1, kind: "verb" }],
+    });
+    expect(useAssistantStore.getState().liveSteps).toHaveLength(0);
   });
 
   it("treats a delta with no text as a reply still owed", () => {

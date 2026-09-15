@@ -644,13 +644,14 @@ func main() {
 	//
 	// Leaf-first: a message and a journal entry are what the page, the pushes
 	// and the read results are all made of.
-	assistantMessageRef := g.register(assistant.Message{}, "AssistantMessage")
-	assistantDeltaRef := g.register(assistant.Delta{}, "AssistantDelta")
-	// A turn's working (steps.go): each step rides a push while the turn runs,
-	// and the finished list rides the message it ends.
+	// A turn's working (steps.go) comes first, because a message carries it:
+	// each step rides a push while the turn runs, and the finished list rides
+	// the message the turn ends.
 	g.register(assistant.StepFact{}, "AssistantStepFact")
 	g.register(assistant.Step{}, "AssistantStep")
 	assistantStepPushRef := g.register(assistant.StepPush{}, "AssistantStepPush")
+	assistantMessageRef := g.register(assistant.Message{}, "AssistantMessage")
+	assistantDeltaRef := g.register(assistant.Delta{}, "AssistantDelta")
 	assistantJournalRef := g.register(assistant.JournalEntry{}, "AssistantJournalEntry")
 	g.register(assistant.Page{}, "AssistantPage")
 	g.register(assistant.Update{}, "AssistantUpdate")

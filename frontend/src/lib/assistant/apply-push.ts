@@ -1,5 +1,5 @@
 /**
- * The assistant's five global pushes, applied to the store.
+ * The assistant's six global pushes, applied to the store.
  *
  * They arrive on the primary's socket on the global topic (the conversation is
  * a project-less channel, which already fans out there), and there is one
@@ -18,6 +18,7 @@ import {
   AssistantMessageSchema,
   AssistantPolicySchema,
   AssistantProposalSchema,
+  AssistantStepPushSchema,
 } from "~/lib/assistant/wire";
 import { useAssistantStore } from "~/stores/assistant-store";
 
@@ -40,6 +41,21 @@ export function applyAssistantDelta(payload: unknown): void {
   }
   // An empty delta still arms the gate: it says a reply is coming.
   useAssistantStore.getState().appendDelta(parsed.data.text ?? "");
+}
+
+/**
+ * `assistant.step` — one thing the in-flight turn did, started or settled.
+ * The stored message carries the finished list, so a push that cannot be read
+ * costs a live row and nothing else.
+ */
+export function applyAssistantStep(payload: unknown): void {
+  const parsed = AssistantStepPushSchema.safeParse(payload);
+  if (!parsed.success) {
+    console.warn("[assistant] unreadable assistant.step", parsed.error.issues);
+    return;
+  }
+  if (!parsed.data.step) return;
+  useAssistantStore.getState().applyStep(parsed.data.step);
 }
 
 /**

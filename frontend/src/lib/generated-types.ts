@@ -1196,23 +1196,6 @@ export interface PushBrowserProvisioning {
   state: string;
 }
 
-export interface AssistantMessage {
-  id?: string;
-  role?: string;
-  text?: string;
-  surface?: string;
-  callId?: string;
-  kind?: string;
-  createdAt?: string;
-  steps?: AssistantStep[];
-  stepsOmitted?: number;
-}
-
-export interface AssistantDelta {
-  surface?: string;
-  text?: string;
-}
-
 export interface AssistantStepFact {
   id?: string;
   scope?: string;
@@ -1237,6 +1220,23 @@ export interface AssistantStep {
 export interface AssistantStepPush {
   surface?: string;
   step?: AssistantStep;
+}
+
+export interface AssistantMessage {
+  id?: string;
+  role?: string;
+  text?: string;
+  surface?: string;
+  callId?: string;
+  kind?: string;
+  createdAt?: string;
+  steps?: AssistantStep[];
+  stepsOmitted?: number;
+}
+
+export interface AssistantDelta {
+  surface?: string;
+  text?: string;
 }
 
 export interface AssistantJournalEntry {

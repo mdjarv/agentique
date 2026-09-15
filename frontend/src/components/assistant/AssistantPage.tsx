@@ -13,6 +13,7 @@ import { getErrorMessage } from "~/lib/utils";
 import {
   selectAssistantError,
   selectAssistantJournal,
+  selectAssistantLiveSteps,
   selectAssistantLoaded,
   selectAssistantMessages,
   selectAssistantOpenProposals,
@@ -49,6 +50,7 @@ export function AssistantPage() {
   const proposals = useAssistantStore(selectAssistantProposals);
   const openProposals = useAssistantStore(selectAssistantOpenProposals);
   const streaming = useAssistantStore(selectAssistantStreaming);
+  const liveSteps = useAssistantStore(selectAssistantLiveSteps);
   const replying = useAssistantStore(selectAssistantReplying);
   const loaded = useAssistantStore(selectAssistantLoaded);
   const error = useAssistantStore(selectAssistantError);
@@ -119,15 +121,17 @@ export function AssistantPage() {
   // streams for as long as a turn takes, and yanking someone back down while
   // they read an older turn is the worse failure.
   // The lengths, not the arrays: a re-read that changes neither is not new
-  // content, and the streaming reply grows one delta at a time.
+  // content, and the streaming reply grows one delta at a time. A turn's first
+  // step draws its line above an empty reply, which is new height too.
   const itemCount = items.length;
   const streamedLength = streaming?.length ?? -1;
+  const liveStepCount = liveSteps.length;
   useEffect(() => {
-    if (itemCount === 0 && streamedLength < 0) return;
+    if (itemCount === 0 && streamedLength < 0 && liveStepCount === 0) return;
     if (!atBottomRef.current) return;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [itemCount, streamedLength]);
+  }, [itemCount, streamedLength, liveStepCount]);
 
   const visibleCards = useVisibleProposalCards(scrollRef, items);
   const pinned = useMemo(
@@ -195,7 +199,7 @@ export function AssistantPage() {
         ) : empty ? (
           <EmptyThread />
         ) : (
-          <AssistantConversation items={items} streaming={streaming} />
+          <AssistantConversation items={items} streaming={streaming} liveSteps={liveSteps} />
         )}
       </div>
       <AssistantPinnedProposals proposals={pinned} onShow={showCard} />

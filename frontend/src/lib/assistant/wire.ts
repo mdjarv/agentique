@@ -29,6 +29,8 @@ export {
   AssistantPolicySchema,
   AssistantProposalSchema,
   AssistantProposalsResultSchema,
+  AssistantStepPushSchema,
+  AssistantStepSchema,
   AssistantUnseenResultSchema,
 } from "~/lib/generated-schemas";
 export type {
@@ -41,6 +43,9 @@ export type {
   AssistantPolicy,
   AssistantProposal,
   AssistantProposalsResult,
+  AssistantStep,
+  AssistantStepFact,
+  AssistantStepPush,
   AssistantUnseenResult,
 } from "~/lib/generated-types";
 

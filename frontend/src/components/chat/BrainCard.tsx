@@ -1,7 +1,6 @@
 import { Brain, Check, Flag, Loader2, ThumbsUp } from "lucide-react";
-import { memo, useCallback, useState } from "react";
-import { toast } from "sonner";
-import { confirmMemory, flagMemory } from "~/lib/brain-api";
+import { memo } from "react";
+import { useFactVerdict } from "~/components/brain/use-fact-verdict";
 import type { BrainFact } from "~/lib/prompt-parsing";
 import { cn } from "~/lib/utils";
 
@@ -15,8 +14,6 @@ import { cn } from "~/lib/utils";
 // carries a <brain> envelope any more (docs/assistant.md, the M2 contract). This
 // renderer stays because transcripts recorded before that still carry one, and the
 // two actions still work — they are HTTP calls on a fact that is still in the store.
-
-type FactStatus = "idle" | "confirming" | "flagging" | "helpful" | "flagged";
 
 /** Render a fact's text with inline `code` spans styled, without pulling the full
  *  markdown renderer into this not-prose card. Splits on backtick pairs; odd segments
@@ -46,31 +43,7 @@ function shortId(id: string): string {
 }
 
 function FactRow({ fact }: { fact: BrainFact }) {
-  const [status, setStatus] = useState<FactStatus>("idle");
-  const busy = status === "confirming" || status === "flagging";
-  const settled = status === "helpful" || status === "flagged";
-
-  const act = useCallback(
-    async (kind: "helpful" | "flag") => {
-      if (busy || settled || !fact.id) return;
-      setStatus(kind === "helpful" ? "confirming" : "flagging");
-      try {
-        if (kind === "helpful") {
-          await confirmMemory(fact.id);
-          setStatus("helpful");
-          toast.success("Marked helpful — confirmed in memory");
-        } else {
-          await flagMemory(fact.id);
-          setStatus("flagged");
-          toast.success("Flagged as outdated for review");
-        }
-      } catch (err) {
-        setStatus("idle");
-        toast.error(err instanceof Error ? err.message : "Failed to update memory");
-      }
-    },
-    [busy, settled, fact.id],
-  );
+  const { status, busy, act } = useFactVerdict(fact.id);
 
   return (
     <div className="group/fact flex gap-2.5 py-2 border-t border-border/30 first:border-t-0">

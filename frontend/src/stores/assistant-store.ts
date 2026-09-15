@@ -1,10 +1,12 @@
 import { create } from "zustand";
+import { hasSteps, mergeStep } from "~/lib/assistant/steps";
 import {
   type AssistantJournalEntry,
   type AssistantMessage,
   type AssistantPage,
   type AssistantPolicy,
   type AssistantProposal,
+  type AssistantStep,
   DAY_SUMMARY_KIND,
   HEARTBEAT_KIND,
   isOpenProposal,
@@ -28,6 +30,7 @@ import {
 
 /** Fallbacks are module-level so a selector never mints a new reference. */
 export const EMPTY_MESSAGES: AssistantMessage[] = [];
+export const EMPTY_STEPS: AssistantStep[] = [];
 export const EMPTY_JOURNAL: AssistantJournalEntry[] = [];
 export const EMPTY_PROPOSALS: AssistantProposal[] = [];
 export const EMPTY_POLICIES: AssistantPolicy[] = [];
@@ -282,6 +285,16 @@ interface AssistantState {
    * composer's gate: a reply is streaming exactly when this is a string.
    */
   streaming: string | null;
+  /**
+   * What the in-flight turn has done so far, from `assistant.step` pushes.
+   *
+   * Never the gate — `streaming` stays the one answer to "is a reply owed" —
+   * because a heartbeat turn pushes steps with nobody's ask behind it, and a
+   * silent one ends without the assistant message that releases the composer.
+   * Rendered only beside the streaming reply, and dropped when the turn's
+   * stored message lands carrying the finished list.
+   */
+  liveSteps: AssistantStep[];
   /** The cursor for the page before the oldest message held, or "" at the start. */
   before: string;
   /** True once history has landed at least once, so the empty state is honest. */
@@ -335,6 +348,8 @@ interface AssistantState {
    */
   beginReply: () => void;
   appendDelta: (text: string) => void;
+  /** One step started or settled; merges by `seq`. */
+  applyStep: (step: AssistantStep) => void;
   addJournalEntry: (entry: AssistantJournalEntry) => void;
   /** Drops the in-flight reply without storing it — a failed turn, a reconnect. */
   clearStreaming: () => void;
@@ -348,6 +363,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   openProposals: EMPTY_PROPOSALS,
   policies: EMPTY_POLICIES,
   streaming: null,
+  liveSteps: EMPTY_STEPS,
   before: "",
   loaded: false,
   loading: false,
@@ -410,14 +426,22 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     }),
 
   appendMessage: (message) =>
-    set((s) => ({
-      messages: mergeMessages(s.messages, [message]),
-      // The stored reply replaces the partial one. Only the head's own turn
-      // ends the stream: the operator's ask arrives on the same push.
-      streaming: message.role === "assistant" ? null : s.streaming,
-    })),
+    set((s) => {
+      const endsTurn = message.role === "assistant";
+      return {
+        messages: mergeMessages(s.messages, [message]),
+        // The stored reply replaces the partial one. Only the head's own turn
+        // ends the stream: the operator's ask arrives on the same push.
+        streaming: endsTurn ? null : s.streaming,
+        // The live list goes with the turn whose record just landed — the
+        // reply, or a heartbeat wake-up that took the steps of a turn that
+        // wrote none.
+        liveSteps: endsTurn || hasSteps(message) ? EMPTY_STEPS : s.liveSteps,
+      };
+    }),
 
-  beginReply: () => set((s) => (s.streaming === null ? { streaming: "" } : s)),
+  beginReply: () =>
+    set((s) => (s.streaming === null ? { streaming: "", liveSteps: EMPTY_STEPS } : s)),
 
   appendDelta: (text) =>
     set((s) => ({
@@ -438,7 +462,13 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       };
     }),
 
-  clearStreaming: () => set({ streaming: null }),
+  applyStep: (step) =>
+    set((s) => {
+      const liveSteps = mergeStep(s.liveSteps, step);
+      return liveSteps === s.liveSteps ? s : { liveSteps };
+    }),
+
+  clearStreaming: () => set({ streaming: null, liveSteps: EMPTY_STEPS }),
 
   reset: () =>
     set({
@@ -448,6 +478,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       openProposals: EMPTY_PROPOSALS,
       policies: EMPTY_POLICIES,
       streaming: null,
+      liveSteps: EMPTY_STEPS,
       before: "",
       loaded: false,
       loading: false,
@@ -472,6 +503,7 @@ export const selectAssistantOpenProposals = (s: AssistantState) => s.openProposa
 /** The standing instructions — the policies page and nothing else reads it. */
 export const selectAssistantPolicies = (s: AssistantState) => s.policies;
 export const selectAssistantStreaming = (s: AssistantState) => s.streaming;
+export const selectAssistantLiveSteps = (s: AssistantState) => s.liveSteps;
 /** A reply is in flight exactly while the head has streamed something. */
 export const selectAssistantReplying = (s: AssistantState) => s.streaming !== null;
 export const selectAssistantLoaded = (s: AssistantState) => s.loaded;

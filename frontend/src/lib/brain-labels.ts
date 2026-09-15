@@ -91,3 +91,25 @@ export function isCapture(memory: Memory): boolean {
 export function pendingCaptures(bySource: Record<string, number>): number {
   return STAGED_SOURCES.reduce((sum, source) => sum + (bySource[source] ?? 0), 0);
 }
+
+/** The scope every project shares. */
+export const GLOBAL_SCOPE = "global";
+
+const PROJECT_SCOPE_PREFIX = "project:";
+
+/**
+ * What to call a memory scope: "Global", a project's name, or — for a project
+ * this client does not hold — "Project" and the first eight of its id.
+ *
+ * One place, because the Memory page groups facts under these words and the
+ * thread's recall rows label a fact with them, and a fact filed under one name
+ * on the page cannot wear another in the conversation.
+ */
+export function scopeLabel(scope: string, projectName: (id: string) => string | undefined): string {
+  if (scope === GLOBAL_SCOPE) return "Global";
+  if (scope.startsWith(PROJECT_SCOPE_PREFIX)) {
+    const id = scope.slice(PROJECT_SCOPE_PREFIX.length);
+    return projectName(id) ?? `Project ${id.slice(0, 8)}`;
+  }
+  return scope;
+}

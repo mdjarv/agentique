@@ -1198,23 +1198,6 @@ export const PushBrowserProvisioningSchema = z.object({
   state: z.string(),
 });
 
-export const AssistantMessageSchema = z.object({
-  id: z.string().optional(),
-  role: z.string().optional(),
-  text: z.string().optional(),
-  surface: z.string().optional(),
-  callId: z.string().optional(),
-  kind: z.string().optional(),
-  createdAt: z.string().optional(),
-  steps: z.array(AssistantStepSchema).optional(),
-  stepsOmitted: z.number().optional(),
-});
-
-export const AssistantDeltaSchema = z.object({
-  surface: z.string().optional(),
-  text: z.string().optional(),
-});
-
 export const AssistantStepFactSchema = z.object({
   id: z.string().optional(),
   scope: z.string().optional(),
@@ -1239,6 +1222,23 @@ export const AssistantStepSchema = z.object({
 export const AssistantStepPushSchema = z.object({
   surface: z.string().optional(),
   step: AssistantStepSchema.optional(),
+});
+
+export const AssistantMessageSchema = z.object({
+  id: z.string().optional(),
+  role: z.string().optional(),
+  text: z.string().optional(),
+  surface: z.string().optional(),
+  callId: z.string().optional(),
+  kind: z.string().optional(),
+  createdAt: z.string().optional(),
+  steps: z.array(AssistantStepSchema).optional(),
+  stepsOmitted: z.number().optional(),
+});
+
+export const AssistantDeltaSchema = z.object({
+  surface: z.string().optional(),
+  text: z.string().optional(),
 });
 
 export const AssistantJournalEntrySchema = z.object({

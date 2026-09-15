@@ -7,12 +7,15 @@ import {
   TIMELINE_INDENT,
   UnseenDivider,
 } from "~/components/assistant/TimelineEvents";
+import { TurnSteps } from "~/components/assistant/TurnSteps";
 import { Markdown } from "~/components/chat/Markdown";
 import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { hasSteps } from "~/lib/assistant/steps";
 import { clockTime, type TimelineItem } from "~/lib/assistant/timeline";
 import {
   type AssistantMessage,
+  type AssistantStep,
   isHeartbeatNotice,
   isHeartbeatReply,
   isOpenProposal,
@@ -38,6 +41,11 @@ import { cn } from "~/lib/utils";
  * pair it arrives as renders as two different things: the server's note is a
  * divider (nobody said it), the head's reply an ordinary bubble with a mark.
  *
+ * An assistant turn that did something wears its working above the bubble
+ * (`TurnSteps`), folded to one line. A heartbeat turn that wrote no reply keeps
+ * its working under the divider instead, since that divider is the only record
+ * of the turn.
+ *
  * Everything that is not a turn sits in the bubbles' text column, so the eye
  * reads the avatars as the speakers and the indented lines as what happened
  * around them. A proposal card carries `data-proposal-id`, which is how the
@@ -48,18 +56,23 @@ interface AssistantConversationProps {
   items: TimelineItem[];
   /** The head's reply in progress, or null. Rendered as the last turn. */
   streaming: string | null;
+  /** What the in-flight turn has done so far, drawn above the streaming reply. */
+  liveSteps?: AssistantStep[];
 }
+
+const NO_STEPS: AssistantStep[] = [];
 
 export const AssistantConversation = memo(function AssistantConversation({
   items,
   streaming,
+  liveSteps = NO_STEPS,
 }: AssistantConversationProps) {
   return (
     <div className="flex flex-col gap-4 px-3 py-4 md:px-6">
       {items.map((item) => (
         <TimelineRow key={item.key} item={item} />
       ))}
-      {streaming !== null && <StreamingRow text={streaming} />}
+      {streaming !== null && <StreamingRow text={streaming} steps={liveSteps} />}
     </div>
   );
 });
@@ -70,7 +83,17 @@ const TimelineRow = memo(function TimelineRow({ item }: { item: TimelineItem }) 
       // The heartbeat's own note is not a turn anybody took, so it is not a
       // bubble. Everything else, the head's reply to it included, is.
       return isHeartbeatNotice(item.message) ? (
-        <HeartbeatDivider message={item.message} />
+        <div className="flex flex-col gap-1">
+          <HeartbeatDivider message={item.message} />
+          {hasSteps(item.message) && (
+            <div className={cn(TIMELINE_INDENT, "max-w-3xl")}>
+              <TurnSteps
+                steps={item.message.steps ?? NO_STEPS}
+                omitted={item.message.stepsOmitted}
+              />
+            </div>
+          )}
+        </div>
       ) : (
         <MessageRow message={item.message} />
       );
@@ -170,6 +193,20 @@ function firstLine(text: string): string {
 
 const MessageRow = memo(function MessageRow({ message }: { message: AssistantMessage }) {
   const fromUser = message.role === "user";
+  const bubble = (
+    <div
+      className={cn(
+        "min-w-0 overflow-x-auto rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]",
+        fromUser
+          ? "max-w-[75%] max-md:max-w-full bg-primary/10 border-primary/15"
+          : "flex-1 bg-agent/5 border-agent/15",
+      )}
+    >
+      {message.surface === "voice" && <VoiceMark callId={message.callId} />}
+      {isHeartbeatReply(message) && <HeartbeatMark />}
+      <Markdown content={message.text ?? ""} preserveNewlines={fromUser} />
+    </div>
+  );
   return (
     <div className={cn("flex gap-3 items-start", fromUser && "flex-row-reverse")}>
       <Avatar className="size-7 shrink-0">
@@ -179,18 +216,14 @@ const MessageRow = memo(function MessageRow({ message }: { message: AssistantMes
           {fromUser ? <User className="size-3.5" /> : <Sparkles className="size-3.5" />}
         </AvatarFallback>
       </Avatar>
-      <div
-        className={cn(
-          "min-w-0 overflow-x-auto rounded-lg border px-3 py-2 text-sm [overflow-wrap:anywhere]",
-          fromUser
-            ? "max-w-[75%] max-md:max-w-full bg-primary/10 border-primary/15"
-            : "flex-1 bg-agent/5 border-agent/15",
-        )}
-      >
-        {message.surface === "voice" && <VoiceMark callId={message.callId} />}
-        {isHeartbeatReply(message) && <HeartbeatMark />}
-        <Markdown content={message.text ?? ""} preserveNewlines={fromUser} />
-      </div>
+      {!fromUser && hasSteps(message) ? (
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <TurnSteps steps={message.steps ?? NO_STEPS} omitted={message.stepsOmitted} />
+          {bubble}
+        </div>
+      ) : (
+        bubble
+      )}
     </div>
   );
 });
@@ -228,13 +261,21 @@ function VoiceMark({ callId }: { callId?: string }) {
 }
 
 /**
- * The head's reply as it arrives.
+ * The head's reply as it arrives, with what the turn has done so far above it.
  *
  * An empty one still draws: the ask is away and the gate is armed, so the row
  * is what says the assistant is thinking — the alternative is a page that looks
- * as though the send went nowhere for as long as the first token takes.
+ * as though the send went nowhere for as long as the first token takes. Once
+ * the turn has done something, the steps line says what, and names the verb it
+ * is waiting on while one is out.
  */
-const StreamingRow = memo(function StreamingRow({ text }: { text: string }) {
+const StreamingRow = memo(function StreamingRow({
+  text,
+  steps,
+}: {
+  text: string;
+  steps: AssistantStep[];
+}) {
   return (
     <div className="flex gap-3 items-start">
       <Avatar className="size-7 shrink-0">
@@ -242,16 +283,21 @@ const StreamingRow = memo(function StreamingRow({ text }: { text: string }) {
           <Sparkles className="size-3.5 animate-pulse" />
         </AvatarFallback>
       </Avatar>
-      <div
-        className="min-w-0 flex-1 rounded-lg border border-dashed border-agent/25 bg-agent/5 px-3 py-2 text-sm"
-        aria-live="polite"
-        aria-busy
-      >
-        {text ? (
-          <Markdown content={text} isStreaming />
-        ) : (
-          <span className="text-muted-foreground text-xs">Thinking…</span>
-        )}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {steps.length > 0 && <TurnSteps steps={steps} live />}
+        <div
+          className="min-w-0 rounded-lg border border-dashed border-agent/25 bg-agent/5 px-3 py-2 text-sm"
+          aria-live="polite"
+          aria-busy
+        >
+          {text ? (
+            <Markdown content={text} isStreaming />
+          ) : (
+            <span className="text-muted-foreground text-xs">
+              {steps.length > 0 ? "Working…" : "Thinking…"}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

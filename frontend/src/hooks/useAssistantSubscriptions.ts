@@ -6,6 +6,7 @@ import {
   applyAssistantMessage,
   applyAssistantPolicy,
   applyAssistantProposal,
+  applyAssistantStep,
 } from "~/lib/assistant/apply-push";
 import { policies, proposals, unseen } from "~/lib/assistant/rpc";
 import { useAssistantStore } from "~/stores/assistant-store";
@@ -59,6 +60,7 @@ export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
   useEffect(() => {
     const unsubMessage = ws.subscribe("assistant.message", applyAssistantMessage);
     const unsubDelta = ws.subscribe("assistant.delta", applyAssistantDelta);
+    const unsubStep = ws.subscribe("assistant.step", applyAssistantStep);
     const unsubJournal = ws.subscribe("assistant.journal", applyAssistantJournal);
     const unsubProposal = ws.subscribe("assistant.proposal", applyAssistantProposal);
     const unsubPolicy = ws.subscribe("assistant.policy", applyAssistantPolicy);
@@ -72,6 +74,7 @@ export function useAssistantSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     return () => {
       unsubMessage();
       unsubDelta();
+      unsubStep();
       unsubJournal();
       unsubProposal();
       unsubPolicy();

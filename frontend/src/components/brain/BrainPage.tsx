@@ -37,7 +37,7 @@ import {
   needsConfirmation,
   refineMemory,
 } from "~/lib/brain-api";
-import { isCapture } from "~/lib/brain-labels";
+import { GLOBAL_SCOPE, isCapture, scopeLabel } from "~/lib/brain-labels";
 import { getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
@@ -49,7 +49,6 @@ const BrainGraph3D = lazy(() =>
 );
 
 const CATEGORIES = ["fact", "identity", "preference", "contact", "project", "goal", "task"];
-const GLOBAL_SCOPE = "global";
 const MODELS = ["opus", "sonnet", "haiku"];
 const CONSOLIDATE_MODES: { value: ConsolidateMode; label: string }[] = [
   { value: "conservative", label: "Conservative" },
@@ -139,14 +138,7 @@ export function BrainPage() {
 
   const labelForScope = useMemo(() => {
     const byId = new Map(projects.map((p) => [p.id, p.name]));
-    return (scope: string) => {
-      if (scope === GLOBAL_SCOPE) return "Global";
-      if (scope.startsWith("project:")) {
-        const id = scope.slice("project:".length);
-        return byId.get(id) ?? `Project ${id.slice(0, 8)}`;
-      }
-      return scope;
-    };
+    return (scope: string) => scopeLabel(scope, (id) => byId.get(id));
   }, [projects]);
 
   // How many facts each toggle would reveal (captures awaiting promotion, archived cold
