@@ -397,8 +397,14 @@ export function ChatPanel({
   // A live effort change needs a peer that speaks session.set-effort — absent
   // means an older release, so false — and a CLI to apply it to, since the
   // server refuses a session that is not live. Otherwise the ramp is a reading.
+  // The state decides liveness, not `connected`: the session's own `stopped`
+  // push still carries `connected: true`.
   const effortSwitchSupported = meta?.capabilities?.effortSwitch === true;
-  const effortLive = effortSwitchSupported && !!meta?.connected && !machineAway;
+  const effortLive =
+    effortSwitchSupported &&
+    !!meta?.connected &&
+    !resumableStates.has(sessionState) &&
+    !machineAway;
 
   const handleEffortChange = useCallback(
     (level: EffortLevel) => {

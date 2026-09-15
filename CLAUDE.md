@@ -412,8 +412,10 @@ the next turn. The provider answers with the level in force, which can differ
 (capped, or `""` for a model with no effort), but `sessions.effort` stores what
 was *asked* for, because resume passes it back as the connect-time level. The
 ramp is live only where the server would take a change: `effortSwitch === true`
-(absent is an older peer that does not know the verb) and a connected session,
-since a parked one answers `ErrNotLive`. A drag names every stop it crosses, so
+(absent is an older peer that does not know the verb) and a session whose state
+is not stopped, failed or done, since a parked one answers `ErrNotLive`. Judge
+that by state, not `connected` — the session's own `stopped` push still says
+`connected: true`. A drag names every stop it crosses, so
 `lib/session/effort-switch.ts` keeps one request out per session, sends the latest
 level when it answers, and ignores `session.effort-changed` pushes while its own
 change is outstanding — they describe levels the thumb has already passed.
