@@ -646,6 +646,11 @@ func main() {
 	// and the read results are all made of.
 	assistantMessageRef := g.register(assistant.Message{}, "AssistantMessage")
 	assistantDeltaRef := g.register(assistant.Delta{}, "AssistantDelta")
+	// A turn's working (steps.go): each step rides a push while the turn runs,
+	// and the finished list rides the message it ends.
+	g.register(assistant.StepFact{}, "AssistantStepFact")
+	g.register(assistant.Step{}, "AssistantStep")
+	assistantStepPushRef := g.register(assistant.StepPush{}, "AssistantStepPush")
 	assistantJournalRef := g.register(assistant.JournalEntry{}, "AssistantJournalEntry")
 	g.register(assistant.Page{}, "AssistantPage")
 	g.register(assistant.Update{}, "AssistantUpdate")
@@ -669,6 +674,7 @@ func main() {
 	// there is no topic to scope them to and no new routing to add.
 	g.addPushEvent("assistant.message", assistantMessageRef)
 	g.addPushEvent("assistant.delta", assistantDeltaRef)
+	g.addPushEvent("assistant.step", assistantStepPushRef)
 	g.addPushEvent("assistant.journal", assistantJournalRef)
 	g.addPushEvent("assistant.proposal", assistantProposalRef)
 	g.addPushEvent("assistant.policy", assistantPolicyRef)

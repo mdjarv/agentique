@@ -66,19 +66,27 @@ const messageTimeFormat = "2006-01-02T15:04:05.000000000Z"
 
 func formatMessageTime(t time.Time) string { return t.UTC().Format(messageTimeFormat) }
 
-// metadataSurfaceKey and metadataCallKey are how a message says where it was
-// said. A voice call mirrors its turns into the same conversation, so "what
-// did I agree to on the drive" is in the thread.
-const (
-	metadataSurfaceKey = "surface"
-	metadataCallKey    = "callId"
-	// metadataKindKey marks a message that is not an ordinary turn in the
-	// conversation. Two things carry one: the digest, which is composed rather
-	// than said and renders as a panel, and both halves of a heartbeat turn,
-	// which render as a divider and a marked reply (docs/assistant.md, the M4
-	// contract).
-	metadataKindKey = "kind"
-)
+// messageMetadata is what a conversation message carries beside its text, in
+// the messages table's metadata column.
+//
+// The first three keys were a flat string map before steps existed, and a
+// struct with the same json names reads every row written that way.
+type messageMetadata struct {
+	// Surface and CallID say where it was said. A voice call mirrors its turns
+	// into the same conversation, so "what did I agree to on the drive" is in
+	// the thread.
+	Surface string `json:"surface,omitempty"`
+	CallID  string `json:"callId,omitempty"`
+	// Kind marks a message that is not an ordinary turn in the conversation.
+	// Two things carry one: the digest, which is composed rather than said and
+	// renders as a panel, and both halves of a heartbeat turn, which render as a
+	// divider and a marked reply (docs/assistant.md, the M4 contract).
+	Kind string `json:"kind,omitempty"`
+	// Steps is what the head did during the turn this message ends, and
+	// StepsOmitted how many more steps it took than were kept (steps.go).
+	Steps        []Step `json:"steps,omitempty"`
+	StepsOmitted int    `json:"stepsOmitted,omitempty"`
+}
 
 // Roles on the wire. The store's sender types are a channel's vocabulary; a
 // reader of the conversation wants the two roles a conversation has.
@@ -109,6 +117,12 @@ type Message struct {
 	// fractional seconds — that table predates the seconds rule, and it is
 	// also the history cursor, so it is passed through rather than reformatted.
 	CreatedAt string `json:"createdAt,omitempty"`
+	// Steps is what the head did during the turn this message ends: the verbs
+	// it called and the reasoning it did, in order. Only an assistant message
+	// carries steps, and only one whose turn did something.
+	Steps []Step `json:"steps,omitempty"`
+	// StepsOmitted is how many more steps the turn took than it kept.
+	StepsOmitted int `json:"stepsOmitted,omitempty"`
 }
 
 // Delta is the head's reply in progress.
@@ -272,7 +286,7 @@ func (s *Service) beginSay(ctx context.Context, surface, text string) (said stri
 		return "", Message{}, errors.New("assistant: nothing to say")
 	}
 
-	ask, err = s.appendMessage(ctx, senderUser, surface, "", "", said)
+	ask, err = s.appendMessage(ctx, senderUser, messageMetadata{Surface: surface}, said)
 	if err != nil {
 		return "", Message{}, err
 	}
@@ -302,19 +316,24 @@ const (
 // wrote, or the server's own sentence about why there is nothing. A turn that
 // ends without one is indistinguishable, from every surface, from a turn that
 // is still running.
+//
+// Whichever message that is carries the turn's steps. A failed turn keeps them
+// on its note, because what it was doing when it stopped is the one thing the
+// log line does not tell the operator.
 func (s *Service) answer(ctx context.Context, surface, said string) (Message, error) {
-	reply, err := s.runHeadTurn(ctx, surface, said)
+	turn, err := s.runHeadTurn(ctx, surface, said)
+	meta := messageMetadata{Surface: surface, Steps: turn.Steps, StepsOmitted: turn.StepsOmitted}
 	if err != nil {
-		s.note(ctx, surface, turnFailedText)
+		s.note(ctx, meta, turnFailedText)
 		return Message{}, err
 	}
-	if strings.TrimSpace(reply) == "" {
+	if strings.TrimSpace(turn.Reply) == "" {
 		// Not an error: the head may have done nothing but call verbs. It still
 		// owes the surface a turn.
-		return s.note(ctx, surface, turnSilentText), nil
+		return s.note(ctx, meta, turnSilentText), nil
 	}
 
-	stored, err := s.appendMessage(ctx, senderPersona, surface, "", "", reply)
+	stored, err := s.appendMessage(ctx, senderPersona, meta, turn.Reply)
 	if err != nil {
 		return Message{}, err
 	}
@@ -326,8 +345,9 @@ func (s *Service) answer(ctx context.Context, surface, said string) (Message, er
 //
 // A failure to store it is logged rather than raised: the caller is already
 // handling one failure, and there is nothing better to do with a second.
-func (s *Service) note(ctx context.Context, surface, text string) Message {
-	stored, err := s.appendMessage(ctx, senderPersona, surface, "", "", text)
+func (s *Service) note(ctx context.Context, meta messageMetadata, text string) Message {
+	surface := meta.Surface
+	stored, err := s.appendMessage(ctx, senderPersona, meta, text)
 	if err != nil {
 		s.log.Warn("assistant could not store its own note", "surface", surface, "error", err)
 		return Message{}
@@ -362,7 +382,7 @@ func (s *Service) Mirror(ctx context.Context, surface, callID, role, text string
 		return Message{}, fmt.Errorf("assistant: %q is not a role (want %q or %q)", role, RoleUser, RoleAssistant)
 	}
 
-	stored, err := s.appendMessage(ctx, sender, surface, callID, "", said)
+	stored, err := s.appendMessage(ctx, sender, messageMetadata{Surface: surface, CallID: callID}, said)
 	if err != nil {
 		return Message{}, err
 	}
@@ -370,20 +390,13 @@ func (s *Service) Mirror(ctx context.Context, surface, callID, role, text string
 }
 
 // appendMessage stores one conversation message and pushes it.
-func (s *Service) appendMessage(ctx context.Context, senderType, surface, callID, kind, text string) (Message, error) {
+func (s *Service) appendMessage(ctx context.Context, senderType string, meta messageMetadata, text string) (Message, error) {
 	channelID, err := s.EnsureConversation(ctx)
 	if err != nil {
 		return Message{}, err
 	}
 
-	metadata := map[string]string{metadataSurfaceKey: surface}
-	if callID != "" {
-		metadata[metadataCallKey] = callID
-	}
-	if kind != "" {
-		metadata[metadataKindKey] = kind
-	}
-	encoded, err := json.Marshal(metadata)
+	encoded, err := json.Marshal(meta)
 	if err != nil {
 		return Message{}, fmt.Errorf("encode message metadata: %w", err)
 	}
@@ -412,6 +425,36 @@ func (s *Service) appendMessage(ctx context.Context, senderType, surface, callID
 	msg := messageFrom(row)
 	s.broadcast(EventMessage, msg)
 	return msg, nil
+}
+
+// attachSteps writes a turn's steps onto a message that is already stored and
+// pushes the result, which a client merges by id.
+//
+// Best effort, and logged: the turn has already happened, and a record that
+// could not be written is not a reason to report the turn itself as failed.
+func (s *Service) attachSteps(ctx context.Context, msg Message, meta messageMetadata) {
+	if len(meta.Steps) == 0 && meta.StepsOmitted == 0 {
+		return
+	}
+	channelID, found := s.conversationID(ctx)
+	if !found || msg.ID == "" {
+		return
+	}
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		s.log.Warn("assistant turn steps not encoded", "message", msg.ID, "error", err)
+		return
+	}
+	row, err := s.store.SetAssistantMessageMetadata(ctx, store.SetAssistantMessageMetadataParams{
+		Metadata:  string(encoded),
+		ID:        msg.ID,
+		ChannelID: channelID,
+	})
+	if err != nil {
+		s.log.Warn("assistant turn steps not kept", "message", msg.ID, "error", err)
+		return
+	}
+	s.broadcast(EventMessage, messageFrom(row))
 }
 
 // Page is one page of the conversation.
@@ -505,11 +548,13 @@ func messageFrom(row store.Message) Message {
 		msg.Role = RoleSystem
 	}
 	if row.Metadata != "" {
-		var metadata map[string]string
-		if err := json.Unmarshal([]byte(row.Metadata), &metadata); err == nil {
-			msg.Surface = metadata[metadataSurfaceKey]
-			msg.CallID = metadata[metadataCallKey]
-			msg.Kind = metadata[metadataKindKey]
+		var meta messageMetadata
+		if err := json.Unmarshal([]byte(row.Metadata), &meta); err == nil {
+			msg.Surface = meta.Surface
+			msg.CallID = meta.CallID
+			msg.Kind = meta.Kind
+			msg.Steps = meta.Steps
+			msg.StepsOmitted = meta.StepsOmitted
 		}
 	}
 	return msg

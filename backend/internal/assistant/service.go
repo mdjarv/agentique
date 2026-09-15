@@ -24,6 +24,9 @@ const (
 	EventMessage = "assistant.message"
 	// EventDelta carries a [Delta]: the head's reply in progress.
 	EventDelta = "assistant.delta"
+	// EventStep carries a [StepPush]: one thing the head did during a turn,
+	// started or settled.
+	EventStep = "assistant.step"
 	// EventJournal carries a new [JournalEntry].
 	EventJournal = "assistant.journal"
 	// EventProposal carries a [Proposal] on create and on decide. It is

@@ -1204,11 +1204,39 @@ export interface AssistantMessage {
   callId?: string;
   kind?: string;
   createdAt?: string;
+  steps?: AssistantStep[];
+  stepsOmitted?: number;
 }
 
 export interface AssistantDelta {
   surface?: string;
   text?: string;
+}
+
+export interface AssistantStepFact {
+  id?: string;
+  scope?: string;
+  text?: string;
+  source?: string;
+}
+
+export interface AssistantStep {
+  seq?: number;
+  kind?: string;
+  verb?: string;
+  detail?: string;
+  sessionId?: string;
+  status?: string;
+  outcome?: string;
+  facts?: AssistantStepFact[];
+  text?: string;
+  encrypted?: boolean;
+  durationMs?: number;
+}
+
+export interface AssistantStepPush {
+  surface?: string;
+  step?: AssistantStep;
 }
 
 export interface AssistantJournalEntry {
@@ -1392,6 +1420,7 @@ export interface PushEventMap {
   "browser.provisioning": PushBrowserProvisioning;
   "assistant.message": AssistantMessage;
   "assistant.delta": AssistantDelta;
+  "assistant.step": AssistantStepPush;
   "assistant.journal": AssistantJournalEntry;
   "assistant.proposal": AssistantProposal;
   "assistant.policy": AssistantPolicy;

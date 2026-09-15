@@ -414,6 +414,14 @@ type Querier interface {
 	// The heartbeat's mark: when the last tick measured from. Stamped by every
 	// tick, including the ones that ran no model at all.
 	SetAssistantHeartbeatAt(ctx context.Context, arg SetAssistantHeartbeatAtParams) error
+	// Rewrites one conversation message's metadata, in the conversation's own
+	// channel only.
+	//
+	// One writer: a heartbeat turn that wrote no reply. Its steps are the only
+	// record of what it did, and the system message that woke it is the message
+	// that turn is accountable under, so the steps go onto that row after the turn
+	// rather than onto a reply the assistant never wrote.
+	SetAssistantMessageMetadata(ctx context.Context, arg SetAssistantMessageMetadataParams) (Message, error)
 	SetAssistantModel(ctx context.Context, arg SetAssistantModelParams) error
 	// Records that a surface has looked. json_set on the existing object rather
 	// than a rewrite, so two surfaces cannot overwrite each other's mark.

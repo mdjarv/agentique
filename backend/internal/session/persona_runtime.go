@@ -81,6 +81,10 @@ type sessionlessPersona struct {
 	// construction and never written afterwards, so it needs no lock.
 	onText func(string)
 
+	// onThought, when set, receives each block of the persona's own reasoning,
+	// "" when the provider withheld the text. Fixed at construction, like onText.
+	onThought func(string)
+
 	// done is the per-turn delivery channel for the turn-complete event, swapped
 	// in by Query and read by onEvent. Guarded by mu.
 	mu   sync.Mutex
@@ -88,8 +92,9 @@ type sessionlessPersona struct {
 }
 
 // onEvent is the runtime broadcast hook. It forwards the turn-complete event to
-// the in-flight Query (if any), and text deltas to onText when a caller asked
-// for them; everything else (tool events, state changes) is ignored — a
+// the in-flight Query (if any), text deltas to onText and the persona's own
+// thinking blocks to onThought when a caller asked for them; everything else
+// (tool events, state changes) is ignored — a
 // discussion contribution is mirrored to the channel timeline once, on
 // completion, exactly like recordContribution does today. Called synchronously
 // from a runtime goroutine, so it must not block.
@@ -100,6 +105,14 @@ func (p *sessionlessPersona) onEvent(_ context.Context, e runtime.Event) {
 	if p.onText != nil {
 		if delta, ok := e.(runtime.AssistantTextDeltaEvent); ok {
 			p.onText(delta.Delta)
+			return
+		}
+	}
+	// A subagent's thinking is not the persona's: it carries a parent tool use,
+	// and the persona has no subagents of its own to attribute it to.
+	if p.onThought != nil {
+		if thought, ok := e.(runtime.ThinkingEvent); ok && thought.ParentToolUseID == "" {
+			p.onThought(thought.Content)
 			return
 		}
 	}
@@ -188,6 +201,11 @@ type PersonaRuntimeParams struct {
 	// opting in turns on the provider's partial messages, which is what emits
 	// them. Called from a runtime goroutine, so it must not block.
 	OnText func(delta string)
+
+	// OnThought receives each block of the persona's reasoning, "" when the
+	// provider sends it encrypted (Claude does). Optional. Called from a runtime
+	// goroutine, so it must not block.
+	OnThought func(text string)
 }
 
 // StartPersonaRuntime starts a sessionless web-only persona: a raw runtime CLI
@@ -200,7 +218,7 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	if id == "" {
 		id = "persona-" + uuid.New().String()
 	}
-	pr := &sessionlessPersona{id: id, rt: m.rt, onText: p.OnText}
+	pr := &sessionlessPersona{id: id, rt: m.rt, onText: p.OnText, onThought: p.OnThought}
 
 	// Serialize the routing handshake under routeMu — see Create. The default
 	// connector is claude (only "codex" is registered as an alternate), so

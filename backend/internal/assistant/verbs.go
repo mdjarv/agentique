@@ -196,15 +196,29 @@ func (s *Service) Invoke(ctx context.Context, name string, args map[string]any) 
 // written to be read, with its reason logged and stripped here — the one place
 // that happens, so a refusal cannot reach a model with its internal token
 // attached.
+//
+// It is also where a turn's verb steps are recorded (steps.go): before the verb
+// runs, so a verb that never answers still shows as the thing the turn was
+// waiting on, and after, with what it answered. Only the head calls this, and
+// only during a turn; outside one there is no recorder and nothing is kept.
 func (s *Service) ToolHandler(ctx context.Context, name string, args map[string]any) map[string]any {
+	rec, step, recorded := s.beginVerbStep(name, args)
+	started := s.now()
+
 	payload, err := s.Invoke(ctx, name, args)
+	failed := err != nil && !errors.Is(err, ErrUnknownVerb)
 	if err != nil {
 		payload = s.refusalFor(name, err)
 	}
 
-	if reason, ok := payload[reasonKey].(string); ok {
+	reason, refused := payload[reasonKey].(string)
+	if refused {
 		s.log.Info("assistant verb refused", "verb", name, "reason", reason)
 		delete(payload, reasonKey)
+	}
+
+	if recorded {
+		s.settleVerbStep(rec, step.Seq, payload, failed, refused, s.now().Sub(started))
 	}
 	return payload
 }

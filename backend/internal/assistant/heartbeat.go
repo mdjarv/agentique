@@ -537,24 +537,34 @@ func cutPrefixFold(s, prefix string) (rest string, found bool) {
 //
 // It reuses the ordinary head-turn path rather than a second runner: one head,
 // one transcript, one turn at a time, and the same budget.
+//
+// The turn's steps go onto its reply when there is one. When there is not — a
+// turn that only called verbs, or one that failed — they go onto the system
+// message instead, since otherwise a turn nobody asked for and nobody watched
+// would leave no account of what it did.
 func (s *Service) heartbeatAct(ctx context.Context, policies []Policy, reason string, entries []JournalEntry) error {
 	text := s.heartbeatMessage(ctx, reason, entries)
-	if _, err := s.appendMessage(ctx, senderSystem, SurfaceHeartbeat, "", messageKindHeartbeat, text); err != nil {
+	woke, err := s.appendMessage(ctx, senderSystem, messageMetadata{Surface: SurfaceHeartbeat, Kind: messageKindHeartbeat}, text)
+	if err != nil {
 		return fmt.Errorf("write the heartbeat's own message: %w", err)
 	}
 
-	reply, err := s.runHeadTurn(ctx, SurfaceHeartbeat, heartbeatInstruction(policies)+"\n\n"+text)
-	if err != nil {
-		return err
+	turn, err := s.runHeadTurn(ctx, SurfaceHeartbeat, heartbeatInstruction(policies)+"\n\n"+text)
+	meta := messageMetadata{
+		Surface:      SurfaceHeartbeat,
+		Kind:         messageKindHeartbeat,
+		Steps:        turn.Steps,
+		StepsOmitted: turn.StepsOmitted,
 	}
-	if strings.TrimSpace(reply) == "" {
+	if err != nil || strings.TrimSpace(turn.Reply) == "" {
 		// A turn that did nothing but call verbs is a real outcome here, and
 		// unlike a conversation nobody is waiting on a sentence: the journal
 		// already carries the verdict, and inventing a message would put words
 		// in the thread the assistant did not write.
-		return nil
+		s.attachSteps(ctx, woke, meta)
+		return err
 	}
-	stored, err := s.appendMessage(ctx, senderPersona, SurfaceHeartbeat, "", messageKindHeartbeat, reply)
+	stored, err := s.appendMessage(ctx, senderPersona, meta, turn.Reply)
 	if err != nil {
 		return err
 	}

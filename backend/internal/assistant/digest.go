@@ -63,7 +63,7 @@ func (s *Service) Digest(ctx context.Context) (Message, error) {
 
 	text := s.composeDigest(ctx, since, entries, open)
 	at := formatTime(s.now())
-	msg, err := s.appendMessage(ctx, senderPersona, "", "", messageKindDigest, text)
+	msg, err := s.appendMessage(ctx, senderPersona, messageMetadata{Kind: messageKindDigest}, text)
 	if err != nil {
 		return Message{}, err
 	}

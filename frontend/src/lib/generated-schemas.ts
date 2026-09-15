@@ -1206,11 +1206,39 @@ export const AssistantMessageSchema = z.object({
   callId: z.string().optional(),
   kind: z.string().optional(),
   createdAt: z.string().optional(),
+  steps: z.array(AssistantStepSchema).optional(),
+  stepsOmitted: z.number().optional(),
 });
 
 export const AssistantDeltaSchema = z.object({
   surface: z.string().optional(),
   text: z.string().optional(),
+});
+
+export const AssistantStepFactSchema = z.object({
+  id: z.string().optional(),
+  scope: z.string().optional(),
+  text: z.string().optional(),
+  source: z.string().optional(),
+});
+
+export const AssistantStepSchema = z.object({
+  seq: z.number().optional(),
+  kind: z.string().optional(),
+  verb: z.string().optional(),
+  detail: z.string().optional(),
+  sessionId: z.string().optional(),
+  status: z.string().optional(),
+  outcome: z.string().optional(),
+  facts: z.array(AssistantStepFactSchema).optional(),
+  text: z.string().optional(),
+  encrypted: z.boolean().optional(),
+  durationMs: z.number().optional(),
+});
+
+export const AssistantStepPushSchema = z.object({
+  surface: z.string().optional(),
+  step: AssistantStepSchema.optional(),
 });
 
 export const AssistantJournalEntrySchema = z.object({
@@ -1395,6 +1423,7 @@ export const pushSchemaMap = {
   "browser.provisioning": PushBrowserProvisioningSchema,
   "assistant.message": AssistantMessageSchema,
   "assistant.delta": AssistantDeltaSchema,
+  "assistant.step": AssistantStepPushSchema,
   "assistant.journal": AssistantJournalEntrySchema,
   "assistant.proposal": AssistantProposalSchema,
   "assistant.policy": AssistantPolicySchema,

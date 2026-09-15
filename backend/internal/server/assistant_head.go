@@ -118,6 +118,7 @@ func (a *assistantHeads) StartHead(ctx context.Context, p assistant.HeadParams) 
 		MCPConfigs:      configs,
 		DisallowedTools: headDisallowedTools,
 		OnText:          p.OnText,
+		OnThought:       p.OnThought,
 	})
 	if err != nil {
 		cleanup()

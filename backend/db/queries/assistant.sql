@@ -59,6 +59,18 @@ INSERT INTO messages (id, channel_id, sender_type, sender_id, sender_name, conte
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
+-- Rewrites one conversation message's metadata, in the conversation's own
+-- channel only.
+--
+-- One writer: a heartbeat turn that wrote no reply. Its steps are the only
+-- record of what it did, and the system message that woke it is the message
+-- that turn is accountable under, so the steps go onto that row after the turn
+-- rather than onto a reply the assistant never wrote.
+-- name: SetAssistantMessageMetadata :one
+UPDATE messages SET metadata = sqlc.arg(metadata)
+WHERE id = sqlc.arg(id) AND channel_id = sqlc.arg(channel_id)
+RETURNING *;
+
 -- One page of the conversation, newest first. An empty `before` starts at the
 -- newest message; otherwise it is a created_at cursor.
 --

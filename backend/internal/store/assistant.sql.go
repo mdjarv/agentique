@@ -1408,6 +1408,42 @@ func (q *Queries) SetAssistantHeartbeatAt(ctx context.Context, arg SetAssistantH
 	return err
 }
 
+const setAssistantMessageMetadata = `-- name: SetAssistantMessageMetadata :one
+UPDATE messages SET metadata = ?1
+WHERE id = ?2 AND channel_id = ?3
+RETURNING id, channel_id, sender_type, sender_id, sender_name, content, message_type, metadata, created_at
+`
+
+type SetAssistantMessageMetadataParams struct {
+	Metadata  string `json:"metadata"`
+	ID        string `json:"id"`
+	ChannelID string `json:"channel_id"`
+}
+
+// Rewrites one conversation message's metadata, in the conversation's own
+// channel only.
+//
+// One writer: a heartbeat turn that wrote no reply. Its steps are the only
+// record of what it did, and the system message that woke it is the message
+// that turn is accountable under, so the steps go onto that row after the turn
+// rather than onto a reply the assistant never wrote.
+func (q *Queries) SetAssistantMessageMetadata(ctx context.Context, arg SetAssistantMessageMetadataParams) (Message, error) {
+	row := q.db.QueryRowContext(ctx, setAssistantMessageMetadata, arg.Metadata, arg.ID, arg.ChannelID)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ChannelID,
+		&i.SenderType,
+		&i.SenderID,
+		&i.SenderName,
+		&i.Content,
+		&i.MessageType,
+		&i.Metadata,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const setAssistantModel = `-- name: SetAssistantModel :exec
 INSERT INTO assistant_state (id, model, created_at, updated_at)
 VALUES (1, ?1, ?2, ?2)

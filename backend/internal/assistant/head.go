@@ -96,6 +96,10 @@ type HeadParams struct {
 	// works without it — the reply still arrives whole from Query — so a
 	// manager that cannot stream is not a broken one.
 	OnText func(delta string)
+	// OnThought receives one block of the model's own reasoning, "" when the
+	// provider withheld the text. Optional: it is only what the turn's steps
+	// record as a thought, and a head without it records its verbs regardless.
+	OnThought func(text string)
 }
 
 // HeadManager starts heads. Implemented in the server over
@@ -125,10 +129,25 @@ type headState struct {
 	// turn runs on a background context and would otherwise start a subprocess
 	// nothing is left to stop.
 	closed bool
+	// steps records the in-flight turn's working, and is nil between turns
+	// ([Service.withTurnSteps]).
+	steps *turnSteps
 }
 
-// runHeadTurn runs one turn through the head and returns its reply.
-func (s *Service) runHeadTurn(ctx context.Context, surface, prompt string) (string, error) {
+// headTurn is what one turn produced: the reply, and what the head did to
+// reach it.
+type headTurn struct {
+	Reply        string
+	Steps        []Step
+	StepsOmitted int
+}
+
+// runHeadTurn runs one turn through the head and returns its reply and steps.
+//
+// The steps come back on the error path too: a turn that failed is the one
+// whose working is most worth reading, since nothing else says what it was
+// doing when it stopped.
+func (s *Service) runHeadTurn(ctx context.Context, surface, prompt string) (headTurn, error) {
 	s.head.turn.Lock()
 	defer s.head.turn.Unlock()
 
@@ -137,6 +156,19 @@ func (s *Service) runHeadTurn(ctx context.Context, surface, prompt string) (stri
 	s.beginHeadTurn()
 	defer s.endHeadTurn()
 
+	var (
+		reply string
+		err   error
+	)
+	steps, omitted := s.withTurnSteps(surface, func() {
+		reply, err = s.queryHead(ctx, surface, prompt)
+	})
+	return headTurn{Reply: reply, Steps: steps, StepsOmitted: omitted}, err
+}
+
+// queryHead is the body of a turn: start the head if it is not up, hand it the
+// news and the prompt, and wait on the reply.
+func (s *Service) queryHead(ctx context.Context, surface, prompt string) (string, error) {
 	rt, err := s.ensureHead(ctx, surface)
 	if err != nil {
 		return "", err
@@ -210,9 +242,10 @@ func (s *Service) ensureHead(ctx context.Context, surface string) (HeadRuntime, 
 	preamble, looked := s.headPreamble(ctx)
 
 	started, err := s.heads.StartHead(ctx, HeadParams{
-		Preamble: preamble,
-		Model:    s.headModel(ctx),
-		OnText:   s.onHeadText,
+		Preamble:  preamble,
+		Model:     s.headModel(ctx),
+		OnText:    s.onHeadText,
+		OnThought: s.onHeadThought,
 	})
 	if err != nil {
 		// Nothing is stamped seen: the news went into a preamble no subprocess

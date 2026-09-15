@@ -28,6 +28,7 @@ type Store interface {
 	// timeline uses, because it IS a channel timeline — through its own insert,
 	// which passes created_at in rather than taking the column's default.
 	InsertAssistantMessage(ctx context.Context, arg store.InsertAssistantMessageParams) (store.Message, error)
+	SetAssistantMessageMetadata(ctx context.Context, arg store.SetAssistantMessageMetadataParams) (store.Message, error)
 	ListAssistantMessagesBefore(ctx context.Context, arg store.ListAssistantMessagesBeforeParams) ([]store.Message, error)
 	ListAssistantMessagesSince(ctx context.Context, arg store.ListAssistantMessagesSinceParams) ([]store.Message, error)
 
