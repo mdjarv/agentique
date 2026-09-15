@@ -170,9 +170,56 @@ Remote machine lifecycle is per-machine: each reconnect re-syncs only that
 machine's projects and sessions. A flaky remote must never trigger the primary's
 reconnect-and-refetch path or reset primary streaming state.
 
-REST resolves the same way. Content that loads through an element `src`, such as
-an image preview, is fetched as a Blob into an object URL, because an `<img>`
-cannot carry the bearer header a remote machine needs.
+REST resolves the same way, with one exception: session content.
+
+### Session files
+
+An agent links its files as `/api/sessions/{id}/files/name`, relative, and the
+history builder refers to detached images as `/api/sessions/{id}/events/…`. A
+relative URL always resolves against the server that served the page, so for a
+session on a paired machine the browser asks the wrong server. Fetching from the
+machine directly with its bearer covered previews and nothing else: a new tab, a
+download or an `<img>` is a navigation, and a navigation carries no bearer. The
+machine may also present a certificate the browser does not accept, which a
+server-to-server connection pinned to its identity does not care about.
+
+So the **page's server relays**. `server/session_content.go` answers both routes
+for every session: this machine's database first, then `peerSessions.Locate`
+over the paired machines' cached lists, then not found. A remote item streams
+from the owner's `GET /api/peer/sessions/{id}/files?path=` or
+`…/events/{eventId}/images/{idx}` (docs/peers.md) with the peer credential, and
+the client uses the URL the agent wrote, unchanged, on every surface.
+
+- **The relaying server decides the headers.** It serves the bytes through its
+  own `content.Serve`, which judges type and disposition by name through the
+  untrusted-file allowlist. A file's name is the path this server was asked
+  for, never the owner's; an event image takes only its extension from the
+  owner, and that is still read through the allowlist. An owner on another
+  release, or a hostile one, cannot make this origin serve active content.
+- **A bad name is refused before anyone is asked.** The id and path are
+  validated here, then again on the owner.
+- **An owner that is down is a 502 with a fixed message**, and the file is
+  simply unavailable. There is no cache.
+- **An owner too old to relay is a 501.** The peer route names what it served
+  (`X-Agentique-Content-Name`), so an older release answering the path with its
+  SPA's 200 reads as "cannot relay", not as the file. On a 501 the client falls
+  back to the machine directly (`useSessionImageSrc`, `MarkdownFileLink`) —
+  contract once no paired release predates the relay.
+- **The relay streams**, bounded at `peerlink.MaxContentBytes` per file, with a
+  deadline on the identity proof and response headers and none on the body
+  beyond the browser's own request.
+- The peer client and the session lists it reads are built whatever the feature
+  flags, because this route needs them with the assistant and voice off. They
+  are lazy, so nothing is dialled until a file is asked for.
+
+Project file browser content for a remote checkout still goes to the machine
+directly.
+
+Every one of these routes, local or relayed, goes through `internal/content`:
+a source returns an `Item`, `content.Serve` writes it, and containment is
+`os.Root` rather than a check followed by an open, so an agent cannot swap a
+checked path for a symlink. The cost is that an absolute symlink is refused even
+when its target is inside the directory.
 
 ### Data model
 
@@ -285,6 +332,8 @@ version from the future rather than hydrating a guess.
 - Identity and secret files are created from `serve.go`, never in constructors.
 - Cached data never impersonates live data.
 - Auth-disabled means loopback-only. Network listeners always authenticate.
+- Relayed session content is served under the relaying server's own headers,
+  named from its own request, never the owner's.
 
 ## Deliberately out of scope
 

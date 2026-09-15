@@ -128,6 +128,11 @@ Both go through `httpsecurity.SetUntrustedFileHeaders`, which allowlists provabl
 inert types by extension, never by sniffing, and sends everything else as an
 octet-stream attachment under a sandbox CSP. Adding `.html`, `.svg`, or any
 sniffable type to that list is a stored-XSS hole.
+Every such route goes through `internal/content` (`content.Serve`), and so does
+a paired machine's session file this server relays: **relayed bytes get this
+server's headers, named from this server's own request**, never the owner's
+Content-Type or name, or an owner on another release decides what runs on this
+origin (`docs/multi-machine.md`, "Session files").
 Response headers (`nosniff`, `frame-ancestors`, `Referrer-Policy`, the SPA CSP)
 live in one middleware so new routes inherit them, and `script-src` allows
 index.html's bootstrap by **hash computed from the embedded bundle**, never

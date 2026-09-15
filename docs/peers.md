@@ -94,6 +94,8 @@ must not unpair the machine for the browser.
 | `GET /api/peer/events?since=N&wait=S` | This credential's outbox rows after `since`, held open up to 25s when there are none. Answers `{events, latest}`. | — |
 | `POST /api/peer/sessions/{id}/follow` | Subscribes the credential's server to a session it did not start. A read, not gated. | Not found. |
 | `GET /api/peer/sessions/{id}/transcript` | The recent transcript (the summariser's own rendering, bounded) so the acting server can summarise. A read, not gated. | Not found. |
+| `GET /api/peer/sessions/{id}/files?path=` | One file from the session's files directory, streamed, for the acting server to relay to a browser (multi-machine.md, "Session files"). The path is a query parameter because the scope rule accepts only a clean, unencoded path. Answers `X-Agentique-Content-Name`. A read, not gated. | Not found; bad path. |
+| `GET /api/peer/sessions/{id}/events/{eventId}/images/{idx}` | One detached event image, the same way. A read, not gated. | Not found; bad index. |
 | `GET /api/peer/sessions/{id}/facts/{kind}` | `branch`, `delete`, `busy` or `settings`, read fresh — what a card is judged on. A read, not gated. | Unknown kind. |
 | `POST /api/peer/sessions/{id}/models/resolve` | A spoken model family against this machine's catalog. | Unknown model, with the families there are. |
 | `POST /api/peer/sessions/{id}/do/{verb}` | One uncontained session verb a person accepted on the acting server's card: `assistant.PerformProposal` re-runs the card's check on this machine's facts, then executes. A refusal there is reason `outcome` with the word the card shows. | Actions not accepted; not a session proposal verb; actions per hour; stale facts perform nothing. |
