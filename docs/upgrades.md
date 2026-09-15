@@ -461,7 +461,8 @@ separately for that reason.
 **Nobody in this repo runs a CLI.** Each provider's Go library owns its own
 command entirely. agentique never constructs, execs or shells out to `claude` or
 `codex`, not to read a version, not to run `doctor`, not to update. It asks
-agentkit's `runtime.InstallInspectable`; agentkit asks the adapter; the adapter
+agentkit's `runtime.InstallInspectable` (and `PublishedVersionReportable`, which
+runs `codex doctor` inside codexcli-go, not here); agentkit asks the adapter; the adapter
 asks the library. Anything the product needs from a CLI is a gap in that library,
 and the fix is to add it there rather than route around it.
 
@@ -493,7 +494,8 @@ let "we cannot act" suppress "you should know": an npm-global install into a
 root-owned prefix is knowable and untouchable at once, and that is a common case,
 not an edge one.
 
-Where no source can be named (brew, winget, mise, asdf, unknown) the row says so.
+Where no source can be named (winget, mise, asdf, unknown) the row gives no
+verdict, with the library's reason on hover.
 It never borrows another channel's number, because the channels disagree: npm and
 the native `latest` channel tracked 2.1.241 on a day the native `stable` channel
 was ten patches behind at 2.1.231.
@@ -516,6 +518,55 @@ the most reassuring possible way to be wrong. So the row reports what the tool s
 (enabled, what disabled it, which channel) and shows the command anyway when the
 updater is off. A tool that reports nothing gets the plain phrase: "did not say"
 and "said no" are different claims.
+
+### Behind its own channel
+
+Whether an installed CLI is behind comes from agentkit's
+`runtime.PublishedVersionReportable`, type-asserted off the same connectors as
+detection (`server.go` builds both maps side by side). The library picks the
+source and the channel from the install it detected — npm dist-tags, the native
+release-channel endpoint or the Homebrew cask for claude, `codex doctor` for
+codex. **Nothing here passes a channel.** Claude's `latest` and `stable` were
+measured ten patch versions apart, so a channel chosen by the product
+manufactures a "behind" that is not true.
+
+**The verdict is three-valued on the wire.** `clis[].published` is absent until
+someone has looked; present, its `status` is `current`, `behind`, or empty for
+no verdict, with `reason` saying why. Absent and empty are different claims —
+nobody looked, and somebody looked and could not compare — and neither may read
+as up to date. The client does no version arithmetic: `cliPublishedVerdict`
+(`lib/update-api.ts`) is a closed union over what the server sent.
+
+**Two beats.** Detection is offline and keeps the release check's interval. The
+published check touches the network, and for codex spawns the CLI (~1.2s), so
+it runs on its own six-hour beat with its own 45s deadline, never on a launch
+path, and only for providers detection found installed — a machine without
+codex does not spawn it to learn that. `Status()` performs no IO and folds the
+last answer in on read, like `lastRan`.
+
+Three rules keep the answer honest between beats:
+
+- **`ErrPublishedVersionUnknown` is an answer.** It means this install has no
+  trustworthy source (a version manager, an unclassified install) and is
+  recorded with its reason. It is not re-asked until detection sees a different
+  install — path, real path, method or version.
+- **A transient failure changes nothing.** The previous answer stands, with its
+  `checkedAt`, and the next slow tick retries.
+- **A verdict about a binary that is gone is withdrawn.** A CLI that updates
+  itself between two slow beats is seen by detection first; the row keeps the
+  published number, drops to no verdict, and detection nudges the published
+  loop to re-ask that install at once.
+
+**Loud only where a person has to act.** A self-managed install whose updater
+is on and whose last attempt the library calls a success
+(`CLIAutoUpdate.lastSucceeded`, from `UpdateAttempt.Succeeded`) is being
+handled: the row shows the published number in faint ink and no command.
+Behind anywhere else is amber and brings the update command onto the row, with
+the failed attempt's outcome when there was one.
+
+**Never the footer mark (C7).** `UpdateMark` means a newer agentique build that
+costs the current turn. A CLI a patch behind is a different offer with a
+different cost, and it lives in the Versions dialog's CLI row only.
 
 ### A CLI update is not a restart
 
@@ -560,7 +611,8 @@ starts calling a shared-tree rewrite self-managed.
   build, an unreadable checkout — all withhold the verdict rather than guessing
   either way.
 - **agentique never runs a provider CLI.** Versions, install methods and updates
-  all come through `runtime.InstallInspectable`. A missing fact is a gap in the
+  all come through `runtime.InstallInspectable` and its sibling capabilities
+  (`PublishedVersionReportable`). A missing fact is a gap in the
   provider library, not a reason to shell out.
 - **An empty update command means "manually", never "use npm".**
 
@@ -592,14 +644,15 @@ starts calling a shared-tree rewrite self-managed.
 | C5 | Only the tools' own updaters, run by their own libraries | The server has no npm prefix, and never should. |
 | C6 | No drain gate for CLI updates | Not a restart; the CLI already self-updates under live sessions. |
 | C7 | CLIs never drive the footer mark | They ship most days; a permanently lit mark is one nobody reads. |
-| C8 | `clis` rides `/api/update/status` | Detection is offline and cheap; a second endpoint buys nothing. |
+| C8 | `clis` rides `/api/update/status` | Detection is offline and cheap, and the published version is served from cache; a second endpoint buys nothing. |
 | C9 | Shadowing is reported, symmetrically | A warning that works for one CLI and not the other teaches false trust. |
 | C10 | `internal/doctor` does not run the CLI | Two answers to "how do I update this" must not differ. |
 | C11 | Run-it button ships off | Mirrors U7: the capability ships, the trigger waits for a hand-run. |
 | C12 | Show the version a session reported | The only field derived from what happened rather than from inspection. |
 | C13 | The connector answers, not the PATH | Keeps detection and execution from drifting apart. |
 | C14 | The install method never gates behaviour | The two libraries' enums deliberately disagree. |
-| C15 | V5a shipped without a "behind" verdict | Nothing in the stack could compute one; a stub would be wrong, not small. |
+| C15 | The "behind" verdict is the provider library's, three-valued, on its own slow beat | V5a shipped without one because nothing in the stack could compute it and a stub would have been wrong, not small. agentkit v0.6.0's `PublishedVersionReportable` computes it against the channel the install follows; agentique carries `current` / `behind` / no verdict and never flattens the third into the first. |
+| C16 | An unknown published version is an answer; a failed lookup is not | `ErrPublishedVersionUnknown` is a property of the install, recorded with its reason and re-asked only when the install changes. A transient error keeps the last answer and retries next tick. |
 
 ## What shipped
 
@@ -632,6 +685,12 @@ starts calling a shared-tree rewrite self-managed.
   `runtime.SessionInitEvent.CLIVersion` through the pipeline and is folded in on
   read rather than at refresh, so a session starting between two hourly probes does
   not wait an hour to be visible.
+
+- **V5d, behind its channel.** `internal/update/cli_published.go` asks
+  `runtime.PublishedVersionReportable` on a six-hour beat, per installed
+  provider, and folds `clis[].published` in on read. The CLI row shows the
+  published number beside the installed one, amber and with the command only
+  where nothing is handling the update.
 
 ## V5c, the button (not built)
 
@@ -669,15 +728,15 @@ the accusation meant for the dishonest one.
 
 One consequence to carry into the copy: **"reported success and nothing happened"
 is not distinguishable from "already up to date"** without a published version to
-prove an update was due. Both are a nil error with an unchanged version. So
-`failed` plus `version unchanged` is only reachable when the updater *also* exits
-non-zero, and the first round of copy must not claim to catch the updater that
-lied. That is the strongest argument for wiring the published version in early
-rather than treating it as a badge.
+prove an update was due. Both are a nil error with an unchanged version. V5d
+wired that version in, so the button can tell them apart where the row carried
+a `behind` verdict before the update — and only there. With no verdict the two
+still look identical, and the copy must not claim to catch the updater that lied
+on an install nobody could compare.
 
-**Outside this repo, in dependency order.** `claudecli-go` needs an `Update`, a
-published-version lookup (only it knows whether an install tracks `latest` or
-`stable`), and a PATH-entries report so C9 can be symmetric. `codexcli-go` needs
+**Outside this repo, in dependency order.** `claudecli-go` needs an `Update` and
+a PATH-entries report so C9 can be symmetric (its published-version lookup
+shipped, and is what V5d reads). `codexcli-go` needs
 its `Update`. `agentkit` needs the capability extended to perform, not just report.
 
 ## Known risks and unverified claims
