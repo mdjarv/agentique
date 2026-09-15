@@ -66,11 +66,6 @@ function offsetFor(fraction: number): number {
  *   row uses it to draw the halo to full on hover. It works because the resting
  *   offset is an SVG *attribute*, which any CSS rule outranks; the live arc
  *   writes an inline style instead, which outranks both.
- * @param trackClassName Hook for the parent to drive the TRACK — the faint
- *   full circle that says how much arc there could be. The assistant's row
- *   pulses it when memory changes. It works for the same reason `arcClassName`
- *   does: the resting stroke and opacity are SVG *attributes*, which any CSS
- *   rule outranks.
  * @param glyph `"none"` leaves the core empty while no line is open. The orb is
  *   the assistant's face as well as the call's: at rest it is the assistant,
  *   and a call is that same face awake — so the phone that used to sit in an
@@ -82,14 +77,12 @@ export function HaloOrb({
   state,
   className,
   arcClassName,
-  trackClassName,
   glyph = "auto",
 }: {
   size: number;
   state: HaloState;
   className?: string;
   arcClassName?: string;
-  trackClassName?: string;
   glyph?: "auto" | "none";
 }) {
   const arcRef = useRef<SVGCircleElement>(null);
@@ -163,7 +156,6 @@ export function HaloOrb({
           stroke="var(--border)"
           strokeWidth={STROKE}
           opacity={0.6}
-          className={trackClassName}
         />
         {/* Rotated so the arc grows from twelve o'clock. The spin lives on the
             group because a CSS transform on the arc would replace that rotate. */}

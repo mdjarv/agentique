@@ -13,12 +13,6 @@
  * anywhere with a keyboard; `⌥V` still places a call, because the two are
  * different asks and the second must not cost a screen.
  *
- * **Memory's flare rides the orb's track.** When memory changes — anywhere,
- * any tab — the track pulses once. It used to pulse the rail's ⋯ trigger, which
- * is no longer where memory lives; the row is, because the orb is the
- * assistant's face and memory is the assistant's. It is a pulse and not a
- * notch: nothing is owed a look, the point is only that the thing is alive.
- *
  * **The notch is the only mark it may wear.** The rail indicates with marks,
  * not sentences: a second line that changed by itself here is what the footer
  * argued off the rail at 271px. The notch means what it means on a session
@@ -27,18 +21,16 @@
  * nobody.
  */
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { LabelSwap } from "~/components/layout/LabelSwap";
 import { HaloOrb } from "~/components/voice/HaloOrb";
 import { dismissSidebar } from "~/lib/sidebar-nav";
 import { cn } from "~/lib/utils";
 import { selectAssistantUnseen, useAssistantStore } from "~/stores/assistant-store";
-import { useBrainStore } from "~/stores/brain-store";
 
 export function AssistantRow({ showShortcut }: { showShortcut: boolean }) {
   const navigate = useNavigate();
   const unseen = useAssistantStore(selectAssistantUnseen);
-  const flaring = useMemoryFlare();
 
   const open = useCallback(() => {
     // Arriving dismisses the phone's drawer through the router rule; a click
@@ -73,7 +65,6 @@ export function AssistantRow({ showShortcut }: { showShortcut: boolean }) {
           // The arc is an attribute at rest, so this rule wins and the halo
           // draws itself round under the pointer.
           arcClassName="group-hover:[stroke-dashoffset:0]"
-          trackClassName={flaring ? "orb-track-flare" : undefined}
         />
         {unseen > 0 && (
           <span
@@ -97,30 +88,6 @@ export function AssistantRow({ showShortcut }: { showShortcut: boolean }) {
       )}
     </button>
   );
-}
-
-/**
- * True for one pulse after memory changes (a fact added, edited or removed, or
- * a consolidation applied — here or in another tab).
- *
- * The brain store's `flareSeq` bumps on every `brain.updated` push, so this
- * watches the number rather than the events. The initial value is skipped: a
- * row mounting is not news.
- */
-function useMemoryFlare(): boolean {
-  const flareSeq = useBrainStore((s) => s.flareSeq);
-  const [flaring, setFlaring] = useState(false);
-  const seenRef = useRef(flareSeq);
-  useEffect(() => {
-    if (flareSeq === seenRef.current) return;
-    seenRef.current = flareSeq;
-    setFlaring(true);
-    // A touch longer than the keyframe, so the class outlives the animation
-    // rather than cutting it off mid-pulse.
-    const t = setTimeout(() => setFlaring(false), 1300);
-    return () => clearTimeout(t);
-  }, [flareSeq]);
-  return flaring;
 }
 
 /**

@@ -1,5 +1,6 @@
 /**
- * The thread's header: the call on the band, everything else behind one ⋯ menu.
+ * The thread's header: the call and Memory on the band, Policies and the digest
+ * behind one ⋯ menu.
  *
  * Memory is the entry that bites: the brain is off by default, and off means the
  * server mounts no `/api/brain` routes — an unmounted `/api/` path falls
@@ -74,16 +75,17 @@ async function openMenu() {
 }
 
 describe("AssistantThreadHeader", () => {
-  it("collapses memory, policies and digest into one menu", async () => {
+  it("puts memory on the band and policies and digest in the menu", async () => {
     features({ brain: true, voice: true });
     render(<AssistantThreadHeader />);
-    // The band carries the call and the trigger, and neither of the pages.
+    // The band carries the call, Memory and the trigger.
     expect(screen.queryByRole("menuitem")).toBeNull();
     expect(screen.getByLabelText(/live call/i)).toBeTruthy();
+    expect(screen.getByLabelText("Memory")).toHaveAttribute("href", "/assistant/memory");
 
     await openMenu();
-    const memory = screen.getByRole("menuitem", { name: /memory/i });
-    expect(memory).toHaveAttribute("href", "/assistant/memory");
+    // One way in from this header: the band's button, not a second menu row.
+    expect(screen.queryByRole("menuitem", { name: /memory/i })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /policies/i })).toHaveAttribute(
       "href",
       "/assistant/policies",
@@ -94,8 +96,8 @@ describe("AssistantThreadHeader", () => {
   it("draws no memory entry when the brain is off", async () => {
     features({ brain: false, voice: true });
     render(<AssistantThreadHeader />);
+    expect(screen.queryByLabelText("Memory")).toBeNull();
     await openMenu();
-    expect(screen.queryByRole("menuitem", { name: /memory/i })).toBeNull();
     // Policies is the core's own and is unaffected, as is the call.
     expect(screen.getByRole("menuitem", { name: /policies/i })).toBeTruthy();
     expect(screen.getByLabelText(/live call/i)).toBeTruthy();
@@ -111,11 +113,12 @@ describe("AssistantThreadHeader", () => {
     expect(digest).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the menu when voice is off", async () => {
+  it("keeps memory and the menu when voice is off", async () => {
     features({ brain: true, voice: false });
     render(<AssistantThreadHeader />);
+    expect(screen.getByLabelText("Memory")).toBeTruthy();
     await openMenu();
-    expect(screen.getByRole("menuitem", { name: /memory/i })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /policies/i })).toBeTruthy();
     expect(screen.queryByLabelText(/live call/i)).toBeNull();
   });
 });

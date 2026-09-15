@@ -343,8 +343,8 @@ still never dedups.
 `consolidate-model` for LLM reorganization (otherwise deterministic dedup and
 decay). Auto-apply is safe because of the consolidation guards.
 
-Every memory change broadcasts a `brain.updated` WebSocket event that pulses the
-assistant row's orb track once and refreshes open tabs.
+Every memory change broadcasts a `brain.updated` WebSocket event that flares the
+rail's ⋯ trigger and Memory's row in it, and refreshes open tabs.
 
 ## CLI
 
@@ -554,11 +554,18 @@ Band 2, the Curator, is still design-only.
 Band 1 was backend-only by design, so none of it was visible or manageable. The
 page makes it so. It lives at `/assistant/memory` and is titled "Memory", under
 the assistant that reads it; `/brain` stays as a redirect, and `features.brain`
-still decides whether it is offered. Its home is the thread's header — except
-with the assistant off, where that header is unreachable and the rail's ⋯ menu
-carries the row instead (`AppSidebar`), so the destination always has exactly
-one home and it is never none. The heading keeps the old name because a
-dozen code comments cite `brain.md#brain-ui` as the spec anchor for F0-F6.
+still decides whether it is offered. It has **two ways in**, by the operator's
+choice (2026-09-15), and is the one destination that does: the rail's ⋯ menu
+(`AppSidebar`), because the brain reports on its own and the flare on that
+menu's trigger is the report, and a button on the assistant thread's band
+(`AssistantThreadHeader`), because the thread is where a recalled fact is read.
+The rail row is also the one that exists with the assistant off. The heading
+keeps the old name because a dozen code comments cite `brain.md#brain-ui` as
+the spec anchor for F0-F6.
+
+The thread shows which facts a reply was built on: a recall step carries the
+facts it returned, as chips with the Helpful / Outdated pair (`docs/assistant.md`,
+"A turn's working").
 
 Every memory row is self-describing: a capture, archived or superseded badge,
 compact evidence and volatility chips, and a corroboration count. The defaults

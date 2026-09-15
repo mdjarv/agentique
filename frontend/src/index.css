@@ -785,30 +785,27 @@
 }
 
 /* --- Memory flare (memory updated: a fact added/changed, a consolidation
-   applied) — the assistant's orb pulses its track once. The track is what the
-   orb looks like at rest, so the pulse reads as the mark itself brightening
-   rather than as a badge appearing beside it. --- */
-@keyframes orb-track-flare {
+   applied) — the rail's ⋯ trigger, and Memory's row inside it, glow twice.
+   A pulse and not a notch: nothing is owed a look, the point is only that
+   the brain is alive. --- */
+@keyframes brain-flare {
   0% {
-    stroke: var(--border);
-    opacity: 0.6;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 55%, transparent);
   }
-  35% {
-    stroke: var(--primary);
-    opacity: 1;
+  40% {
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--primary) 50%, transparent);
   }
   100% {
-    stroke: var(--border);
-    opacity: 0.6;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent);
   }
 }
 
-.orb-track-flare {
-  animation: orb-track-flare 1.1s ease-out 1;
+.brain-flare {
+  animation: brain-flare 1.1s ease-out 2;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orb-track-flare {
+  .brain-flare {
     animation: none;
   }
 }

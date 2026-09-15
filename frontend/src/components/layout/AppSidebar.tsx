@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { VoiceDock } from "~/components/voice/VoiceDock";
+import { useMemoryFlare } from "~/hooks/useMemoryFlare";
 import { dismissSidebar } from "~/lib/sidebar-nav";
 import { cn } from "~/lib/utils";
 import { useFeatureStore } from "~/stores/feature-store";
@@ -41,11 +42,11 @@ export function AppSidebar({ className }: AppSidebarProps) {
 
 function SidebarHeader() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  // Memory's home is the assistant's header, and this is the case where that
-  // home does not exist — see the row below.
+  // The brain is off by default, and off means the server mounts no
+  // /api/brain routes — so the row is absent rather than leading somewhere
+  // that answers the SPA.
   const brainEnabled = useFeatureStore((s) => s.features.brain);
-  const assistantEnabled = useFeatureStore((s) => s.features.assistant);
-  const orphanedMemory = brainEnabled && !assistantEnabled;
+  const flaring = useMemoryFlare();
 
   return (
     <div className="px-4 border-b flex items-center justify-between h-12">
@@ -65,7 +66,14 @@ function SidebarHeader() {
             <button
               type="button"
               aria-label="More tools"
-              className="size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50 cursor-pointer text-muted-foreground hover:text-foreground"
+              className={cn(
+                "size-7 rounded-md flex items-center justify-center transition-colors hover:bg-muted/50 cursor-pointer",
+                // The memory flare survives the collapse: it lights the trigger
+                // because the menu is the only thing visible.
+                flaring
+                  ? "text-primary brain-flare"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
               <Ellipsis className="size-4" />
             </button>
@@ -84,22 +92,19 @@ function SidebarHeader() {
             was only length. Discussions is an action taken on a set of personas,
             so it is an entry point on the Teams page rather than a peer of it.
 
-            What is left all reports something: channels with traffic, loops
-            that run. Memory is normally not here: it lives under the
-            assistant, at /assistant/memory, and its flare rides the
-            assistant's own row. The assistant is not here because it has a
-            home already: the row above the footer, where the operator's
-            companion sits (see VoiceDock). One destination, one home.
+            What is left all reports something: channels with traffic, a brain
+            that flares, loops that run. The assistant is not here because it
+            has a home already: the row above the footer, where the operator's
+            companion sits (see VoiceDock).
 
-            The exception is the brain on with the assistant OFF, a
-            configuration the server explicitly supports and logs about. The
-            assistant's row is not drawn then (VoiceDock), so the header that
-            carries the Memory link is unreachable and the page exists only as
-            a URL — which on the phone, where this app is an installed PWA with
-            no address bar, is a page that does not exist at all. The one-home
-            rule is about two homes competing, not about a destination having
-            none, so Memory comes back here for exactly that case: still one
-            home, chosen by which owner exists.
+            Memory is the one destination with two ways in, by the operator's
+            choice (2026-09-15): this row, because the brain reports on its own
+            — consolidation runs on a timer and the assistant remembers
+            mid-conversation, and the flare on this menu's trigger is that
+            report — and a button in the assistant thread's header, because it
+            is the assistant's memory and the thread is where a recalled fact
+            is read. This row is also the one that exists with the assistant
+            OFF, where the thread's header does not.
           */}
           {/* `useSidebarDismissOnNavigate` closes the mobile sheet on arrival;
               these dismiss on the click as well, because a menu item can name
@@ -125,6 +130,15 @@ function SidebarHeader() {
                 <span className="ml-auto text-muted-foreground-faint">channels & personas</span>
               </Link>
             </DropdownMenuItem>
+            {brainEnabled && (
+              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
+                <Link to="/assistant/memory">
+                  <Brain className={cn("size-3.5", flaring && "text-primary brain-flare")} />
+                  Memory
+                  <span className="ml-auto text-muted-foreground-faint">what it knows</span>
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
               <Link to="/schedules">
                 <Clock className="size-3.5" />
@@ -132,15 +146,6 @@ function SidebarHeader() {
                 <span className="ml-auto text-muted-foreground-faint">loops</span>
               </Link>
             </DropdownMenuItem>
-            {orphanedMemory && (
-              <DropdownMenuItem asChild className="text-xs gap-2" onSelect={dismissSidebar}>
-                <Link to="/assistant/memory">
-                  <Brain className="size-3.5" />
-                  Memory
-                  <span className="ml-auto text-muted-foreground-faint">what it knows</span>
-                </Link>
-              </DropdownMenuItem>
-            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />

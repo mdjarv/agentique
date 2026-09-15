@@ -52,17 +52,19 @@ export function AssistantHeader({ title, children }: { title: string; children?:
  *
  * The band held four controls in a row and the fourth (Policies) was what made
  * it obvious they were not peers. **The call is the band's**, because it is the
- * one thing here that is about *now* — press it and a line opens. Everything
- * else is a place to go or a thing to ask for, and three marks in a row spend
- * the header's width saying that badly: a glyph row reads as one set of equals,
- * where two of these navigate and one fires an op.
+ * one thing here that is about *now* — press it and a line opens.
  *
- * So the menu, on the rail's own ⋯ precedent, holding:
+ * **Memory is on the band too**, by the operator's choice (2026-09-15), and it
+ * is the one place on it for a place rather than an act. The thread is where a
+ * recalled fact is read — a reply's working lists the facts it was built on —
+ * so what the assistant knows is one press from what it said. It is also in the
+ * rail's ⋯ menu, the one destination with two ways in (see `AppSidebar`). It is
+ * drawn only when the server mounted the brain (`features.brain`), because an
+ * unmounted `/api/` path answers the SPA rather than a 404 and the page would
+ * look alive.
  *
- * **Memory**, where what it remembers lives — one home, under the assistant,
- * which is why the rail's ⋯ menu no longer lists it. It is drawn only when the
- * server mounted the brain (`features.brain`), because an unmounted `/api/`
- * path answers the SPA rather than a 404 and the page would look alive.
+ * Everything else is a place to go or a thing to ask for, occasionally, so the
+ * menu, on the rail's own ⋯ precedent, holds:
  *
  * **Policies**, the standing instructions the heartbeat may act under.
  * Ungated with the assistant's own page: the route says in words when the
@@ -82,11 +84,22 @@ export function AssistantHeader({ title, children }: { title: string; children?:
  */
 export function AssistantThreadHeader() {
   const voiceEnabled = useFeatureStore((s) => s.features.voice);
+  const brainEnabled = useFeatureStore((s) => s.features.brain);
   const start = useVoiceStore((s) => s.start);
   const view = useCallView();
   return (
     <AssistantHeader title="Assistant">
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        {brainEnabled && (
+          <Link
+            to="/assistant/memory"
+            aria-label="Memory"
+            title="What the assistant remembers"
+            className={CONTROL_CLASS}
+          >
+            <Brain className="h-3.5 w-3.5" />
+          </Link>
+        )}
         <AssistantMenu />
         {voiceEnabled && !view.active && (
           <button
@@ -105,13 +118,13 @@ export function AssistantThreadHeader() {
 }
 
 /**
- * The assistant's ⋯ menu: the two pages under it, and the digest.
+ * The assistant's ⋯ menu: Policies, and the digest.
  *
  * One trigger, on the rail's precedent, and it is the whole of the band's
  * secondary width. The Digest sits in here rather than on the band even though
  * it is an action and not a place: it is asked for occasionally, it renders
  * nothing of its own, and a glyph in a row of glyphs could not say that the
- * other two navigate.
+ * one beside it navigates.
  *
  * The digest is disabled while one is composing rather than being pressable
  * twice — a second digest would stamp the window and report an empty one. Its
@@ -122,7 +135,6 @@ export function AssistantThreadHeader() {
  */
 function AssistantMenu() {
   const ws = useWebSocket();
-  const brainEnabled = useFeatureStore((s) => s.features.brain);
   const [pending, setPending] = useState(false);
   return (
     <DropdownMenu>
@@ -132,14 +144,6 @@ function AssistantMenu() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        {brainEnabled && (
-          <DropdownMenuItem asChild className="gap-2 text-xs">
-            <Link to="/assistant/memory">
-              <Brain className="h-3.5 w-3.5" />
-              Memory
-            </Link>
-          </DropdownMenuItem>
-        )}
         <DropdownMenuItem asChild className="gap-2 text-xs">
           <Link to="/assistant/policies">
             <Scale className="h-3.5 w-3.5" />

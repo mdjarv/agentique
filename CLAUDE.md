@@ -278,6 +278,12 @@ as the footer, which was length, not reach. And an action taken *on* a listed
 thing belongs on the surface that lists it, never as a peer of it — that is why
 Discussions is a control on the Teams page's profile section.
 
+**Memory is the one exception, and it is the operator's call (2026-09-15), not
+a precedent.** It is in the ⋯ menu, where the flare on the trigger is the
+brain reporting on its own, and on the assistant thread's band, because the
+thread is where a recalled fact is read. The cost is the rule above: two
+entries to keep in step. Do not cite it for a second destination.
+
 **The row above the footer is the operator's companion.** It sits below settled
 work and above the machine's line because it is always-true state that is the
 operator's, not the machine's — and with the assistant on, that is the
@@ -1867,6 +1873,15 @@ stale card narrows what happens and never widens it. Execution goes through
 ops make — so a yes on a card and a click in the UI are one route, and a git
 status of `conflict`, `needs_rebase` or `dirty_worktree` is `failed` with that
 word as the outcome rather than an error.
+
+**A turn's working is recorded at the verb door, never inferred from the
+stream** (`steps.go`, `docs/assistant.md` "A turn's working"). `ToolHandler`
+writes each verb step before and after `Invoke`; the persona runtime forwards
+thinking blocks, which arrive encrypted on Claude. Steps are stored on the
+message the turn ends — reply, silent note or failure note, or a silent
+heartbeat turn's wake-up — bounded where recorded, and never reach the head's
+preamble. `assistant.step` feeds `liveSteps`, which never arms the composer's
+gate: `streaming` stays its only writer.
 
 **The heartbeat's gate is a row count, and the budgets are on the verbs.** One
 ticker in the core (`Service.RunHeartbeat`, started from serve's production

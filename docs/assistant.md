@@ -335,6 +335,9 @@ ordinary composer sending to the head (design round 2026-09-14, option A). It re
 round 1, 2026-09-12, option B; D — the thread as the landing page — is the
 direction once proposals exist.)
 
+**A turn's working** is folded above the reply it produced; see "A turn's
+working" below.
+
 **The call** is unchanged from outside. Inside, its directory, registry and
 dispatcher come from the core, it mirrors turns into the conversation, and its
 greeting reads `SinceLast(voice)`. Live voice still requires auto mode, and a
@@ -345,6 +348,77 @@ item the thread can act on.
 
 **Later**: a messaging gateway as a transport, push notifications from the
 notifier, and the personal-assistant product as a client on top.
+
+## A turn's working
+
+The thread used to say "Thinking…" for as long as a turn took and then show
+only the reply, so a turn that recalled the wrong fact, named a session that
+does not exist or ran out its ten-minute budget left nothing to read. Now each
+turn records **steps** (`internal/assistant/steps.go`): the verbs the head
+called and the reasoning it did, in order.
+
+**Recorded where the work happens, never inferred from the stream.** Every verb
+the head calls passes `Service.ToolHandler`, which knows the verb, its
+arguments, what it answered and whether that was a refusal; the CLI's stream
+carries the same call only as an opaque MCP tool use. So the verb step is
+written there — once before `Invoke` (running), once after (settled) — and
+nothing parses tool events. The one fact that door cannot see is the model's
+reasoning, which the persona runtime forwards from `ThinkingEvent` through
+`HeadParams.OnThought`. On Claude that text arrives **encrypted** (every
+thinking event in the live database since August 2026 has an empty content
+field and only a signature), so a thought is a mark that reasoning happened,
+drawn as the session transcript draws it.
+
+A recorder exists only while a turn runs (`withTurnSteps`, installed under the
+head's lock and removed however the turn ends), so a verb call arriving late
+from a head that was stopped finds no recorder rather than writing into the
+next turn. A verb still marked running when the turn ends is stored as failed
+with "no answer before the turn ended": a stored record that says "running"
+forever claims it is still going.
+
+**Stored on the message the turn ends, whichever that is.** The reply, the
+silent-turn note, or the failure note — a failed turn is the one whose working
+is most worth reading, since nothing else says what it was doing when it
+stopped. A heartbeat turn that writes no reply attaches its steps to the
+system message that woke it (`SetAssistantMessageMetadata`, the one UPDATE on
+the conversation), because that divider is the only record of the turn. Steps
+live in the messages table's metadata column, whose three flat keys became a
+struct with the same JSON names, so every row written before steps existed
+still reads.
+
+**Bounded where recorded.** 24 steps a turn, the rest counted as
+`stepsOmitted`; details, outcomes, fact text and thought text are clipped to a
+few hundred runes each. A history page is fifty messages, and a turn's
+working must not be what makes it heavy.
+
+**What a step says.** A verb's *detail* is its most telling string argument
+(`stepDetailKeys`: target, query, project, filter, …); a `session_id` rides as
+`sessionId` so the client names the session from the list it holds rather than
+printing a uuid. Its *outcome* is a refusal's own sentence — written to be read,
+with the internal reason token stripped first — or the first list in the answer
+counted in the answer's own word ("2 sessions", "3 facts"), or "done". A recall
+carries up to six of the facts it returned, with id, scope and source, so the
+operator can see what a reply was built on.
+
+**Live, and never the gate.** Each step rides `assistant.step` (a `StepPush`),
+a verb twice; the client merges by `seq` into `liveSteps` and draws them above
+the streaming reply, where the folded line names the verb being waited on.
+`streaming` stays the composer's only gate: a heartbeat turn pushes steps with
+nobody's ask behind it, and a silent one ends without the assistant message
+that releases the composer. A missed push costs a live row, never the record.
+
+**Rendered as the session's activity line** (`TurnSteps`): `CollapsibleGroup`,
+"N steps, M thoughts", `ThinkingBlock` for a thought — a turn's working reads the
+same wherever it is met. Refused wears a slashed circle, not red: a refusal is
+the verb table's rules working. Failed is the X. A recall's facts are chips
+opening onto the Helpful / Outdated pair (`useFactVerdict`, shared with the old
+recall card), which is the conversational outcome signal made clickable; a
+`reported` fact renders as a quotation.
+
+**Not an input.** Steps never reach the head: the preamble's tail carries message
+text only. Everything a step quotes — an argument, a refusal, a fact — is shown
+as inert text, and nothing on the row acts except the operator's own verdict on
+a fact.
 
 ## Multi-machine
 
