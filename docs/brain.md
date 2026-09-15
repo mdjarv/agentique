@@ -107,7 +107,9 @@ non-pinned facts. Episodic captures are never recalled.
 Ranking is keyword-only (idf-weighted token overlap, category boosts, recency
 tiebreaker) unless the Store implements `Searcher`, which Chroma does. Then it
 blends vector and keyword scores, degrading cleanly to keyword-only when the
-vector path is unavailable or returns nothing.
+vector path is unavailable or returns nothing. Whether the Chroma store is in play
+at all is decided per call, by whichever vector backend is attached at that moment
+(see "The vector backend attaches at runtime" below).
 
 **Associative recall** folds in a bounded set of each top match's `Related`
 neighbours after the flat top-K (at most 3 per seed, at most K total) at lower
@@ -249,7 +251,11 @@ plus `Recall` and the rest of the REST surface the memory page reads, and the
 
 There is no typegen for brain types. Every `memoryDTO`, `snapshotDTO` and
 `statusCounts` change in `internal/brain/http.go` needs a mirror edit in
-`frontend/src/lib/brain-api.ts`. This is the one place in the repo where a Go
+`frontend/src/lib/brain-api.ts`. The same holds for `SemanticStatus.Wire`
+(`internal/brain/semantic.go`), which `/api/brain/status` and the `brain.semantic`
+push both carry and `lib/brain-semantic.ts` reads. Its fields beyond `semantic` are
+optional on the client, so an older server that sends only the boolean reads as
+unknown rather than as "off". This is the one place in the repo where a Go
 wire change does not propagate by running a generator.
 
 ## Scope model
@@ -261,10 +267,11 @@ can map its own concepts (board, persona, whatever).
 
 ## Configuration
 
-The brain is on by default with keyword recall over markdown at
-`<data-dir>/brain`. Semantic recall is opt-in and needs all three of
-`chroma-url`, `embed-url` and `embed-model` set, with Chroma answering a
-heartbeat. Otherwise it logs a warning and uses keyword recall.
+The brain uses keyword recall over markdown at `<data-dir>/brain`. Semantic
+recall is opt-in and needs all three of `chroma-url`, `embed-url` and
+`embed-model` set. With them set, recall is semantic while Chroma and the
+embedder both answer, and keyword while either does not; the server keeps trying
+for the life of the process.
 
 Every key is settable in `config.toml` under `[brain]`, with an
 `AGENTIQUE_BRAIN_*` environment override that wins. README's configuration
@@ -285,10 +292,15 @@ The Chroma collection is created with cosine distance. Changing the embedding
 model or space needs a fresh collection name, because a stale collection of the
 same name created with a different space skews scores.
 
-Index maintenance is lazy: each `Put` indexes one fact. A bulk hand-edit of the
-markdown or an embedding-model change leaves vectors stale until a later pass
-touches each fact. `agentique brain reindex` rebuilds the whole collection in one
-shot from the markdown. The slow self-heal is scheduled consolidation, which runs
+Index maintenance is lazy: each `Put` indexes one fact. Every attach catches the
+collection up first (`chroma.Store.IndexStale`: facts whose id is missing, or
+whose indexed text differs, in batches of 64), so a fresh Chroma and the writes
+made while the backend was away are indexed without a command. A write whose
+vector upsert fails while attached marks the backend, and the next healthy probe
+runs the same catch-up. None of that notices a bulk hand-edit made behind the
+server's back or an embedding-model change, which leave vectors stale until a
+later pass touches each fact; `agentique brain reindex` rebuilds the whole
+collection in one shot from the markdown. The slow self-heal is scheduled consolidation, which runs
 once shortly after server start and then on `consolidate-interval`, so a
 frequently-restarted server can no longer defer that refresh forever.
 
@@ -343,6 +355,27 @@ still never dedups.
 `consolidate-model` for LLM reorganization (otherwise deterministic dedup and
 decay). Auto-apply is safe because of the consolidation guards.
 
+**Consolidation does not run while a configured vector backend is detached.**
+Recall degrades to keyword because it sits on a model's latency path.
+Consolidation does not, and it persists what it computes: `RelinkScope`,
+`AssignCommunities` and the areas pass blend embedding cosine when there is an
+embedder, so a pass during an outage would rewrite `Related`, communities and
+areas from Jaccard alone and the next attached pass would rewrite them back.
+`Consolidate`, `ApplyPlan`, `ApplyGlobal` and `AssignAreas` return
+`ErrSemanticUnavailable` instead. Dry runs and `PreviewAreas` write nothing and
+are not gated. A scheduled pass that finds the backend detached skips, logs why,
+and runs on the next attach rather than waiting out the interval. Each pass takes
+one backend snapshot and its vectors up front, so the scope in flight when the
+backend goes finishes on the vectors it holds, and the next scope refuses. The
+HTTP routes answer 409 with the reason, consolidate-all fails its job, and the
+CLI refuses unless `--allow-lexical`.
+
+Clustering looks a record's vector up by its text, not its id. A pass relinks
+what it just wrote, so a rewritten fact carries its id under a new text and an
+abstracted one has an id nothing had when the vectors were computed. Both are
+embedded then (`Service.vectorFor`), a handful per pass, instead of falling to
+Jaccard.
+
 Every memory change broadcasts a `brain.updated` WebSocket event that flares the
 rail's ⋯ trigger and Memory's row in it, and refreshes open tabs.
 
@@ -353,6 +386,12 @@ snapshots (`snapshot`, `restore`), churn (`consolidate`, `assign-areas`,
 `calibrate`, `reindex`), migration (`backfill`, `backfill-labels`,
 `backfill-subsumed`) and portability (`export`, `import`). README's CLI reference
 has the table; `--help` has the flags.
+
+A one-shot command attaches the configured vector backend once, synchronously
+(`Service.Connect`), with no catch-up and no retry. Unreachable, it says so and
+carries on in keyword mode where that is good enough: `search` degrades,
+`reindex` and `calibrate` refuse, and `consolidate` and `assign-areas` refuse
+unless `--allow-lexical`, for the reason in Automation above.
 
 One gotcha: a non-release (`go run`) build resolves a *relative* `agentique.db`,
 so point it at the real data dir with
@@ -410,13 +449,50 @@ export AGENTIQUE_BRAIN_EMBED_URL=http://127.0.0.1:8081/v1/embeddings
 export AGENTIQUE_BRAIN_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 ```
 
-**Semantic mode is decided once, at boot.** `brain.New` probes Chroma's heartbeat
-and, when it does not answer, runs keyword-only for the life of the process — a
-Chroma that comes up a minute later is not picked up until the next restart. The
-boot line `brain: enabled ... semantic=false` says so, and the memory page's
-header badge reads Keyword rather than Semantic. After (re)creating the containers, run
-`agentique brain reindex` (a fresh Chroma holds no vectors) and restart the
-server.
+**The vector backend attaches at runtime, not at boot.** `brain.New` never dials.
+`Service.RunSemantic`, started from serve's production block, owns the backend
+for the life of the process, and swaps it in and out as one atomically replaced
+bundle (the Chroma store, the embedder and the thresholds derived for them) that
+every operation reads once.
+
+- **Attach.** A probe asks Chroma for its heartbeat and the embedder for one
+  vector. The boot probe used to ask Chroma alone, which called a backend with a
+  dead embedder semantic. Then the collection is caught up and published. The
+  first attempt is immediate. After a failure it retries with backoff from 5s to
+  two minutes.
+- **Boot window.** Recall is keyword until the first attach completes. Against a
+  populated collection of 1435 facts the attach took 244 to 308 ms (four boots),
+  within 200 ms of `/api/health` first answering. Against an empty one it indexes
+  everything first, 9 to 24 s for the same corpus on the CPU embedder, and recall
+  is keyword for that long.
+- **Detach.** While attached, it probes every 30s and detaches after two failed
+  probes in a row, so a blip does not flap it and an outage is noticed within
+  about a minute. Recall is then keyword, and nothing pays an embed timeout per
+  call.
+- **Auto-calibration** runs on the first attach of the process only. It embeds
+  the whole corpus, and a flapping backend must not repeat that per flap.
+
+The state is visible without reading a log. `/api/brain/status` carries
+`semanticState` (`off`, `connecting`, `on`, `unreachable`) with a closed
+`semanticReason` and `semanticDownSince`. The Memory page's badge reads amber
+Keyword naming the failed half while the backend is unreachable, and follows an
+attach or a detach live through a `brain.semantic` push. After ten minutes down,
+the steward opens `semantic-recall-down` (`docs/peers.md`), which puts the mark
+in the footer.
+
+So after (re)creating the containers there is nothing to run: the next attempt
+attaches and indexes the empty collection. `agentique brain reindex` is still the
+tool for a model change or a hand-edit.
+
+**Never point a scratch server at the live Chroma.** Attaching catches the
+collection up from that server's own brain directory, and `IndexStale` upserts by
+id. A sandbox running on a copy of the brain overwrites the live index's
+documents and vectors for every id the two share, with the copy's text, and the
+live server corrects them only at its own next attach. Give a verify server its
+own Chroma (a throwaway `chromadb/chroma` container on another port) or no
+`chroma-url` at all. `IndexStale` never deletes, so a sandbox cannot empty the
+live index, but that is the only guarantee. Namespacing the collection per data
+directory is in `docs/tech-debt.md`.
 
 ## Why it works this way
 
@@ -515,7 +591,10 @@ Configuration section above covers tuning them.
 
 Everything degrades cleanly to keyword and Jaccard with no embedder configured.
 That is a hard requirement, not a nicety: recall never fails because optional
-infrastructure is down.
+infrastructure is down. A backend that is configured and unreachable is the
+narrower case, and the two halves split there: recall still degrades, and a
+consolidation pass refuses, because it would persist the degraded graph (see
+Automation).
 
 Per-turn recall latency is why the corpus read is cached and why each lookup is
 bounded by a 3s timeout.

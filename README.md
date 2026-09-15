@@ -585,7 +585,9 @@ accept-policies = false
 # says so at boot. Nothing refuses to boot over it.
 enabled = false
 # Semantic recall. Without these, recall and clustering fall back to
-# keyword/Jaccard over the markdown files, which works but is weaker.
+# keyword/Jaccard over the markdown files, which works but is weaker. With
+# them, the server attaches Chroma and the embedder once both answer, retries
+# while they do not, and pauses consolidation while they are away.
 chroma-url  = ""
 embed-url   = ""
 embed-model = ""
@@ -781,8 +783,8 @@ Session arguments accept a unique ID prefix.
 | `brain search <query>` | Search through the live recall path, hybrid or keyword. |
 | `brain stats` | Totals, per-scope counts, trust tiers, graph connectivity, semantic edges. |
 | `brain snapshot` / `brain restore <id>` | Filesystem snapshot and restore. Restore writes a safety snapshot first. |
-| `brain consolidate` | Consolidate one scope. `--project`/`--scope`, optional `--model`. |
-| `brain assign-areas` | Recompute cross-scope topic areas. `--dry-run` to preview. |
+| `brain consolidate` | Consolidate one scope. `--project`/`--scope`, optional `--model`. Refuses while a configured vector backend is unreachable unless `--allow-lexical`. |
+| `brain assign-areas` | Recompute cross-scope topic areas. `--dry-run` to preview; `--allow-lexical` as for `consolidate`. |
 | `brain calibrate` | Derive model-specific semantic thresholds from the corpus's own cosine distribution. |
 | `brain reindex` | Rebuild the vector index from the markdown source of truth. |
 | `brain backfill` | Extract durable memories from past transcripts. |

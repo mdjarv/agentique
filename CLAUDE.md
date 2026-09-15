@@ -1999,6 +1999,21 @@ is injected everywhere it was missed. The frontend's half is `isCapture` /
 `STAGED_SOURCES` in `lib/brain-labels.ts`; `bySource` counts every source
 separately, so a capture-tier total is a sum (`pendingCaptures`).
 
+**The vector backend is attached at runtime and read as one snapshot.**
+`brain.New` never dials. `Service.RunSemantic`, from serve's production block,
+attaches it, catches the collection up (`chroma.Store.IndexStale`), probes it and
+detaches it, by swapping one `semanticBackend` behind an atomic pointer. Put no
+store, embedder or threshold field on `Service`: an operation reads `backend()`
+once and uses `storeFor(b)` with that backend's thresholds, or a swap between two
+reads pairs a keyword store with semantic thresholds. Recall degrades to keyword
+while detached. A pass that persists links, communities or areas does not: it
+returns `ErrSemanticUnavailable`, because a lexical rewrite made during an outage
+is undone by the next attached pass, and a new persisting clustering path goes
+through `clusteringBackend` for the same reason. Clustering looks vectors up by
+text, not id, because a pass relinks facts it has just rewritten or minted.
+`IndexStale` never deletes: a copied brain pointed at a shared collection must not
+be able to empty the live index.
+
 Strength changes on outcome, not retrieval, and the outcome is conversational:
 `confirm_memory` and `flag_memory`, in-band. Human confirmation outranks
 corroboration, which is capped below it. Model choice is a required caller

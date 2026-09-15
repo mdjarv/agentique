@@ -301,16 +301,22 @@ One type owns memory CRUD + search + status + consolidation preview/apply + glob
 help. → `internal/brain/{http,job}.go`.
 
 ### Brain: semantic infra is operator-run docker, not managed by agentique
-Semantic recall is now **live in production** (ChromaDB + Ollama all-minilm), but the two services are
-**hand-run docker containers** (`chroma`, `ollama`), not provisioned or health-managed by agentique.
-Both now carry `--restart unless-stopped` (a gap found 2026-06-23: the pre-existing `chroma` container
-had `--restart no`, so after it exited agentique silently fell back to keyword recall until manually
-restarted — recall.go degrades cleanly, so no breakage, just lost semantics). Remaining: no
-agentique-side health surfacing (an operator can't see "semantic is configured but Chroma is down"
-except in logs), the Ollama model lives in a docker volume (durable) but the stack is a manual
-`docker run`, and there's no compose/systemd unit checked in. → ops/runbook gap; see
-`docs/brain.md#semantic-recall` runbook. Candidate: a `GET /api/brain/status` field for embedder/Chroma
-reachability + a docker-compose in the repo.
+Semantic recall runs on two **hand-run docker containers** (`agentique-chroma`, `agentique-embed`),
+not provisioned by agentique, and there is no compose file or systemd unit checked in. The health
+half is closed: the server attaches the backend at runtime and detaches it when it stops answering,
+`/api/brain/status` reports `semanticState`, the Memory badge turns amber, and the steward opens
+`semantic-recall-down` after ten minutes (`docs/brain.md`, the runbook). Remaining: provisioning.
+→ ops/runbook gap. Candidate: a docker-compose in the repo.
+
+### Brain: every data dir shares one Chroma collection name
+The collection defaults to `agentique_memories` whatever the data dir, so a verify server on a copy
+of the brain that is pointed at the live Chroma writes into the live index. Attaching runs
+`chroma.Store.IndexStale`, which upserts every id whose indexed text differs from the copy's, so
+the live index serves the copy's documents and vectors for shared ids until the live server's
+next attach corrects them. It never deletes, so it cannot empty the index. Today the only guard is
+the runbook's "never point a scratch server at the live Chroma". Fix: derive the default collection
+from the data dir (a short hash suffix), with a one-time rename or reindex for existing
+deployments. → `internal/brain/semantic.go` (`attach`, `defaultCollection`).
 
 ### Brain: persisted cross-scope edges deferred (the "B4" decision)
 The planned `RelinkScope` curated-edge tagging + persisted cross-scope `Related` edges was

@@ -115,7 +115,8 @@ type attachError struct {
 	err    error
 }
 
-func (e *attachError) Error() string { return fmt.Sprintf("%s: %v", e.reason, e.err) }
+// Error is the underlying error alone: every log line that carries one also names the reason.
+func (e *attachError) Error() string { return e.err.Error() }
 func (e *attachError) Unwrap() error { return e.err }
 
 // ErrSemanticNotConfigured is Connect's answer when no vector backend is configured.
@@ -367,6 +368,7 @@ func (s *Service) attach(ctx context.Context, catchUp bool) (err error) {
 		s.noteAttachFailure(reason, err)
 	}()
 
+	began := time.Now()
 	cfg := s.semCfg
 	client := chroma.NewClient(cfg.chromaURL)
 	emb := embedhttp.New(cfg.embedURL, cfg.embedModel, embedhttp.WithAPIKey(cfg.embedAPIKey))
@@ -434,7 +436,8 @@ func (s *Service) attach(ctx context.Context, catchUp bool) (err error) {
 	s.setStatus(SemanticOn, "")
 	s.announceAttach()
 	s.loggedDown.Store(false)
-	slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", b.cosThresh, "vectorVeto", b.vetoScore)
+	slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", b.cosThresh, "vectorVeto", b.vetoScore,
+		"took", time.Since(began).Round(time.Millisecond))
 
 	if catchUp {
 		// Writes that loaded the keyword store before the swap were not indexed. Every writer that

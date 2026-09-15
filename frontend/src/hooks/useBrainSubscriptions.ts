@@ -32,6 +32,8 @@ export function useBrainSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     // spinner instead of leaving it hung forever.
     const unsubConnect = ws.onConnect(() => {
       useBrainStore.getState().hydrateJob();
+      // A semantic change pushed while this socket was down was missed; reread it.
+      useBrainStore.getState().refreshStatus();
     });
     return () => {
       unsubJob();

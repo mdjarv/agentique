@@ -102,6 +102,7 @@ interface BrainState {
   hydrateJob: () => Promise<void>;
   onBrainUpdated: () => void;
   setSemantic: (reading: SemanticReading) => void;
+  refreshStatus: () => Promise<void>;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -317,6 +318,23 @@ export const useBrainStore = create<BrainState>((set, get) => ({
 
   setSemantic: (reading) => {
     set({ semantic: reading.semantic, semanticReading: semanticReadingOf(reading) });
+  },
+
+  // A brain.semantic push is sent only on a change, so a tab that was disconnected across one
+  // — a server restart always is — rereads the status when its socket comes back. Only once
+  // the store has loaded: until then there is nothing stale, and the page's load reads it.
+  refreshStatus: async () => {
+    if (!get().loaded) return;
+    try {
+      const status = await getStatus();
+      set({
+        semantic: status.semantic,
+        semanticReading: semanticReadingOf(status),
+        counts: status.counts ?? null,
+      });
+    } catch (err) {
+      console.error("Failed to refresh brain status:", err);
+    }
   },
 
   onBrainUpdated: () => {

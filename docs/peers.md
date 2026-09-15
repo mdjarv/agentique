@@ -204,6 +204,7 @@ forces each kind to choose rather than inherit a blank.
 | `session-blocked-long` | pending approval or question for 30 minutes (the steward keeps the clock) | answered | hand: "needs a screen" |
 | `update-waiting` | the release checker says behind | applied | update (costs the turn in flight) |
 | `backup-failing` | no periodic backup file for three intervals | a new one lands | hand |
+| `semantic-recall-down` | the brain's configured vector backend detached for ten minutes, timed from the brain's own `DownSince` so one outage opens once | it attaches, or no backend is configured | hand: "bring Chroma / the embedder back" |
 
 What is deliberately **not** a finding: a boot reap that found orphans, a disk
 gauge at a high but ordinary level, an idle eviction. Those are bookkeeping, not
@@ -218,7 +219,9 @@ person at that machine can perform is said in words naming the machine.
 trigger in its own footer, on the footer's marks-not-sentences rule, with the
 rows one click away (`lib/steward.ts`, `GET /api/steward/findings`). Only the
 kinds nothing else on that line or a row already says earn the mark:
-`cli-signed-out`, `loop-paused`, `backup-failing`. `update-waiting` is
+`cli-signed-out`, `loop-paused`, `backup-failing`, `semantic-recall-down` (the
+Memory page's badge says it too, but nobody opens a page they have no reason to,
+which is how one outage ran eleven hours unnoticed). `update-waiting` is
 `UpdateMark`, `disk-low` is the amber meter, `session-blocked-long` is the row's
 triangle. So a machine reports its health even while the acting server is down
 or unreachable.
