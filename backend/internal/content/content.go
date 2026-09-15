@@ -20,6 +20,7 @@ package content
 import (
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -113,11 +114,15 @@ func RespondError(w http.ResponseWriter, err error) {
 		httperror.RespondError(w, httperror.BadRequest("invalid file path"))
 	case errors.Is(err, ErrTooLarge):
 		httperror.RespondError(w, &httperror.Error{Status: http.StatusRequestEntityTooLarge, Message: "file too large"})
+	// A machine that is asleep, or a release not upgraded yet, is an ordinary
+	// state for a paired machine, not a fault in this server.
 	case errors.Is(err, ErrUnavailable):
-		httperror.RespondError(w, httperror.BadGateway("the machine that owns this file did not answer", err))
+		httperror.RespondError(w, httperror.BadGateway("the machine that owns this file did not answer", err).
+			WithLogLevel(slog.LevelWarn))
 	case errors.Is(err, ErrUnsupported):
-		httperror.RespondError(w, &httperror.Error{Status: http.StatusNotImplemented,
-			Message: "the machine that owns this file runs a release that cannot relay it", Cause: err})
+		httperror.RespondError(w, (&httperror.Error{Status: http.StatusNotImplemented,
+			Message: "the machine that owns this file runs a release that cannot relay it", Cause: err}).
+			WithLogLevel(slog.LevelWarn))
 	default:
 		httperror.RespondError(w, httperror.Internal("serve file", err))
 	}
