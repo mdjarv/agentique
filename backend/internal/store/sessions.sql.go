@@ -652,6 +652,23 @@ func (q *Queries) UpdateSessionBehaviorPresets(ctx context.Context, arg UpdateSe
 	return err
 }
 
+const updateSessionEffort = `-- name: UpdateSessionEffort :exec
+UPDATE sessions SET effort = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
+`
+
+type UpdateSessionEffortParams struct {
+	Effort string `json:"effort"`
+	ID     string `json:"id"`
+}
+
+// The requested level, not the one the provider reported applying: resume
+// passes this back as the connect-time effort, the same meaning it has at
+// creation.
+func (q *Queries) UpdateSessionEffort(ctx context.Context, arg UpdateSessionEffortParams) error {
+	_, err := q.db.ExecContext(ctx, updateSessionEffort, arg.Effort, arg.ID)
+	return err
+}
+
 const updateSessionLastQueryAt = `-- name: UpdateSessionLastQueryAt :exec
 UPDATE sessions SET last_query_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?
 `

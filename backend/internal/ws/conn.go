@@ -394,6 +394,7 @@ var handlerRegistry = map[string]handlerFunc{
 	"session.delete":                  (*conn).handleSessionDelete,
 	"session.delete-bulk":             (*conn).handleSessionDeleteBulk,
 	"session.set-model":               (*conn).handleSessionSetModel,
+	"session.set-effort":              (*conn).handleSessionSetEffort,
 	"session.set-permission":          (*conn).handleSessionSetPermission,
 	"session.set-auto-approve":        (*conn).handleSessionSetAutoApprove,
 	"session.resolve-approval":        (*conn).handleSessionResolveApproval,

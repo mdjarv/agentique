@@ -146,6 +146,13 @@ func (c *conn) handleSessionSetModel(msg ClientMessage) {
 	})
 }
 
+func (c *conn) handleSessionSetEffort(msg ClientMessage) {
+	handleRequest(c, msg, func(ctx context.Context, p SessionSetEffortPayload) (SessionSetEffortResult, error) {
+		applied, err := c.svc.SetSessionEffort(ctx, p.SessionID, p.Effort)
+		return SessionSetEffortResult{Effort: applied}, err
+	})
+}
+
 func (c *conn) handleSessionSetPermission(msg ClientMessage) {
 	handleRequest(c, msg, func(_ context.Context, p SessionSetPermissionPayload) (struct{}, error) {
 		return struct{}{}, c.svc.SetPermissionMode(p.SessionID, p.Mode)

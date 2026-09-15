@@ -129,6 +129,7 @@ type Session struct {
 	queries     []string
 	closed      bool
 	model       string
+	effort      runtime.Effort
 	interrupted bool
 	scenarios   []Scenario
 	scenarioIdx int
@@ -249,6 +250,16 @@ func (s *Session) SetModel(_ context.Context, model string) error {
 	defer s.mu.Unlock()
 	s.model = model
 	return nil
+}
+
+// SetEffort implements the optional EffortSwitchable runtime capability. It
+// takes every level and answers with the request, the simplest provider there
+// is: no cap, no refusal.
+func (s *Session) SetEffort(_ context.Context, effort runtime.Effort) (runtime.Effort, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.effort = effort
+	return effort, nil
 }
 
 // SetPlanMode implements the optional PlanModeCapable runtime capability.

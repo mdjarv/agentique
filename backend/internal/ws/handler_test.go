@@ -1020,6 +1020,9 @@ func TestHandlerValidation(t *testing.T) {
 		{"set-pinned/empty-sessionId", "session.set-pinned", "95", ws.SessionSetPinnedPayload{SessionID: "", Pinned: true}, "sessionId"},
 		{"unarchive/empty-sessionId", "session.unarchive", "96", ws.SessionUnarchivePayload{SessionID: ""}, "sessionId"},
 		{"channel.create/empty-projectId", "channel.create", "98", ws.ChannelCreatePayload{ProjectID: ""}, "projectId"},
+		{"set-effort/empty-sessionId", "session.set-effort", "99", ws.SessionSetEffortPayload{SessionID: "", Effort: "high"}, "sessionId"},
+		{"set-effort/unknown-level", "session.set-effort", "100", ws.SessionSetEffortPayload{SessionID: validID, Effort: "turbo"}, "effort"},
+		{"set-effort/not-live", "session.set-effort", "101", ws.SessionSetEffortPayload{SessionID: validID, Effort: ""}, "not live"},
 	}
 
 	for _, tc := range cases {

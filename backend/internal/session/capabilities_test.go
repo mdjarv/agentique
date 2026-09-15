@@ -16,6 +16,7 @@ func TestCapabilitiesForProvider_Claude(t *testing.T) {
 		"Subagents":          caps.Subagents,
 		"Attachments":        caps.Attachments,
 		"ModelSwitch":        caps.ModelSwitch,
+		"EffortSwitch":       caps.EffortSwitch,
 	} {
 		if !got {
 			t.Errorf("claude.%s expected true, got false", name)
@@ -56,6 +57,9 @@ func TestCapabilitiesForProvider_Codex(t *testing.T) {
 		"Resume":                 caps.Resume,
 		"RateLimitEvents":        caps.RateLimitEvents,
 		"MidTurnSendMessage":     caps.MidTurnSendMessage,
+		// Codex takes effort per turn, so a live change applies from the
+		// next one: the ramp is live even though the model picker is not.
+		"EffortSwitch": caps.EffortSwitch,
 	} {
 		if !got {
 			t.Errorf("codex.%s expected true, got false", name)

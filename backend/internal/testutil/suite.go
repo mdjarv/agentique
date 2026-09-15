@@ -195,11 +195,21 @@ type MockCLISession struct {
 	sentMessages []string
 	closed       bool
 	model        string
+	effort       runtime.Effort
 	planMode     runtime.PlanMode
 	interrupted  bool
 	cliState     runtime.SessionState
 	lastStdoutAt time.Time
 	pingErr      error
+
+	// effortReply, when set, replaces what SetEffort answers, so a test can
+	// simulate a provider that caps the level or refuses it.
+	effortReply *effortReply
+}
+
+type effortReply struct {
+	applied runtime.Effort
+	err     error
 }
 
 func NewMockCLISession() *MockCLISession {
@@ -294,6 +304,37 @@ func (m *MockCLISession) SetModel(_ context.Context, model string) error {
 	defer m.mu.Unlock()
 	m.model = model
 	return nil
+}
+
+// SetEffort implements runtime.EffortSwitchable. It records the request and
+// answers with it, unless SetEffortReply has scripted a different answer.
+func (m *MockCLISession) SetEffort(_ context.Context, effort runtime.Effort) (runtime.Effort, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r := m.effortReply; r != nil {
+		if r.err != nil {
+			return "", r.err
+		}
+		m.effort = r.applied
+		return r.applied, nil
+	}
+	m.effort = effort
+	return effort, nil
+}
+
+// SetEffortReply scripts SetEffort's answer: the applied level, or an error
+// (in which case the level in force does not change).
+func (m *MockCLISession) SetEffortReply(applied runtime.Effort, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.effortReply = &effortReply{applied: applied, err: err}
+}
+
+// Effort returns the level in force after the last successful SetEffort.
+func (m *MockCLISession) Effort() runtime.Effort {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.effort
 }
 
 func (m *MockCLISession) Interrupt(_ context.Context) error {

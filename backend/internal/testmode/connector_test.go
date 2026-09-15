@@ -254,6 +254,24 @@ func TestSession_SetModel(t *testing.T) {
 	}
 }
 
+func TestSession_SetEffort(t *testing.T) {
+	s := NewSession()
+	defer s.Close()
+	var _ runtime.EffortSwitchable = s
+	applied, err := s.SetEffort(context.Background(), runtime.EffortHigh)
+	if err != nil {
+		t.Fatalf("SetEffort: %v", err)
+	}
+	if applied != runtime.EffortHigh {
+		t.Errorf("applied = %q, want high", applied)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.effort != runtime.EffortHigh {
+		t.Errorf("effort = %v, want high", s.effort)
+	}
+}
+
 func TestSession_Interrupt(t *testing.T) {
 	s := NewSession()
 	defer s.Close()

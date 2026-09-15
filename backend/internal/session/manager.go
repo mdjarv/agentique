@@ -901,6 +901,8 @@ func (m *Manager) gitOpLock(sessionID string) *sync.Mutex {
 // Returns empty string for unknown/empty values (CLI default).
 func resolveEffort(level string) runtime.Effort {
 	switch level {
+	case "none":
+		return runtime.EffortNone
 	case "minimal":
 		return runtime.EffortMinimal
 	case "low":

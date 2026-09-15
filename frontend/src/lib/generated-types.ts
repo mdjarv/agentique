@@ -176,6 +176,7 @@ export interface WireCapabilities {
   attachments: boolean;
   workflows: boolean;
   modelSwitch: boolean;
+  effortSwitch?: boolean;
 }
 
 export interface BehaviorPresets {
@@ -774,6 +775,15 @@ export interface SessionSetModelPayload {
   model: string;
 }
 
+export interface SessionSetEffortPayload {
+  sessionId: string;
+  effort: string;
+}
+
+export interface SessionSetEffortResult {
+  effort: string;
+}
+
 export interface SessionSetPermissionPayload {
   sessionId: string;
   mode: string;
@@ -983,6 +993,12 @@ export interface PushSessionRenamed {
 export interface PushSessionModelResolved {
   sessionId: string;
   resolvedModel: string;
+}
+
+export interface PushSessionEffortChanged {
+  sessionId: string;
+  effort?: string;
+  applied?: string;
 }
 
 export interface PushSessionPinned {
@@ -1342,6 +1358,7 @@ export interface PushEventMap {
   "session.created": SessionInfo;
   "session.renamed": PushSessionRenamed;
   "session.model-resolved": PushSessionModelResolved;
+  "session.effort-changed": PushSessionEffortChanged;
   "session.pinned": PushSessionPinned;
   "session.deleted": PushSessionDeleted;
   "session.pr-updated": PushPRUpdated;

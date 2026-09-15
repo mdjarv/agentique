@@ -2,10 +2,13 @@ package session
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
+	"github.com/mdjarv/agentique/backend/internal/store"
 	"github.com/mdjarv/agentique/backend/internal/testutil"
 	"github.com/stretchr/testify/suite"
 )
@@ -162,6 +165,129 @@ func (s *ServiceSuite) TestSetAutoApproveMode() {
 	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
 	s.Require().NoError(err)
 	s.Equal("fullAuto", dbSess.AutoApproveMode)
+}
+
+// A live effort change reaches the runtime, persists the requested level and
+// tells every other client.
+func (s *ServiceSuite) TestSetSessionEffort() {
+	sessionID, mock := s.createLiveSession()
+	s.Broadcaster.Reset()
+
+	applied, err := s.svc.SetSessionEffort(context.Background(), sessionID, "high")
+	s.Require().NoError(err)
+	s.Equal("high", applied)
+	s.Equal(runtime.EffortHigh, mock.Effort())
+
+	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Equal("high", dbSess.Effort)
+
+	msgs := s.Broadcaster.MessagesOfType("session.effort-changed")
+	s.Require().Len(msgs, 1)
+	s.Equal(s.Project.ID, msgs[0].ProjectID)
+	s.Equal(PushSessionEffortChanged{SessionID: sessionID, Effort: "high", Applied: "high"}, msgs[0].Payload)
+}
+
+// The provider may cap a level. The row keeps the request, because resume
+// passes it back as the connect-time level; the caller and the push both
+// learn what actually took.
+func (s *ServiceSuite) TestSetSessionEffort_PersistsRequestNotApplied() {
+	sessionID, mock := s.createLiveSession()
+	mock.SetEffortReply(runtime.EffortXHigh, nil)
+	s.Broadcaster.Reset()
+
+	applied, err := s.svc.SetSessionEffort(context.Background(), sessionID, "max")
+	s.Require().NoError(err)
+	s.Equal("xhigh", applied)
+
+	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Equal("max", dbSess.Effort)
+
+	msgs := s.Broadcaster.MessagesOfType("session.effort-changed")
+	s.Require().Len(msgs, 1)
+	s.Equal(PushSessionEffortChanged{SessionID: sessionID, Effort: "max", Applied: "xhigh"}, msgs[0].Payload)
+}
+
+// A refused level changes nothing: no row write, no push.
+func (s *ServiceSuite) TestSetSessionEffort_ProviderRefusal() {
+	sessionID, mock := s.createLiveSession()
+	mock.SetEffortReply("", errors.New("claude: effort \"minimal\" is not a Claude level"))
+	s.Broadcaster.Reset()
+
+	_, err := s.svc.SetSessionEffort(context.Background(), sessionID, "minimal")
+	s.Require().Error(err)
+
+	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Empty(dbSess.Effort)
+	s.Empty(s.Broadcaster.MessagesOfType("session.effort-changed"))
+}
+
+func (s *ServiceSuite) TestSetSessionEffort_NotLive() {
+	sessionID, _ := s.createLiveSession()
+	s.Require().NoError(s.svc.StopSession(context.Background(), sessionID))
+	s.Broadcaster.Reset()
+
+	_, err := s.svc.SetSessionEffort(context.Background(), sessionID, "high")
+	s.Require().ErrorIs(err, ErrNotLive)
+
+	dbSess, err := s.Queries.GetSession(context.Background(), sessionID)
+	s.Require().NoError(err)
+	s.Empty(dbSess.Effort, "a session that is not live must not have its row rewritten")
+	s.Empty(s.Broadcaster.MessagesOfType("session.effort-changed"))
+}
+
+// effortRecordingConnector remembers the effort every Connect asked for.
+type effortRecordingConnector struct {
+	connectorAdapter
+	mu      sync.Mutex
+	efforts []runtime.Effort
+}
+
+func (c *effortRecordingConnector) Connect(ctx context.Context, p runtime.ConnectParams) (runtime.CLISession, error) {
+	c.mu.Lock()
+	c.efforts = append(c.efforts, p.Effort)
+	c.mu.Unlock()
+	return c.connectorAdapter.Connect(ctx, p)
+}
+
+func (c *effortRecordingConnector) last() runtime.Effort {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.efforts) == 0 {
+		return ""
+	}
+	return c.efforts[len(c.efforts)-1]
+}
+
+// A change made on a live session is what the next process starts with.
+func (s *ServiceSuite) TestSetSessionEffort_SurvivesResume() {
+	ctx := context.Background()
+	conn := &effortRecordingConnector{connectorAdapter: connectorAdapter{s.Connector}}
+	s.mgr = NewManager(s.DB, s.Queries, s.Broadcaster, conn)
+	s.svc = NewService(s.mgr, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner())
+
+	result, err := s.svc.CreateSession(ctx, CreateSessionParams{
+		ProjectID: s.Project.ID,
+		Name:      "effort-resume",
+		Model:     "opus",
+		Effort:    "low",
+	})
+	s.Require().NoError(err)
+	s.Equal(runtime.EffortLow, conn.last())
+	s.Require().NoError(s.Queries.UpdateClaudeSessionID(ctx, store.UpdateClaudeSessionIDParams{
+		ClaudeSessionID: sqlNullString("test-effort-resume"),
+		ID:              result.SessionID,
+	}))
+
+	_, err = s.svc.SetSessionEffort(ctx, result.SessionID, "max")
+	s.Require().NoError(err)
+	s.Require().NoError(s.svc.StopSession(ctx, result.SessionID))
+
+	_, err = s.svc.ResumeSession(ctx, result.SessionID)
+	s.Require().NoError(err)
+	s.Equal(runtime.EffortMax, conn.last())
 }
 
 func (s *ServiceSuite) TestListSessions() {

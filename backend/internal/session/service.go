@@ -1467,6 +1467,37 @@ func (s *Service) SetSessionModel(ctx context.Context, sessionID, model string) 
 	return nil
 }
 
+// SetSessionEffort changes the reasoning effort of a live session and returns
+// the level the provider reports in force afterwards.
+//
+// The requested level is what gets persisted, not the applied one: resume
+// passes the row's effort back as the connect-time level, and a request that
+// was capped today can take in full on a later model. A change invalidates
+// the provider's prompt cache, so the next request re-writes the conversation.
+func (s *Service) SetSessionEffort(ctx context.Context, sessionID, level string) (string, error) {
+	sess, err := s.getLiveSession(sessionID)
+	if err != nil {
+		return "", err
+	}
+	applied, err := sess.SetEffort(level)
+	if err != nil {
+		return "", err
+	}
+	slog.Debug("session effort changed", "session_id", sessionID, "effort", level, "applied", applied)
+	if err := s.queries.UpdateSessionEffort(ctx, store.UpdateSessionEffortParams{
+		Effort: level,
+		ID:     sessionID,
+	}); err != nil {
+		return "", newPersistError("update session effort", err)
+	}
+	s.hub.Publish(sess.ProjectID, "session.effort-changed", PushSessionEffortChanged{
+		SessionID: sessionID,
+		Effort:    level,
+		Applied:   applied,
+	})
+	return applied, nil
+}
+
 // InterruptSession stops the current generation without killing the session.
 //
 // This is the stop button's only path (ws "session.interrupt"), so it cancels

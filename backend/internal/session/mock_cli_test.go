@@ -19,6 +19,7 @@ type mockCLISession struct {
 	sentMessages []string
 	closed       bool
 	model        string
+	effort       runtime.Effort
 	planMode     runtime.PlanMode
 	interrupted  bool
 	cliState     runtime.SessionState // tests can flip this to simulate process death
@@ -84,6 +85,13 @@ func (m *mockCLISession) SetModel(_ context.Context, model string) error {
 	defer m.mu.Unlock()
 	m.model = model
 	return nil
+}
+
+func (m *mockCLISession) SetEffort(_ context.Context, effort runtime.Effort) (runtime.Effort, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.effort = effort
+	return effort, nil
 }
 
 func (m *mockCLISession) Interrupt(_ context.Context) error {

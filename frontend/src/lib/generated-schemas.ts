@@ -178,6 +178,7 @@ export const WireCapabilitiesSchema = z.object({
   attachments: z.boolean(),
   workflows: z.boolean(),
   modelSwitch: z.boolean(),
+  effortSwitch: z.boolean().optional(),
 });
 
 export const BehaviorPresetsSchema = z.object({
@@ -776,6 +777,15 @@ export const SessionSetModelPayloadSchema = z.object({
   model: z.string(),
 });
 
+export const SessionSetEffortPayloadSchema = z.object({
+  sessionId: z.string(),
+  effort: z.string(),
+});
+
+export const SessionSetEffortResultSchema = z.object({
+  effort: z.string(),
+});
+
 export const SessionSetPermissionPayloadSchema = z.object({
   sessionId: z.string(),
   mode: z.string(),
@@ -985,6 +995,12 @@ export const PushSessionRenamedSchema = z.object({
 export const PushSessionModelResolvedSchema = z.object({
   sessionId: z.string(),
   resolvedModel: z.string(),
+});
+
+export const PushSessionEffortChangedSchema = z.object({
+  sessionId: z.string(),
+  effort: z.string().optional(),
+  applied: z.string().optional(),
 });
 
 export const PushSessionPinnedSchema = z.object({
@@ -1345,6 +1361,7 @@ export const pushSchemaMap = {
   "session.created": SessionInfoSchema,
   "session.renamed": PushSessionRenamedSchema,
   "session.model-resolved": PushSessionModelResolvedSchema,
+  "session.effort-changed": PushSessionEffortChangedSchema,
   "session.pinned": PushSessionPinnedSchema,
   "session.deleted": PushSessionDeletedSchema,
   "session.pr-updated": PushPRUpdatedSchema,

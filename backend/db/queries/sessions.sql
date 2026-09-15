@@ -31,6 +31,12 @@ UPDATE sessions SET resolved_model = ?, resolved_at = strftime('%Y-%m-%dT%H:%M:%
 -- name: UpdateSessionPermissionMode :exec
 UPDATE sessions SET permission_mode = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 
+-- name: UpdateSessionEffort :exec
+-- The requested level, not the one the provider reported applying: resume
+-- passes this back as the connect-time effort, the same meaning it has at
+-- creation.
+UPDATE sessions SET effort = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
+
 -- name: UpdateSessionAutoApproveMode :exec
 UPDATE sessions SET auto_approve_mode = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?;
 

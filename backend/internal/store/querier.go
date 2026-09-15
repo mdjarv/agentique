@@ -501,6 +501,10 @@ type Querier interface {
 	UpdateScheduleNextRun(ctx context.Context, arg UpdateScheduleNextRunParams) error
 	UpdateSessionAutoApproveMode(ctx context.Context, arg UpdateSessionAutoApproveModeParams) error
 	UpdateSessionBehaviorPresets(ctx context.Context, arg UpdateSessionBehaviorPresetsParams) error
+	// The requested level, not the one the provider reported applying: resume
+	// passes this back as the connect-time effort, the same meaning it has at
+	// creation.
+	UpdateSessionEffort(ctx context.Context, arg UpdateSessionEffortParams) error
 	UpdateSessionLastQueryAt(ctx context.Context, id string) error
 	// Changing the requested slug discards what the old one resolved to, stamp and
 	// all: the pair describes a reading, and half a reading is worse than none.

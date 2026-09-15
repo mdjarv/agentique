@@ -42,6 +42,11 @@ type WireCapabilities struct {
 	// Codex's adapter currently returns ErrNotSupported, so the UI keeps the
 	// model picker read-only for codex sessions.
 	ModelSwitch bool `json:"modelSwitch"`
+	// EffortSwitch indicates the adapter implements runtime.EffortSwitchable,
+	// so reasoning effort can change on a live session (session.set-effort).
+	// Optional on the wire: a peer that predates the verb sends nothing, and
+	// the client reads absent as false and keeps the ramp locked.
+	EffortSwitch bool `json:"effortSwitch,omitempty"`
 }
 
 // runtimeCapsToWire flattens a runtime.Capabilities into the wire shape. The
@@ -111,6 +116,7 @@ func CapabilitiesForProvider(provider string) WireCapabilities {
 			ToolProgressTicks:      true,
 			Attachments:            true,
 			ModelSwitch:            true,
+			EffortSwitch:           true,
 			Workflows:              true,
 		}
 	case "codex":
@@ -133,6 +139,8 @@ func CapabilitiesForProvider(provider string) WireCapabilities {
 			// gates native-vs-emulated on the runtime capability, not this flag.
 			// See Session.QueuePendingMessage / flushPendingMessages.
 			MidTurnSendMessage: true,
+			// Codex takes effort per turn, so a change applies from the next one.
+			EffortSwitch: true,
 		}
 	default:
 		return WireCapabilities{Provider: provider}

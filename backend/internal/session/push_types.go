@@ -64,6 +64,19 @@ type PushSessionModelResolved struct {
 	ResolvedModel string `json:"resolvedModel"`
 }
 
+// PushSessionEffortChanged signals that a live session's reasoning effort was
+// changed, so every other client redraws the ramp.
+//
+// Effort is the requested level, the one persisted and passed back on resume.
+// Applied is the level the provider reported in force afterwards, which can
+// differ: capped, ignored, or "" for a model that takes no effort. Both are
+// optional because "" is a real value of each, and absent reads as "".
+type PushSessionEffortChanged struct {
+	SessionID string `json:"sessionId"`
+	Effort    string `json:"effort,omitempty"`
+	Applied   string `json:"applied,omitempty"`
+}
+
 // PushSessionPinned signals a session pin-state change.
 type PushSessionPinned struct {
 	SessionID string `json:"sessionId"`

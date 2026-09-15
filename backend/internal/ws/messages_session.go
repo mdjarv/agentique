@@ -112,6 +112,20 @@ type SessionSetModelPayload struct {
 	Model     string `json:"model"`
 }
 
+// SessionSetEffortPayload changes a live session's reasoning effort. An empty
+// Effort is a real request: it resets to the provider's baseline.
+type SessionSetEffortPayload struct {
+	SessionID string `json:"sessionId"`
+	Effort    string `json:"effort"`
+}
+
+// SessionSetEffortResult carries the level the provider reports in force
+// after the change, which can differ from the one requested (capped, or ""
+// for a model that takes no effort).
+type SessionSetEffortResult struct {
+	Effort string `json:"effort"`
+}
+
 type SessionSetPermissionPayload struct {
 	SessionID string `json:"sessionId"`
 	Mode      string `json:"mode"`
@@ -408,6 +422,21 @@ func (p *SessionRenamePayload) Validate() error {
 func (p *SessionSetModelPayload) Validate() error {
 	if p.Model == "" {
 		return errSessionIDAndModelRequired
+	}
+	return validateSessionID(p.SessionID)
+}
+
+// effortLevels is every level session.set-effort accepts: the union of the
+// providers' own sets. Which of them a given provider takes is the adapter's
+// call, and it refuses the rest in words.
+var effortLevels = map[string]bool{
+	"": true, "none": true, "minimal": true, "low": true,
+	"medium": true, "high": true, "xhigh": true, "max": true,
+}
+
+func (p *SessionSetEffortPayload) Validate() error {
+	if !effortLevels[p.Effort] {
+		return fmt.Errorf("invalid effort %q", p.Effort)
 	}
 	return validateSessionID(p.SessionID)
 }

@@ -1350,6 +1350,20 @@ func (s *Session) SetModel(model string) error {
 	return rt.SetModel(model)
 }
 
+// SetEffort changes the reasoning effort for the rest of this session and
+// returns the level in force afterwards, which can differ from the request
+// (see runtime.EffortSwitchable). Unlike SetModel it is allowed mid-turn.
+func (s *Session) SetEffort(level string) (string, error) {
+	s.mu.Lock()
+	rt := s.rt
+	s.mu.Unlock()
+	if rt == nil {
+		return "", ErrNotLive
+	}
+	applied, err := rt.SetEffort(resolveEffort(level))
+	return string(applied), err
+}
+
 // Close gracefully tears down the session (CLI process, event loop, pending
 // approvals). Manager.Stop / Evict are the normal entry points; Close is
 // exposed for direct callers (tests, CloseAll cleanup).

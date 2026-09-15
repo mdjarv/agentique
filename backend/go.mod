@@ -9,8 +9,8 @@ require (
 	charm.land/log/v2 v2.0.0
 	fyne.io/systray v1.12.2
 	github.com/BurntSushi/toml v1.6.0
-	github.com/allbin/agentkit v0.6.0
-	github.com/allbin/claudecli-go v0.8.0
+	github.com/allbin/agentkit v0.7.0
+	github.com/allbin/claudecli-go v0.9.0
 	github.com/allbin/codexcli-go v0.3.2
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/google/uuid v1.6.0
