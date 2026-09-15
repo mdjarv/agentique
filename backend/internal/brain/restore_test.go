@@ -19,7 +19,7 @@ func archivedFixture(t *testing.T, svc *Service, text string) string {
 	rec := memory.New(memory.ScopeGlobal, text, memory.CategoryFact, memory.SourceAgent)
 	rec.Lifecycle = memory.LifecycleArchived
 	rec.LastUsedAt = time.Time{} // cold: no recent use
-	if err := svc.store.Put(context.Background(), rec); err != nil {
+	if err := svc.activeStore().Put(context.Background(), rec); err != nil {
 		t.Fatalf("seed archived fact: %v", err)
 	}
 	return rec.ID
@@ -58,7 +58,7 @@ func TestService_Restore_NoOpOnActive(t *testing.T) {
 	rec := memory.New(memory.ScopeGlobal, "a live fact", memory.CategoryFact, memory.SourceAgent)
 	rec.Lifecycle = memory.LifecycleActive
 	rec.LastUsedAt = stamp
-	if err := svc.store.Put(ctx, rec); err != nil {
+	if err := svc.activeStore().Put(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
 

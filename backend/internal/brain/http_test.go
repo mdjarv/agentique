@@ -10,6 +10,7 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/memory"
+	"github.com/mdjarv/agentique/backend/internal/memory/vectortest"
 )
 
 // TestToDTO_CarriesBand1Labels asserts the single mapping point (toDTO) surfaces the
@@ -167,14 +168,14 @@ func wantEq(t *testing.T, name string, got, want int) {
 func TestHandleStatus_Counts(t *testing.T) {
 	svc := newSvc(t)
 	a := memory.New(memory.ScopeGlobal, "a live fact", memory.CategoryFact, memory.SourceHuman)
-	if err := svc.store.Put(t.Context(), a); err != nil {
+	if err := svc.activeStore().Put(t.Context(), a); err != nil {
 		t.Fatal(err)
 	}
 	b := memory.New(memory.ScopeGlobal, "an archived flagged fact", memory.CategoryFact, memory.SourceAgent)
 	b.Lifecycle = memory.LifecycleArchived
 	b.ReviewNote = "contradicted"
 	b.Corroborations = 2
-	if err := svc.store.Put(t.Context(), b); err != nil {
+	if err := svc.activeStore().Put(t.Context(), b); err != nil {
 		t.Fatal(err)
 	}
 
@@ -188,8 +189,9 @@ func TestHandleStatus_Counts(t *testing.T) {
 		t.Fatalf("status = %d", rr.Code)
 	}
 	var resp struct {
-		Semantic bool         `json:"semantic"`
-		Counts   statusCounts `json:"counts"`
+		Semantic      bool          `json:"semantic"`
+		SemanticState SemanticState `json:"semanticState"`
+		Counts        statusCounts  `json:"counts"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -197,10 +199,41 @@ func TestHandleStatus_Counts(t *testing.T) {
 	if resp.Semantic {
 		t.Errorf("semantic = true, want false in keyword mode")
 	}
+	if resp.SemanticState != SemanticOff {
+		t.Errorf("semanticState = %q, want off when no backend is configured", resp.SemanticState)
+	}
 	wantEq(t, "total", resp.Counts.Total, 2)
 	wantEq(t, "byLifecycle.active", resp.Counts.ByLifecycle["active"], 1)
 	wantEq(t, "byLifecycle.archived", resp.Counts.ByLifecycle["archived"], 1)
 	wantEq(t, "bySource.human", resp.Counts.BySource["human"], 1)
 	wantEq(t, "reviewQueue", resp.Counts.ReviewQueue, 1)
 	wantEq(t, "corroboratedTotal", resp.Counts.CorroboratedTotal, 2)
+}
+
+// A configured backend that is not attached reports unreachable with its reason and the time it
+// was lost, rather than the bare `semantic: false` an unconfigured brain reports.
+func TestHandleStatus_ReportsAnUnreachableBackend(t *testing.T) {
+	t.Parallel()
+	c, e := vectortest.NewChroma(t), vectortest.NewEmbedder(t)
+	c.SetDown(true)
+	svc := newAttachSvc(t, c, e)
+	if err := svc.Connect(t.Context()); err == nil {
+		t.Fatal("Connect succeeded against a Chroma that is down")
+	}
+
+	h := &Handler{Service: svc}
+	rr := httptest.NewRecorder()
+	httperror.HandlerFunc(h.HandleStatus).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/brain/status", nil))
+	var resp struct {
+		Semantic          bool           `json:"semantic"`
+		SemanticState     SemanticState  `json:"semanticState"`
+		SemanticReason    SemanticReason `json:"semanticReason"`
+		SemanticDownSince string         `json:"semanticDownSince"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Semantic || resp.SemanticState != SemanticUnreachable || resp.SemanticReason != ReasonChromaUnreachable || resp.SemanticDownSince == "" {
+		t.Fatalf("status = %+v, want unreachable/chroma-unreachable with a down-since", resp)
+	}
 }

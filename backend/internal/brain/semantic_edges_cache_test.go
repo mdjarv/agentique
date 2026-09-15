@@ -35,12 +35,11 @@ func TestSemanticEdgesCachedByFingerprint(t *testing.T) {
 	ctx := context.Background()
 	emb := &countingEmbedder{dim: 3}
 	s := &Service{
-		semantic:     true,
-		embedder:     emb,
 		embedCache:   make(map[string][]float32),
 		semEdgeCache: make(map[string][]memory.Edge),
-		graph:        GraphConfig{EdgeThreshold: 0.5, EdgeCap: 6},
+		graph:        GraphConfig{EdgeCap: 6},
 	}
+	s.sem.Store(&semanticBackend{embedder: emb, edgeThreshold: 0.5})
 	recs := []memory.Record{
 		{ID: "a", Text: "race detector"},
 		{ID: "b", Text: "concurrent safety"},
@@ -60,7 +59,7 @@ func TestSemanticEdgesCachedByFingerprint(t *testing.T) {
 
 	// Break the embedder. A fingerprint hit must short-circuit before embedRecords, so the same
 	// records still resolve from cache without error and return the identical edge set.
-	s.embedder = errEmbedder{}
+	s.sem.Store(&semanticBackend{embedder: errEmbedder{}, edgeThreshold: 0.5})
 	second, err := s.SemanticEdges(ctx, recs)
 	if err != nil {
 		t.Fatalf("a cache hit must not re-embed: %v", err)

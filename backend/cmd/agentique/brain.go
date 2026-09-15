@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -36,6 +38,7 @@ var (
 	consolidateRerun      bool
 	consolidateAggressive bool
 	consolidateDryRun     bool
+	consolidateLexical    bool
 
 	backfillSubsumedSource string
 	backfillSubsumedDir    string
@@ -62,6 +65,7 @@ func init() {
 	consolidateCmd.Flags().BoolVar(&consolidateRerun, "rerun", false, "reorganize even if the scope is unchanged since the last pass (ignore the saved fingerprint)")
 	consolidateCmd.Flags().BoolVar(&consolidateAggressive, "aggressive", false, "collapse families of granular facts into broad rules (relaxes the over-deletion guard); requires --model")
 	consolidateCmd.Flags().BoolVar(&consolidateDryRun, "dry-run", false, "preview: run the full pass (LLM included) and print the changelog without writing")
+	consolidateCmd.Flags().BoolVar(&consolidateLexical, "allow-lexical", false, "rebuild links and communities without embeddings when the configured vector backend is unreachable")
 
 	brainImportCmd.Flags().StringArrayVar(&importMap, "map", nil, "pre-resolve a source project to a local one: --map source-slug=local-slug (repeatable)")
 	brainImportCmd.Flags().BoolVarP(&importSkipUnmatched, "skip-unmatched", "y", false, "skip source projects with no local match instead of prompting")
@@ -128,6 +132,7 @@ func runBrainBackfill(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("init brain: %w", err)
 	}
+	connectBrain(ctx, svc)
 
 	var sessions []store.Session
 	if backfillProject != "" {
@@ -261,9 +266,10 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("init brain: %w", err)
 	}
+	connectBrain(ctx, svc)
 
 	var ex memory.Extractor
-	opts := brain.ConsolidateOpts{Force: consolidateRerun}
+	opts := brain.ConsolidateOpts{Force: consolidateRerun, AllowLexical: consolidateLexical}
 	mode := "deterministic dedup/decay only"
 	if consolidateModel != "" {
 		model, err := brain.ParseModel(consolidateModel)
@@ -296,6 +302,9 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 	}
 
 	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, opts)
+	if errors.Is(err, brain.ErrSemanticUnavailable) {
+		return fmt.Errorf("consolidate refused: the configured vector backend is unreachable, and this pass would rewrite the scope's links and communities without embeddings — bring Chroma and the embedder back, or pass --allow-lexical to rebuild them lexically anyway")
+	}
 	if err != nil {
 		return fmt.Errorf("consolidate: %w", err)
 	}
@@ -969,5 +978,18 @@ func newBrainService(ctx context.Context, dbFile string) (*brain.Service, error)
 	if err != nil {
 		return nil, fmt.Errorf("init brain: %w", err)
 	}
+	connectBrain(ctx, svc)
 	return svc, nil
+}
+
+// connectBrain attaches the configured vector backend for a one-shot command, once and
+// synchronously — a command has no background loop to retry it. Unconfigured stays keyword
+// quietly; configured and unreachable says so, and the command decides whether keyword mode
+// is good enough (reindex and calibrate refuse, search degrades).
+func connectBrain(ctx context.Context, svc *brain.Service) {
+	err := svc.Connect(ctx)
+	if err == nil || errors.Is(err, brain.ErrSemanticNotConfigured) {
+		return
+	}
+	slog.Warn("brain: vector backend unreachable; using keyword recall", "error", err)
 }

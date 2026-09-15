@@ -459,7 +459,7 @@ func (h *Handler) HandleConsolidate(w http.ResponseWriter, r *http.Request) erro
 	}
 	rep, err := h.Service.Consolidate(r.Context(), scope, nil, memory.DecayPolicy{}, false, ConsolidateOpts{})
 	if err != nil {
-		return err
+		return refuseDetached(err)
 	}
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
@@ -510,7 +510,7 @@ func (h *Handler) HandleApplyConsolidate(w http.ResponseWriter, r *http.Request)
 		return httperror.Conflict("the brain changed since this preview — re-run preview")
 	}
 	if err != nil {
-		return err
+		return refuseDetached(err)
 	}
 	h.clearJob() // the preview is consumed; don't let it re-hydrate on remount
 	h.brainChanged()
@@ -570,12 +570,25 @@ func (h *Handler) HandleApplyGlobal(w http.ResponseWriter, r *http.Request) erro
 		return httperror.Conflict("a project changed since this preview — re-run preview")
 	}
 	if err != nil {
-		return err
+		return refuseDetached(err)
 	}
 	h.clearJob() // the preview is consumed; don't let it re-hydrate on remount
 	h.brainChanged()
 	httperror.JSON(w, http.StatusOK, toReportDTO(rep))
 	return nil
+}
+
+// detachedRefusal is what a consolidation surface says when the configured vector backend is
+// unreachable (ErrSemanticUnavailable). The preview is kept, so applying it later works.
+const detachedRefusal = "the vector index is unreachable, so consolidation is paused — applying now would rewrite links and areas without embeddings. Try again once the Memory badge reads Semantic."
+
+// refuseDetached turns ErrSemanticUnavailable into a 409 carrying detachedRefusal; any other
+// error passes through.
+func refuseDetached(err error) error {
+	if errors.Is(err, ErrSemanticUnavailable) {
+		return httperror.Conflict(detachedRefusal)
+	}
+	return err
 }
 
 // statusCounts is the brain-health distribution (brain.md#brain-ui F6, Band 3 E2): a cheap
@@ -618,16 +631,31 @@ func computeStatusCounts(recs []memory.Record) statusCounts {
 	return c
 }
 
-// HandleStatus GET /api/brain/status — semantic flag + the brain-health distribution.
+// HandleStatus GET /api/brain/status — where semantic recall stands + the brain-health
+// distribution.
+//
+// `semantic` is whether recall is hybrid right now, and stays for peers that read only it.
+// `semanticState` says why it is not: "off" (no backend configured — keyword by choice),
+// "connecting", "on", or "unreachable" with a closed `semanticReason` and the
+// `semanticDownSince` it has been lost since. Kept in sync by hand with brain-api.ts.
 func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) error {
 	recs, err := h.Service.List(r.Context())
 	if err != nil {
 		return err
 	}
-	httperror.JSON(w, http.StatusOK, map[string]any{
-		"semantic": h.Service.SemanticEnabled(),
-		"counts":   computeStatusCounts(recs),
-	})
+	st := h.Service.SemanticStatus()
+	body := map[string]any{
+		"semantic":      h.Service.SemanticEnabled(),
+		"semanticState": st.State,
+		"counts":        computeStatusCounts(recs),
+	}
+	if st.Reason != "" {
+		body["semanticReason"] = st.Reason
+	}
+	if !st.DownSince.IsZero() {
+		body["semanticDownSince"] = st.DownSince.UTC().Format(time.RFC3339)
+	}
+	httperror.JSON(w, http.StatusOK, body)
 	return nil
 }
 

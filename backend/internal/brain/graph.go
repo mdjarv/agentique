@@ -144,7 +144,10 @@ func (h *Handler) HandleGraph(w http.ResponseWriter, r *http.Request) error {
 	// In semantic mode, make interference detection embedding-aware (else it stays
 	// lexical) — the graph view is a request-time endpoint, not the per-turn hot path,
 	// so a one-shot embed of the durable set is acceptable. Nil in lexical mode.
-	simOpts := h.Service.semanticSimOptions(r.Context(), durable)
+	simOpts, serr := h.Service.semanticSimOptions(r.Context(), h.Service.backend(), durable)
+	if serr != nil {
+		slog.Warn("brain: graph interference embed failed; detecting lexically", "error", serr)
+	}
 	// Force-layout tuning (deployment-configurable) so the frontend simulation geometry is
 	// driven by config, not frontend constants. Always populated (defaults filled in New).
 	tuning := graphTuningDTO{

@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -73,13 +74,17 @@ func (a *Automation) loop() {
 	// first pass by a full interval and reset that clock on every process start — on a
 	// frequently-restarted server the semantic refresh could be postponed forever. The
 	// initial timer fixes both: the first pass lands near boot regardless of restarts.
+	//
+	// A pass skipped because the vector backend was detached is owed, not forgotten: pending is
+	// then the channel the next attach closes, and that attach runs it instead of the interval.
+	var pending <-chan struct{}
 	initial := time.NewTimer(a.initialDelay)
 	defer initial.Stop()
 	select {
 	case <-a.done:
 		return
 	case <-initial.C:
-		a.runOnce(context.Background())
+		pending = a.runOnce(context.Background())
 	}
 
 	ticker := time.NewTicker(a.interval)
@@ -89,20 +94,40 @@ func (a *Automation) loop() {
 		case <-a.done:
 			return
 		case <-ticker.C:
-			a.runOnce(context.Background())
+			pending = a.runOnce(context.Background())
+		case <-pending:
+			slog.Info("brain: scheduled consolidation: vector backend attached; running the skipped pass")
+			pending = a.runOnce(context.Background())
 		}
 	}
 }
 
-func (a *Automation) runOnce(ctx context.Context) {
-	scopes, err := a.svc.ListScopes(ctx)
-	if err != nil {
-		slog.Warn("brain: scheduled consolidation: list scopes failed", "error", err)
-		return
-	}
+// runOnce consolidates every scope and refreshes the cross-scope areas. It returns nil after a
+// pass that ran, and a channel the next attach closes after one it skipped: with a vector
+// backend configured, a pass never runs while that backend is detached, because it would
+// persist links, communities and areas computed without embeddings (ErrSemanticUnavailable).
+// The same holds mid-pass — a scope refused by a backend lost underneath the pass ends the
+// pass there, with no lexical areas refresh after it.
+func (a *Automation) runOnce(ctx context.Context) <-chan struct{} {
 	var ex memory.Extractor
 	if a.model != "" && a.runner != nil {
 		ex = NewClaudeExtractor(a.runner, a.model)
+	}
+	return a.runPass(ctx, ex)
+}
+
+// runPass is runOnce with the extractor chosen.
+func (a *Automation) runPass(ctx context.Context, ex memory.Extractor) <-chan struct{} {
+	// Taken before the check, so an attach landing between the two still wakes the loop.
+	attached := a.svc.nextAttach()
+	if a.svc.SemanticConfigured() && !a.svc.SemanticEnabled() {
+		slog.Warn("brain: scheduled consolidation skipped: the vector backend is unreachable; it runs when the backend attaches")
+		return attached
+	}
+	scopes, err := a.svc.ListScopes(ctx)
+	if err != nil {
+		slog.Warn("brain: scheduled consolidation: list scopes failed", "error", err)
+		return nil
 	}
 	// Reversibility: take a pre-churn snapshot of the whole brain before mutating any
 	// scope, so a consolidation pass is recoverable (brain restore <id>). Failure is
@@ -118,7 +143,7 @@ func (a *Automation) runOnce(ctx context.Context) {
 	for _, scope := range scopes {
 		select {
 		case <-a.done:
-			return
+			return nil
 		default:
 		}
 		// Archive-transition policy (M5): archiveAfter<=0 leaves the policy inert (no fade,
@@ -126,6 +151,10 @@ func (a *Automation) runOnce(ctx context.Context) {
 		// snapshot above (M1) is the restore point for the archive writes.
 		decay := memory.DecayPolicy{MaxAge: a.archiveAfter, ArchiveFloor: a.archiveFloor}
 		rep, err := a.svc.Consolidate(ctx, scope, ex, decay, false, ConsolidateOpts{})
+		if errors.Is(err, ErrSemanticUnavailable) {
+			slog.Warn("brain: scheduled consolidation stopped: the vector backend was lost mid-pass; the rest runs when it attaches", "scope", scope)
+			return attached
+		}
 		if err != nil {
 			slog.Warn("brain: scheduled consolidation: consolidate failed", "scope", scope, "error", err)
 			continue
@@ -142,12 +171,18 @@ func (a *Automation) runOnce(ctx context.Context) {
 		}
 	}
 	// After every scope is consolidated, recompute cross-scope topic areas once (B).
-	if n, err := a.svc.AssignAreas(ctx); err != nil {
+	n, err := a.svc.AssignAreas(ctx)
+	switch {
+	case errors.Is(err, ErrSemanticUnavailable):
+		slog.Warn("brain: scheduled consolidation: areas refresh deferred until the vector backend attaches")
+		return attached
+	case err != nil:
 		slog.Warn("brain: scheduled consolidation: assign areas failed", "error", err)
-	} else if n > 0 {
+	case n > 0:
 		slog.Info("brain: scheduled consolidation: refreshed cross-scope areas", "changed", n)
 		if a.bus != nil {
 			a.bus.Broadcast(EventBrainUpdated, map[string]string{})
 		}
 	}
+	return nil
 }

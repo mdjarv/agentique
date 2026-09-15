@@ -2,6 +2,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -230,6 +231,11 @@ func (h *Handler) runConsolidateAllJob(job JobState, m claudecli.Model) {
 	h.publishJob(job)
 	for i, scope := range scopes {
 		rep, cerr := h.Service.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, false, ConsolidateOpts{})
+		if errors.Is(cerr, ErrSemanticUnavailable) {
+			// Not one bad scope: every scope after it would be refused the same way.
+			h.failJob(job, errors.New(detachedRefusal))
+			return
+		}
 		if cerr != nil {
 			// One bad scope shouldn't sink the bulk pass — log and continue.
 			slog.Warn("brain: consolidate all: scope failed", "scope", scope, "error", cerr)
@@ -244,7 +250,10 @@ func (h *Handler) runConsolidateAllJob(job JobState, m claudecli.Model) {
 		h.publishJob(job)
 	}
 	// Recompute cross-scope topic areas once after the whole bulk pass (B).
-	if n, aerr := h.Service.AssignAreas(ctx); aerr != nil {
+	if n, aerr := h.Service.AssignAreas(ctx); errors.Is(aerr, ErrSemanticUnavailable) {
+		h.failJob(job, errors.New(detachedRefusal))
+		return
+	} else if aerr != nil {
 		slog.Warn("brain: consolidate all: assign areas failed", "error", aerr)
 	} else if n > 0 {
 		h.brainChanged()

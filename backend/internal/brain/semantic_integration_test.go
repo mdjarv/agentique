@@ -75,16 +75,11 @@ func TestWarmEmbedCacheLiveZeroReembedAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build store B: %v", err)
 	}
-	svcB := &Service{
-		store:      storeB,
-		semantic:   true,
-		embedder:   counting,
-		warmSrc:    storeB,
-		cosThresh:  memory.DefaultSemanticThreshold,
-		embedCache: make(map[string][]float32),
-	}
+	svcB := &Service{embedCache: make(map[string][]float32)}
+	backendB := &semanticBackend{store: storeB, embedder: counting, warmSrc: storeB, cosThresh: memory.DefaultSemanticThreshold}
+	svcB.sem.Store(backendB)
 
-	out, err := svcB.embedRecords(ctx, corpus)
+	out, err := svcB.embedRecords(ctx, backendB, corpus)
 	if err != nil {
 		t.Fatalf("embedRecords after restart: %v", err)
 	}
@@ -98,7 +93,7 @@ func TestWarmEmbedCacheLiveZeroReembedAfterRestart(t *testing.T) {
 }
 
 // TestBrainSemanticWiring validates the PRODUCTION entry point end-to-end against a live
-// Chroma + embedding endpoint: Config -> New detects the env, enables semantic mode, builds
+// Chroma + embedding endpoint: Config -> New + Connect detects the env, enables semantic mode, builds
 // the Chroma-backed store, and threads the veto + vouch (cosThresh) scores into Recall so
 // the real github mis-recall is excluded via the vector path. This covers the brain.New
 // wiring the memory/chroma integration test bypasses (it constructs the store directly).
@@ -126,6 +121,9 @@ func TestBrainSemanticWiring(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("brain.New: %v", err)
+	}
+	if err := svc.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
 	}
 	if !svc.SemanticEnabled() {
 		t.Fatal("semantic mode should be enabled when Chroma + embedder are reachable")
@@ -156,7 +154,7 @@ func TestBrainSemanticWiring(t *testing.T) {
 }
 
 // TestBrainAutoCalibrateExcludesGithub proves the auto-calibration path end-to-end
-// against a live Chroma + embedder: New(Calibrate:true) derives the cosine/veto
+// against a live Chroma + embedder: Connect with Calibrate:true derives the cosine/veto
 // thresholds from the seeded corpus's OWN pairwise distribution (not the hand-set
 // defaults) and recall of the github query still excludes the off-topic GOPRIVATE
 // fact through those derived thresholds. This is the session's deliverable —
@@ -186,6 +184,9 @@ func TestBrainAutoCalibrateExcludesGithub(t *testing.T) {
 	seed, err := New(ctx, base)
 	if err != nil {
 		t.Fatalf("seed brain.New: %v", err)
+	}
+	if err := seed.Connect(ctx); err != nil {
+		t.Fatalf("seed Connect: %v", err)
 	}
 	scope := ScopeForProject("meta-spec")
 	add := func(sc memory.Scope, text string, cat memory.Category) {
@@ -236,6 +237,9 @@ func TestBrainAutoCalibrateExcludesGithub(t *testing.T) {
 	svc, err := New(ctx, Config{Dir: base.Dir, ChromaURL: chromaURL, EmbedURL: embedURL, EmbedModel: embedModel, Collection: coll, Calibrate: true})
 	if err != nil {
 		t.Fatalf("calibrating brain.New: %v", err)
+	}
+	if err := svc.Connect(ctx); err != nil {
+		t.Fatalf("calibrating Connect: %v", err)
 	}
 
 	// The derived thresholds must (a) come from the corpus (OK) and (b) put the cosine

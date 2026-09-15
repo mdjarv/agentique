@@ -17,20 +17,21 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/memory"
 	"github.com/mdjarv/agentique/backend/internal/memory/cachestore"
 	"github.com/mdjarv/agentique/backend/internal/memory/chroma"
-	"github.com/mdjarv/agentique/backend/internal/memory/embedhttp"
 	"github.com/mdjarv/agentique/backend/internal/memory/filestore"
 )
 
 const defaultCollection = "agentique_memories"
 
-// Config configures the brain service. Only Dir is required; when ChromaURL,
-// EmbedURL and EmbedModel are all set and Chroma is reachable, semantic recall is
-// enabled, otherwise the service uses keyword recall over the filestore.
+// Config configures the brain service. Only Dir is required. ChromaURL, EmbedURL and
+// EmbedModel together configure a vector backend, and semantic recall is on while that
+// backend is attached (see [Service.RunSemantic]); otherwise the service uses keyword recall
+// over the filestore.
 type Config struct {
 	Dir         string
 	ChromaURL   string
@@ -130,14 +131,34 @@ func (g GraphConfig) withDefaults() GraphConfig {
 
 // Service is the agentique brain.
 type Service struct {
-	store memory.Store
-	// cache is the read-through cache that fronts the filestore. It is the SAME object as
-	// store in keyword mode; in semantic mode store is the chroma decorator that WRAPS this
-	// cache. Held directly so RestoreSnapshot can Invalidate() it after an external file
-	// rewrite (the chroma wrapper doesn't expose the cache). Set once in New, read-only after.
-	cache    *cachestore.Store
-	dir      string
-	semantic bool
+	// cache is the read-through cache that fronts the filestore, and the store of keyword mode.
+	// An attached semantic backend's store is the chroma decorator that WRAPS it, so both modes
+	// write the same files through the same cache. Held directly so RestoreSnapshot can
+	// Invalidate() it after an external file rewrite. Set once in New, read-only after.
+	cache *cachestore.Store
+	dir   string
+
+	// sem is the attached vector backend, nil in keyword mode. It is replaced whole — by an
+	// attach, a detach — never mutated, so every operation takes one snapshot of it (backend,
+	// storeFor) and reads a store and the thresholds derived for that store together.
+	sem atomic.Pointer[semanticBackend]
+	// semCfg names the vector backend to attach; read-only after New.
+	semCfg semanticConfig
+	// timing is RunSemantic's clock; read-only once the loop starts.
+	timing semanticTiming
+	// connectMu serialises attach attempts, and guards calibrationTried/calibrated: auto-
+	// calibration runs on the first successful attach of the process and is reused after.
+	connectMu        sync.Mutex
+	calibrationTried bool
+	calibrated       *memory.CalibrationThresholds
+	// statusMu guards status, the truth about semantic recall that surfaces read.
+	statusMu sync.Mutex
+	status   SemanticStatus
+	// loggedDown latches while a detached period has been logged, so retries stay quiet.
+	loggedDown atomic.Bool
+	// attachMu guards attachCh, closed and replaced on every attach (nextAttach).
+	attachMu sync.Mutex
+	attachCh chan struct{}
 
 	// snapshotRetain caps the pre-churn snapshots kept under dir/.snapshots (read-only after New).
 	snapshotRetain int
@@ -153,18 +174,10 @@ type Service struct {
 	// what those two surfaces are for.
 	archiveFloor float64
 
-	// embedder, when set (semantic mode), drives semantic similarity for clustering —
-	// link/community/area edges blend Jaccard with embedding cosine (RFC phase C). nil =
-	// lexical-only. cosThresh is the cosine link threshold (model-specific).
-	embedder  memory.Embedder
-	cosThresh float64
-	// vetoScore is the hybrid-recall vector veto floor (model-specific) threaded into
-	// every relevance Query; 0 lets memory.Recall apply its default. Inert without an embedder.
-	vetoScore float64
-
 	// graph is the resolved knowledge-graph tuning (deployment-configurable, defaults filled).
-	// Its EdgeCap/EdgeThreshold drive SemanticEdges; the force-layout fields are echoed to the
-	// frontend on the graph payload. Set once in New; read-only after, so no lock needed.
+	// Its EdgeCap drives SemanticEdges, and its EdgeThreshold is the configured kNN floor (0 =
+	// the attached backend's cosThresh, resolved per backend); the force-layout fields are
+	// echoed to the frontend on the graph payload. Set once in New; read-only after.
 	graph GraphConfig
 
 	// semEdgeCache memoizes the last few SemanticEdges results keyed by a corpus fingerprint
@@ -185,18 +198,12 @@ type Service struct {
 	// global checkpoint (pruneEmbedCache from AssignAreas), so the cache is bounded by the
 	// live fact set, not by every text ever seen. Guarded by embedMu, separate from mu.
 	//
-	// The cache is also warmed from the vector store on first use (warmEmbedCache via
-	// warmSrc), so a process restart does not re-embed an unchanged corpus — Chroma already
-	// holds those vectors keyed by the same text.
+	// It outlives a detach: the model is the same one when the backend comes back. It is also
+	// warmed from the vector store on first use per backend (warmEmbedCache), so a process
+	// restart does not re-embed an unchanged corpus — Chroma already holds those vectors keyed
+	// by the same text.
 	embedMu    sync.Mutex
 	embedCache map[string][]float32
-
-	// warmSrc loads existing vectors from the semantic index to seed embedCache after a
-	// restart; nil in keyword mode. warmEmbedCache runs it at most once (guarded by warmMu /
-	// warmed), retrying on a transient failure.
-	warmSrc vectorWarmSource
-	warmMu  sync.Mutex
-	warmed  bool
 
 	mu     sync.Mutex // guards the fingerprint + global-manifest files
 	fpPath string
@@ -210,9 +217,11 @@ type vectorWarmSource interface {
 	LoadVectors(ctx context.Context) ([]chroma.VectorRecord, error)
 }
 
-// New builds the service, creating the brain directory and (optionally) the
-// semantic index. It never fails because the vector backend is unavailable — it
-// degrades to keyword recall and logs a warning.
+// New builds the service in keyword mode and creates the brain directory. It never dials:
+// attaching the configured vector backend is [Service.RunSemantic]'s job (the server, from
+// serve's production block) or [Service.Connect]'s (a one-shot CLI command), so a constructor
+// a test calls reaches nothing outside the process, and a backend that is down at boot is no
+// longer down for the life of the process.
 func New(ctx context.Context, cfg Config) (*Service, error) {
 	if cfg.Dir == "" {
 		return nil, fmt.Errorf("brain: Dir is required")
@@ -223,10 +232,8 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// Wrap the filestore in a read-through cache: per-turn auto-recall (fluid recall)
 	// calls List every turn, and the cache avoids re-reading every markdown file each
 	// time. All writes funnel through this Service's store, so the cache stays consistent.
-	base := cachestore.New(filestore.New(cfg.Dir))
 	svc := &Service{
-		store:          base,
-		cache:          base,
+		cache:          cachestore.New(filestore.New(cfg.Dir)),
 		dir:            cfg.Dir,
 		snapshotRetain: cfg.SnapshotRetain,
 		archiveFloor:   cfg.ArchiveFloor,
@@ -235,98 +242,41 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 		graph:          cfg.Graph.withDefaults(),
 		fpPath:         filepath.Join(cfg.Dir, ".fingerprints.json"),
 		gmPath:         filepath.Join(cfg.Dir, ".global-manifest.json"),
+		timing:         defaultSemanticTiming(),
+		semCfg: semanticConfig{
+			chromaURL:   cfg.ChromaURL,
+			embedURL:    cfg.EmbedURL,
+			embedModel:  cfg.EmbedModel,
+			embedAPIKey: cfg.EmbedAPIKey,
+			collection:  cfg.Collection,
+			cosThresh:   cfg.SemanticThreshold,
+			vetoScore:   cfg.VectorVetoScore,
+			calibrate:   cfg.Calibrate,
+		},
 	}
-
-	if cfg.ChromaURL != "" && cfg.EmbedURL != "" && cfg.EmbedModel != "" {
-		client := chroma.NewClient(cfg.ChromaURL)
-		if err := client.Heartbeat(ctx); err != nil {
-			slog.Warn("brain: chroma unreachable; using keyword recall", "url", cfg.ChromaURL, "error", err)
-		} else {
-			coll := cfg.Collection
-			if coll == "" {
-				coll = defaultCollection
-			}
-			emb := embedhttp.New(cfg.EmbedURL, cfg.EmbedModel, embedhttp.WithAPIKey(cfg.EmbedAPIKey))
-			cs, err := chroma.NewStore(ctx, base, client, emb, coll, chroma.WithErrorHandler(func(e error) {
-				slog.Warn("brain: vector index degraded", "error", e)
-			}))
-			if err != nil {
-				slog.Warn("brain: chroma store init failed; using keyword recall", "error", err)
-			} else {
-				svc.store = cs
-				svc.semantic = true
-				svc.embedder = emb
-				svc.warmSrc = cs // warm embedCache from Chroma on first use (no cold-start re-embed)
-				svc.cosThresh = cfg.SemanticThreshold
-				if svc.cosThresh <= 0 {
-					svc.cosThresh = memory.DefaultSemanticThreshold
-				}
-				svc.vetoScore = cfg.VectorVetoScore
-				if svc.vetoScore <= 0 {
-					svc.vetoScore = memory.DefaultVectorVetoScore
-				}
-				slog.Info("brain: semantic recall enabled", "collection", coll, "cosineThreshold", svc.cosThresh, "vectorVeto", svc.vetoScore)
-				if cfg.Calibrate {
-					svc.applyCalibration(ctx, cfg.SemanticThreshold > 0, cfg.VectorVetoScore > 0)
-				}
-				// An unset graph edge threshold falls back to the (possibly calibrated)
-				// recall "related" line, so the graph and recall share one cosine floor.
-				if svc.graph.EdgeThreshold <= 0 {
-					svc.graph.EdgeThreshold = svc.cosThresh
-				}
-			}
-		}
+	if svc.semCfg.configured() {
+		svc.setStatus(SemanticConnecting, "")
 	}
 	return svc, nil
 }
 
-// calibrationTimeout bounds the boot-time corpus embed so an auto-calibration pass
-// can't hang server startup if the embedder is slow or wedged.
-const calibrationTimeout = 2 * time.Minute
-
-// applyCalibration derives the model-specific cosine/veto thresholds from the live
-// corpus and overrides the ones the operator did NOT pin explicitly (explicitCos /
-// explicitVeto). Best-effort: any failure (no corpus, thin corpus, embed error) keeps
-// the thresholds already set and logs why — calibration must never break boot.
-func (s *Service) applyCalibration(ctx context.Context, explicitCos, explicitVeto bool) {
-	cctx, cancel := context.WithTimeout(ctx, calibrationTimeout)
-	defer cancel()
-	res, err := s.Calibrate(cctx)
-	if err != nil {
-		slog.Warn("brain: auto-calibration failed; keeping thresholds",
-			"error", err, "cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
-		return
-	}
-	if !res.OK {
-		slog.Warn("brain: auto-calibration skipped (corpus too thin); keeping thresholds",
-			"pairs", res.Sample.Len(), "cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
-		return
-	}
-	if !explicitCos {
-		s.cosThresh = res.Thresholds.CosineThreshold
-	}
-	if !explicitVeto {
-		s.vetoScore = res.Thresholds.VectorVeto
-	}
-	slog.Info("brain: semantic thresholds auto-calibrated",
-		"pairs", res.Sample.Len(),
-		"p25", res.Sample.Percentile(0.25), "p50", res.Sample.Percentile(0.50),
-		"p99", res.Sample.Percentile(0.99),
-		"cosineThreshold", s.cosThresh, "vectorVeto", s.vetoScore)
-}
-
 // Calibrate embeds the whole durable corpus and derives model-specific cosine/veto
 // thresholds from its pairwise cosine distribution (memory.Calibrate). It is the
-// reusable measure-first helper behind both New's opt-in auto-calibration and the
+// reusable measure-first helper behind both auto-calibration on attach and the
 // `brain calibrate` CLI. The embed funnels through the text-hash cache, so it also
 // warms that cache for the next consolidation pass. Returns an error only on an
-// operational failure (no embedder, list, or embed); a corpus too thin to trust is a
+// operational failure (no attached backend, list, or embed); a corpus too thin to trust is a
 // successful call with Result.OK=false.
 func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, error) {
-	if s.embedder == nil {
-		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate requires semantic mode (no embedder configured)")
+	b := s.backend()
+	if b == nil {
+		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate requires semantic mode (no vector backend attached)")
 	}
-	all, err := s.store.List(ctx)
+	return s.calibrate(ctx, b)
+}
+
+func (s *Service) calibrate(ctx context.Context, b *semanticBackend) (memory.CalibrationResult, error) {
+	all, err := s.storeFor(b).List(ctx)
 	if err != nil {
 		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate list corpus: %w", err)
 	}
@@ -334,7 +284,7 @@ func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, erro
 	if len(recs) < 2 {
 		return memory.CalibrationResult{}, nil // not an error — just nothing to calibrate over
 	}
-	vecs, err := s.embedRecords(ctx, recs)
+	vecs, err := s.embedRecords(ctx, b, recs)
 	if err != nil {
 		return memory.CalibrationResult{}, fmt.Errorf("brain: calibrate embed corpus: %w", err)
 	}
@@ -346,9 +296,6 @@ func (s *Service) Calibrate(ctx context.Context) (memory.CalibrationResult, erro
 	}
 	return memory.Calibrate(ordered, memory.CalibrationOptions{}), nil
 }
-
-// SemanticEnabled reports whether vector recall is active.
-func (s *Service) SemanticEnabled() bool { return s.semantic }
 
 // reindexer is the rebuild-the-vector-index capability the semantic store exposes.
 // *chroma.Store satisfies it; the bare filestore (keyword mode) does not.
@@ -362,7 +309,7 @@ type reindexer interface {
 // pass touches them; this re-embeds and re-upserts the whole durable corpus in one shot.
 // It errors in keyword mode, where there is no vector index to rebuild.
 func (s *Service) Reindex(ctx context.Context) error {
-	rx, ok := s.store.(reindexer)
+	rx, ok := s.activeStore().(reindexer)
 	if !ok {
 		return fmt.Errorf("brain: reindex requires semantic mode (no vector index configured)")
 	}
@@ -385,14 +332,15 @@ const semEdgeCacheMax = 8
 // both the re-embed and the O(n²·d) kNN and returns the cached edges. Threshold and per-node cap
 // come from the resolved graph config, so a deployment can tune the graph's density.
 func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([]memory.Edge, error) {
-	if !s.semantic || len(records) < 2 {
+	b := s.backend()
+	if b == nil || len(records) < 2 {
 		return nil, nil
 	}
 
 	// Fingerprint the request (corpus content + the resolved knobs). A hit skips everything
 	// below; a miss recomputes and caches under the new key. The fingerprint changes the
 	// instant any input fact's text or id changes, so a cached result can never go stale.
-	fp := semanticEdgeFingerprint(records, s.graph.EdgeThreshold, s.graph.EdgeCap)
+	fp := semanticEdgeFingerprint(records, b.edgeThreshold, s.graph.EdgeCap)
 	s.semEdgeMu.Lock()
 	if edges, ok := s.semEdgeCache[fp]; ok {
 		s.semEdgeMu.Unlock()
@@ -400,7 +348,7 @@ func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([
 	}
 	s.semEdgeMu.Unlock()
 
-	vecs, err := s.embedRecords(ctx, records)
+	vecs, err := s.embedRecords(ctx, b, records)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +360,7 @@ func (s *Service) SemanticEdges(ctx context.Context, records []memory.Record) ([
 			mat = append(mat, v)
 		}
 	}
-	edges := memory.SemanticEdges(ids, mat, s.graph.EdgeThreshold, s.graph.EdgeCap)
+	edges := memory.SemanticEdges(ids, mat, b.edgeThreshold, s.graph.EdgeCap)
 
 	s.semEdgeMu.Lock()
 	if len(s.semEdgeCache) >= semEdgeCacheMax {
@@ -483,7 +431,7 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 	// increment (RMW), no cachestore stale-cache install. No caller holds s.mu here.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	all, err := s.store.List(ctx, recallScopes(scope)...)
+	all, err := s.activeStore().List(ctx, recallScopes(scope)...)
 	if err != nil {
 		return memory.Record{}, err
 	}
@@ -500,7 +448,7 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 		// refresh recency, nudge confidence toward the ceiling) instead of discarding the
 		// signal, and return the strengthened record (same ID).
 		reinforced := memory.Reinforce(dup, time.Now().UTC())
-		if err := s.store.Put(ctx, reinforced); err != nil {
+		if err := s.activeStore().Put(ctx, reinforced); err != nil {
 			return memory.Record{}, fmt.Errorf("brain: reinforce duplicate %s: %w", dup.ID, err)
 		}
 		return reinforced, nil
@@ -509,7 +457,7 @@ func (s *Service) Add(ctx context.Context, scope memory.Scope, text string, cate
 	if category == memory.CategoryIdentity {
 		r.Pinned = true
 	}
-	if err := s.store.Put(ctx, r); err != nil {
+	if err := s.activeStore().Put(ctx, r); err != nil {
 		return memory.Record{}, err
 	}
 	return r, nil
@@ -562,7 +510,7 @@ func (s *Service) CaptureFrom(ctx context.Context, scope memory.Scope, text stri
 	// the dedup set stays durable-only, so capture-vs-capture still never dedups (M2's invariant).
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	all, err := s.store.List(ctx, recallScopes(scope)...)
+	all, err := s.activeStore().List(ctx, recallScopes(scope)...)
 	if err != nil {
 		return memory.Record{}, err
 	}
@@ -574,13 +522,13 @@ func (s *Service) CaptureFrom(ctx context.Context, scope memory.Scope, text stri
 	}
 	if dup, ok := memory.FindDuplicate(text, existing, memory.DefaultDuplicateThreshold); ok {
 		reinforced := memory.Reinforce(dup, time.Now().UTC())
-		if err := s.store.Put(ctx, reinforced); err != nil {
+		if err := s.activeStore().Put(ctx, reinforced); err != nil {
 			return memory.Record{}, fmt.Errorf("brain: reinforce duplicate %s: %w", dup.ID, err)
 		}
 		return reinforced, nil
 	}
 	r := memory.New(scope, text, category, source) // genuinely-new: stage it (Pinned stays false)
-	if err := s.store.Put(ctx, r); err != nil {
+	if err := s.activeStore().Put(ctx, r); err != nil {
 		return memory.Record{}, fmt.Errorf("brain: capture: %w", err)
 	}
 	return r, nil
@@ -612,20 +560,24 @@ func (s *Service) RecallForPull(ctx context.Context, scopes []memory.Scope, quer
 
 // recall is the one query both entry points build, so the thresholds cannot drift
 // between the surface a person reads and the one a head pulls from.
+//
+// It reads one backend snapshot, so a store and the thresholds calibrated for it arrive
+// together even while an attach or a detach swaps the backend underneath.
 func (s *Service) recall(ctx context.Context, scopes []memory.Scope, query string, k int, archiveFloor float64) (memory.Result, error) {
-	return memory.Recall(ctx, s.store, memory.Query{
+	b := s.backend()
+	return memory.Recall(ctx, s.storeFor(b), memory.Query{
 		Text:             query,
 		Scopes:           scopes,
 		K:                k,
-		VectorVetoScore:  s.vetoScore,
-		VectorVouchScore: s.cosThresh,
+		VectorVetoScore:  b.veto(),
+		VectorVouchScore: b.vouch(),
 		ArchiveFloor:     archiveFloor,
 	})
 }
 
 // List returns memories in the given scopes (all scopes when none given).
 func (s *Service) List(ctx context.Context, scopes ...memory.Scope) ([]memory.Record, error) {
-	return s.store.List(ctx, scopes...)
+	return s.activeStore().List(ctx, scopes...)
 }
 
 // PinnedPreamble formats the always-injected (pinned) facts for a project plus
@@ -643,7 +595,7 @@ func (s *Service) List(ctx context.Context, scopes ...memory.Scope) ([]memory.Re
 func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 	scope := ScopeForProject(projectID)
 	// Empty query => pinned only (the relevance path needs a query).
-	res, err := memory.Recall(ctx, s.store, memory.Query{Scopes: recallScopes(scope)})
+	res, err := memory.Recall(ctx, s.activeStore(), memory.Query{Scopes: recallScopes(scope)})
 	if err != nil || len(res.Pinned) == 0 {
 		return ""
 	}
@@ -670,7 +622,7 @@ func (s *Service) PinnedPreamble(ctx context.Context, projectID string) string {
 // see there.
 func (s *Service) OperatingContract(ctx context.Context, projectID string) string {
 	scope := ScopeForProject(projectID)
-	all, err := s.store.List(ctx, recallScopes(scope)...)
+	all, err := s.activeStore().List(ctx, recallScopes(scope)...)
 	if err != nil {
 		slog.Warn("brain: operating-contract list failed", "project", projectID, "error", err)
 		return ""
@@ -750,7 +702,9 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 		return "", nil
 	}
 	scope := ScopeForProject(projectID)
-	res, err := memory.Recall(ctx, s.store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: s.vetoScore, VectorVouchScore: s.cosThresh, ArchiveFloor: s.archiveFloor})
+	backend := s.backend()
+	store := s.storeFor(backend)
+	res, err := memory.Recall(ctx, store, memory.Query{Text: prompt, Scopes: recallScopes(scope), VectorVetoScore: backend.veto(), VectorVouchScore: backend.vouch(), ArchiveFloor: s.archiveFloor})
 	if err != nil {
 		slog.Warn("brain: task-relevant recall failed", "project", projectID, "error", err)
 		return "", nil
@@ -781,7 +735,7 @@ func (s *Service) RecallBlock(ctx context.Context, projectID, prompt string, exc
 		ids = append(ids, r.ID)
 	}
 	b.WriteString("</brain>")
-	if err := memory.BumpUses(ctx, s.store, ids...); err != nil {
+	if err := memory.BumpUses(ctx, store, ids...); err != nil {
 		slog.Warn("brain: bump uses on recall injection", "project", projectID, "error", err)
 	}
 	return b.String(), ids
@@ -803,7 +757,7 @@ func escapeFactText(s string) string {
 // the pinned/locked flags but assigns fresh IDs and timestamps, so importing the
 // same bundle twice is idempotent. Returns the number of new facts written.
 func (s *Service) ImportRecords(ctx context.Context, targetScope memory.Scope, recs []memory.Record) (int, error) {
-	existing, err := s.store.List(ctx, recallScopes(targetScope)...)
+	existing, err := s.activeStore().List(ctx, recallScopes(targetScope)...)
 	if err != nil {
 		return 0, err
 	}
@@ -833,7 +787,7 @@ func (s *Service) ImportRecords(ctx context.Context, targetScope memory.Scope, r
 		nr := memory.New(targetScope, text, category, source)
 		nr.Pinned = src.Pinned
 		nr.Locked = src.Locked
-		if err := s.store.Put(ctx, nr); err != nil {
+		if err := s.activeStore().Put(ctx, nr); err != nil {
 			return added, err
 		}
 		pool = append(pool, nr)
@@ -845,7 +799,7 @@ func (s *Service) ImportRecords(ctx context.Context, targetScope memory.Scope, r
 // ListScopes returns the distinct scopes that currently hold memories — used by
 // scheduled consolidation to know what to consolidate.
 func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {
-	all, err := s.store.List(ctx)
+	all, err := s.activeStore().List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -863,19 +817,19 @@ func (s *Service) ListScopes(ctx context.Context) ([]memory.Scope, error) {
 
 // Get returns a single memory by ID.
 func (s *Service) Get(ctx context.Context, id string) (memory.Record, error) {
-	return s.store.Get(ctx, id)
+	return s.activeStore().Get(ctx, id)
 }
 
 // Delete removes a memory by ID.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	return s.store.Delete(ctx, id)
+	return s.activeStore().Delete(ctx, id)
 }
 
 // Update edits a memory's text/category. Because edits come from a human on the
 // memory page, the record is marked human-authored (and thus protected from
 // consolidation rewrite/decay).
 func (s *Service) Update(ctx context.Context, id, text string, category memory.Category) (memory.Record, error) {
-	r, err := s.store.Get(ctx, id)
+	r, err := s.activeStore().Get(ctx, id)
 	if err != nil {
 		return memory.Record{}, err
 	}
@@ -894,7 +848,7 @@ func (s *Service) Update(ctx context.Context, id, text string, category memory.C
 		r.LastUsedAt = time.Now().UTC()
 	}
 	r.UpdatedAt = time.Now().UTC()
-	if err := s.store.Put(ctx, r); err != nil {
+	if err := s.activeStore().Put(ctx, r); err != nil {
 		return memory.Record{}, err
 	}
 	return r, nil
@@ -993,12 +947,12 @@ func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)
 	// not block on a long churn; see docs/tech-debt.md.)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r, err := s.store.Get(ctx, id)
+	r, err := s.activeStore().Get(ctx, id)
 	if err != nil {
 		return memory.Record{}, err
 	}
 	fn(&r)
-	if err := s.store.Put(ctx, r); err != nil {
+	if err := s.activeStore().Put(ctx, r); err != nil {
 		return memory.Record{}, err
 	}
 	return r, nil
@@ -1006,7 +960,7 @@ func (s *Service) mutate(ctx context.Context, id string, fn func(*memory.Record)
 
 // MarkUsed increments the use counter for memories that were injected/returned.
 func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
-	return memory.BumpUses(ctx, s.store, ids...)
+	return memory.BumpUses(ctx, s.activeStore(), ids...)
 }
 
 // Consolidate runs the consolidation pass for one scope, threading the persisted
@@ -1017,17 +971,29 @@ func (s *Service) MarkUsed(ctx context.Context, ids ...string) error {
 // Force (reorganize even when the scope is unchanged — re-consolidate after a
 // prompt/algorithm change) and MinSurvivorRatio (relax the over-deletion guard for
 // an aggressive pass); its zero value reproduces the conservative behaviour.
+//
+// A real pass rebuilds the scope's links and communities, so with a vector backend configured
+// it returns ErrSemanticUnavailable while that backend is detached (see clusteringBackend),
+// unless opts.AllowLexical.
 func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, dryRun bool, opts ConsolidateOpts) (memory.Report, error) {
-	// Semantic SimOptions for the post-apply graph rebuild (embeds the scope) — computed
-	// before the lock and skipped on dry run, as in ApplyPlan.
+	// One backend snapshot for the whole pass, and the scope's vectors computed from it before
+	// the lock (s.mu must not be held across a network embed). Skipped on dry run, whose
+	// changelog does not include the graph rebuild that consumes them.
+	b := s.backend()
 	var simOpts []memory.SimOption
 	if !dryRun {
-		simOpts = s.scopeSimOptions(ctx, scope)
+		var err error
+		if b, err = s.clusteringBackend(opts.AllowLexical); err != nil {
+			return memory.Report{}, err
+		}
+		if simOpts, err = s.scopeSimOptions(ctx, b, scope); err != nil {
+			return memory.Report{}, err
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fps := s.loadFingerprints()
-	rep, err := memory.Consolidate(ctx, s.store, ex, scope, memory.ConsolidateOptions{
+	rep, err := memory.Consolidate(ctx, s.storeFor(b), ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint:  fps[string(scope)],
 		Force:            opts.Force,
 		Decay:            decay,
@@ -1049,10 +1015,13 @@ func (s *Service) Consolidate(ctx context.Context, scope memory.Scope, ex memory
 // the model (which the Extractor carries). Force re-runs the reorganization even
 // when the scope is unchanged since the last pass (re-consolidate after a prompt/algorithm
 // change). MinSurvivorRatio relaxes the over-deletion guard for an aggressive consolidation
-// (0 = conservative default). The zero value reproduces the original behaviour.
+// (0 = conservative default). AllowLexical lets a pass rebuild links and communities without
+// embeddings while a configured vector backend is detached — an operator's explicit choice,
+// never a scheduled one. The zero value reproduces the original behaviour.
 type ConsolidateOpts struct {
 	Force            bool
 	MinSurvivorRatio float64
+	AllowLexical     bool
 }
 
 // Plan runs the LLM phase of consolidation for a scope and returns the proposal
@@ -1065,7 +1034,7 @@ type ConsolidateOpts struct {
 // included). Staleness is caught by ApplyPlan's fingerprint check.
 func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extractor, decay memory.DecayPolicy, opts ConsolidateOpts) (memory.Plan, error) {
 	fps := s.loadFingerprints()
-	return memory.PlanConsolidation(ctx, s.store, ex, scope, memory.ConsolidateOptions{
+	return memory.PlanConsolidation(ctx, s.activeStore(), ex, scope, memory.ConsolidateOptions{
 		PrevFingerprint:  fps[string(scope)],
 		Force:            opts.Force,
 		Decay:            decay,
@@ -1075,19 +1044,27 @@ func (s *Service) Plan(ctx context.Context, scope memory.Scope, ex memory.Extrac
 
 // ApplyPlan applies (dryRun=false) or previews (dryRun=true) a plan deterministically
 // — no model calls. It returns memory.ErrStalePlan if the scope changed since the
-// plan was made. A real apply persists the new fingerprint so the next pass can skip
+// plan was made, and ErrSemanticUnavailable for a real apply while a configured vector
+// backend is detached. A real apply persists the new fingerprint so the next pass can skip
 // an unchanged set.
 func (s *Service) ApplyPlan(ctx context.Context, scope memory.Scope, plan memory.Plan, decay memory.DecayPolicy, dryRun bool) (memory.Report, error) {
 	// Compute semantic SimOptions (embeds the scope) BEFORE taking the lock: s.mu guards
 	// writes/fingerprints and must not be held across a network embed. Skipped on dry run
 	// (the post-apply graph rebuild that consumes them doesn't run for a preview).
+	b := s.backend()
 	var simOpts []memory.SimOption
 	if !dryRun {
-		simOpts = s.scopeSimOptions(ctx, scope)
+		var err error
+		if b, err = s.clusteringBackend(false); err != nil {
+			return memory.Report{}, err
+		}
+		if simOpts, err = s.scopeSimOptions(ctx, b, scope); err != nil {
+			return memory.Report{}, err
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rep, err := memory.ApplyPlan(ctx, s.store, scope, plan, memory.ConsolidateOptions{
+	rep, err := memory.ApplyPlan(ctx, s.storeFor(b), scope, plan, memory.ConsolidateOptions{
 		Decay:      decay,
 		DryRun:     dryRun,
 		SimOptions: simOpts,
@@ -1124,7 +1101,7 @@ func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter, opts memor
 		opts.PrevManifest = s.loadGlobalManifest()
 		s.mu.Unlock()
 	}
-	plan, err := memory.PlanGlobalPromotion(ctx, s.store, pr, opts)
+	plan, err := memory.PlanGlobalPromotion(ctx, s.activeStore(), pr, opts)
 	if err != nil {
 		return plan, err
 	}
@@ -1138,12 +1115,27 @@ func (s *Service) PlanGlobal(ctx context.Context, pr memory.Promoter, opts memor
 
 // ApplyGlobal applies (dryRun=false) or previews (dryRun=true) a global plan
 // deterministically — no model calls. Returns memory.ErrStalePlan if any affected
-// scope changed since the plan was made. A real apply invalidates the persisted
+// scope changed since the plan was made, and ErrSemanticUnavailable for a real apply while a
+// configured vector backend is detached. A real apply invalidates the persisted
 // per-scope fingerprints of the scopes it touched so a later consolidation re-evaluates them.
 func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRun bool) (memory.Report, error) {
+	b := s.backend()
+	var simOpts []memory.SimOption
+	if !dryRun {
+		var err error
+		if b, err = s.clusteringBackend(false); err != nil {
+			return memory.Report{}, err
+		}
+		// The apply relinks the global scope, so it gets the same embedding-aware similarity
+		// a per-scope pass does rather than rewriting global's links from Jaccard alone.
+		if simOpts, err = s.scopeSimOptions(ctx, b, memory.ScopeGlobal); err != nil {
+			return memory.Report{}, err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rep, err := memory.ApplyGlobalPromotion(ctx, s.store, plan, memory.ConsolidateOptions{DryRun: dryRun})
+	store := s.storeFor(b)
+	rep, err := memory.ApplyGlobalPromotion(ctx, store, plan, memory.ConsolidateOptions{DryRun: dryRun, SimOptions: simOpts})
 	if err != nil {
 		return rep, err
 	}
@@ -1161,7 +1153,7 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 	// Advance the global manifest to the post-apply state (recomputed from the live
 	// store, since apply may have deleted subsumed copies) so the next pass can skip
 	// while no project changes. RFC P5 incremental rebuild.
-	if m, merr := memory.ScopeManifest(ctx, s.store); merr == nil {
+	if m, merr := memory.ScopeManifest(ctx, store); merr == nil {
 		s.saveGlobalManifest(m)
 	}
 	// A promotion changed cross-scope structure — refresh topic areas (B). Use the
@@ -1179,18 +1171,27 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 // consolidation, consolidate-all, or a global promotion. In semantic mode it embeds the corpus and blends
 // cosine into the area clustering (C); otherwise it is lexical. Deterministic and
 // idempotent; the area index is rebuildable, never the source of truth. Returns the
-// number of records whose area changed.
+// number of records whose area changed, or ErrSemanticUnavailable while a configured vector
+// backend is detached.
 func (s *Service) AssignAreas(ctx context.Context) (int, error) {
-	all, err := s.store.List(ctx)
+	b, err := s.clusteringBackend(false)
+	if err != nil {
+		return 0, err
+	}
+	store := s.storeFor(b)
+	all, err := store.List(ctx)
 	if err != nil {
 		return 0, err
 	}
 	durable := durableRecords(all)
-	opts := s.semanticSimOptions(ctx, durable)
+	opts, err := s.semanticSimOptions(ctx, b, durable)
+	if err != nil {
+		return 0, err
+	}
 	// Whole-brain checkpoint: trim cache entries for texts no longer present (edits/deletes
 	// since the last pass) so the cache stays bounded by the live corpus.
-	s.pruneEmbedCache(durable)
-	return memory.AssignAreas(ctx, s.store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, opts...)
+	s.pruneEmbedCache(b, durable)
+	return memory.AssignAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, opts...)
 }
 
 // PreviewAreas computes the same cross-scope areas as [Service.AssignAreas] and persists
@@ -1201,20 +1202,25 @@ func (s *Service) AssignAreas(ctx context.Context) (int, error) {
 // It is [Service.AssignAreas] minus the two things a write pass does: it does not store
 // Record.Area, and it does not prune the embed cache, which is a whole-brain checkpoint
 // that belongs to a pass that actually rewrote something. It takes no lock for the same
-// reason AssignAreas does not.
+// reason AssignAreas does not. And because it persists nothing, it is not gated on the
+// vector backend: detached, or failing to embed, it previews lexically.
 //
 // The corpus listing is skipped entirely without an embedder: semanticSimOptions is the
 // only thing that wanted it, and lexical clustering reads the store itself.
 func (s *Service) PreviewAreas(ctx context.Context) ([]memory.AreaInfo, error) {
+	b := s.backend()
+	store := s.storeFor(b)
 	var opts []memory.SimOption
-	if s.embedder != nil {
-		all, err := s.store.List(ctx)
+	if b != nil {
+		all, err := store.List(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("brain: preview areas: %w", err)
 		}
-		opts = s.semanticSimOptions(ctx, durableRecords(all))
+		if opts, err = s.semanticSimOptions(ctx, b, durableRecords(all)); err != nil {
+			slog.Warn("brain: embed for area preview failed; previewing lexically", "error", err)
+		}
 	}
-	infos, err := memory.PreviewAreas(ctx, s.store, memory.DefaultAreaThreshold,
+	infos, err := memory.PreviewAreas(ctx, store, memory.DefaultAreaThreshold,
 		memory.DefaultMinPromotionScopes, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("brain: preview areas: %w", err)
@@ -1233,39 +1239,51 @@ func durableRecords(all []memory.Record) []memory.Record {
 	return out
 }
 
+// clusteringBackend is the backend a pass that persists similarity-derived structure (links,
+// communities, areas) computes with. In keyword mode by configuration that is nil, and the
+// pass is lexical as it always was. With a vector backend configured it must be attached:
+// otherwise ErrSemanticUnavailable, unless the caller explicitly allows a lexical rebuild.
+func (s *Service) clusteringBackend(allowLexical bool) (*semanticBackend, error) {
+	b := s.backend()
+	if b == nil && s.semCfg.configured() && !allowLexical {
+		return nil, ErrSemanticUnavailable
+	}
+	return b, nil
+}
+
 // scopeSimOptions builds the semantic SimOptions for a single-scope clustering pass
-// (ApplyPlan/Consolidate's post-apply RelinkScope + AssignCommunities). It lists the
-// scope's durable records and embeds them; nil (lexical-only) when no embedder is set,
-// the scope is empty, or listing/embedding fails — clustering then degrades to Jaccard.
-func (s *Service) scopeSimOptions(ctx context.Context, scope memory.Scope) []memory.SimOption {
-	if s.embedder == nil {
-		return nil
+// (ApplyPlan/Consolidate's post-apply RelinkScope + AssignCommunities) through backend b. It
+// lists the scope's durable records and embeds them; nil (lexical) when b is nil or the scope
+// is empty. A listing or embed failure is an error rather than a quiet lexical fallback, so a
+// backend failing mid-pass stops the pass instead of persisting a graph built without it.
+func (s *Service) scopeSimOptions(ctx context.Context, b *semanticBackend, scope memory.Scope) ([]memory.SimOption, error) {
+	if b == nil {
+		return nil, nil
 	}
-	all, err := s.store.List(ctx, scope)
+	all, err := s.storeFor(b).List(ctx, scope)
 	if err != nil {
-		slog.Warn("brain: list scope for semantic clustering failed; clustering lexically", "scope", scope, "error", err)
-		return nil
+		return nil, fmt.Errorf("brain: list scope %s for semantic clustering: %w", scope, err)
 	}
-	return s.semanticSimOptions(ctx, durableRecords(all))
+	return s.semanticSimOptions(ctx, b, durableRecords(all))
 }
 
 // semanticSimOptions returns the SimOptions that turn on embedding-blended similarity for
-// a clustering pass: a lookup over freshly-computed vectors for `records` plus the
-// configured cosine threshold. Returns nil (lexical-only) when no embedder is configured
-// or embedding fails, so clustering always degrades cleanly to Jaccard.
-func (s *Service) semanticSimOptions(ctx context.Context, records []memory.Record) []memory.SimOption {
-	if s.embedder == nil || len(records) == 0 {
-		return nil
+// a clustering pass: a lookup over freshly-computed vectors for `records` plus backend b's
+// cosine threshold. Returns nil (lexical-only) when b is nil or there are no records; an embed
+// failure is returned, for the caller to refuse the pass or — when it persists nothing — to
+// fall back to lexical itself.
+func (s *Service) semanticSimOptions(ctx context.Context, b *semanticBackend, records []memory.Record) ([]memory.SimOption, error) {
+	if b == nil || b.embedder == nil || len(records) == 0 {
+		return nil, nil
 	}
-	vecs, err := s.embedRecords(ctx, records)
+	vecs, err := s.embedRecords(ctx, b, records)
 	if err != nil {
-		slog.Warn("brain: embed for similarity failed; clustering lexically", "error", err)
-		return nil
+		return nil, fmt.Errorf("brain: embed for similarity: %w", err)
 	}
 	return []memory.SimOption{
 		memory.WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
-		memory.WithCosineThreshold(s.cosThresh),
-	}
+		memory.WithCosineThreshold(b.cosThresh),
+	}, nil
 }
 
 // embedRecords returns id → vector for the records, embedding only texts not already in
@@ -1273,12 +1291,12 @@ func (s *Service) semanticSimOptions(ctx context.Context, records []memory.Recor
 // embedded once each (deduped) and chunked to bound request size. The embedder is the only
 // thing that touches the network, so this is what makes the now-frequent per-pass re-embed
 // cheap after the first pass.
-func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (map[string][]float32, error) {
+func (s *Service) embedRecords(ctx context.Context, b *semanticBackend, records []memory.Record) (map[string][]float32, error) {
 	out := make(map[string][]float32, len(records))
 
-	// Seed the cache from the vector store once per process so a restart over an unchanged
+	// Seed the cache from the vector store once per backend so a restart over an unchanged
 	// corpus re-embeds nothing (the misses below then resolve from the warmed cache).
-	s.warmEmbedCache(ctx)
+	s.warmEmbedCache(ctx, b)
 
 	// Resolve cache hits and collect the distinct miss texts.
 	s.embedMu.Lock()
@@ -1309,7 +1327,7 @@ func (s *Service) embedRecords(ctx context.Context, records []memory.Record) (ma
 			if end > len(texts) {
 				end = len(texts)
 			}
-			vecs, err := s.embedder.Embed(ctx, texts[i:end])
+			vecs, err := b.embedder.Embed(ctx, texts[i:end])
 			if err != nil {
 				return nil, err
 			}
@@ -1346,23 +1364,23 @@ func embedKey(text string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// warmEmbedCache seeds embedCache with the vectors already held by the semantic index, so the
+// warmEmbedCache seeds embedCache with the vectors already held by backend b's index, so the
 // first clustering pass after a process restart does not re-embed an unchanged corpus. It runs
-// at most once per process; a Chroma/network failure leaves the cache cold and is retried on
+// at most once per backend; a Chroma/network failure leaves the cache cold and is retried on
 // the next pass (warmed stays false), never failing the caller. Keyed by text-hash, matching
 // the live embed path — a fact whose text is unchanged since it was indexed resolves from the
-// warmed entry. No-op in keyword mode (warmSrc nil). warmMu serializes concurrent first passes
-// so only one bulk fetch runs.
-func (s *Service) warmEmbedCache(ctx context.Context) {
-	if s.warmSrc == nil {
+// warmed entry. No-op without a warm source. b.warmMu serializes concurrent first passes so
+// only one bulk fetch runs.
+func (s *Service) warmEmbedCache(ctx context.Context, b *semanticBackend) {
+	if b == nil || b.warmSrc == nil {
 		return
 	}
-	s.warmMu.Lock()
-	defer s.warmMu.Unlock()
-	if s.warmed {
+	b.warmMu.Lock()
+	defer b.warmMu.Unlock()
+	if b.warmed {
 		return
 	}
-	vecs, err := s.warmSrc.LoadVectors(ctx)
+	vecs, err := b.warmSrc.LoadVectors(ctx)
 	if err != nil {
 		slog.Warn("brain: warm embed cache from vector store failed; will retry next pass", "error", err)
 		return // leave warmed=false so a transient failure doesn't permanently disable warming
@@ -1379,7 +1397,7 @@ func (s *Service) warmEmbedCache(ctx context.Context) {
 	}
 	cached := len(s.embedCache)
 	s.embedMu.Unlock()
-	s.warmed = true
+	b.warmed = true
 	slog.Info("brain: warmed embed cache from vector store", "vectors", len(vecs), "cached", cached)
 }
 
@@ -1387,9 +1405,10 @@ func (s *Service) warmEmbedCache(ctx context.Context) {
 // corpus), bounding the cache by the live fact set rather than by every text ever embedded —
 // edited/deleted facts' stale vectors don't accumulate. Called from the whole-brain checkpoint
 // (AssignAreas, run after every scheduled-consolidation/consolidate-all/global pass) where the full live set is known;
-// pruning on a per-scope embed would wrongly evict other scopes' entries. No-op in keyword mode.
-func (s *Service) pruneEmbedCache(live []memory.Record) {
-	if s.embedder == nil {
+// pruning on a per-scope embed would wrongly evict other scopes' entries. No-op in keyword mode
+// (b nil), where nothing was embedded to prune.
+func (s *Service) pruneEmbedCache(b *semanticBackend, live []memory.Record) {
+	if b == nil {
 		return
 	}
 	keep := make(map[string]struct{}, len(live))

@@ -28,15 +28,14 @@ func TestAssignAreasSemanticClustersAcrossScopes(t *testing.T) {
 	s := newSvc(t)
 	// Activate semantic similarity with a topic embedder: "race"/"concurrent" → one
 	// vector, everything else → an orthogonal one.
-	s.embedder = fakeEmbedder{topic: func(text string) []float32 {
+	s.sem.Store(&semanticBackend{cosThresh: 0.9, embedder: fakeEmbedder{topic: func(text string) []float32 {
 		for _, kw := range []string{"race", "concurrent", "goroutine"} {
 			if strings.Contains(text, kw) {
 				return []float32{1, 0}
 			}
 		}
 		return []float32{0, 1}
-	}}
-	s.cosThresh = 0.9
+	}}})
 
 	// Two scopes, lexically-disjoint facts about the same concept (concurrency safety).
 	mustAdd(t, s, ctx, "project:one", "race detector required before merge")

@@ -68,7 +68,7 @@ func TestHandleGraphEndToEnd(t *testing.T) {
 	a, _ := svc.Add(ctx, memory.ScopeGlobal, "the project builds with just", memory.CategoryProject, memory.SourceAgent)
 	b, _ := svc.Add(ctx, memory.ScopeGlobal, "frontend path alias maps to source", memory.CategoryProject, memory.SourceAgent)
 	// Rebuild the link graph (no edge expected here; exercises the relink path).
-	if _, err := memory.RelinkScope(ctx, svc.store, memory.ScopeGlobal); err != nil {
+	if _, err := memory.RelinkScope(ctx, svc.activeStore(), memory.ScopeGlobal); err != nil {
 		t.Fatal(err)
 	}
 

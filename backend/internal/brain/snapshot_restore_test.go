@@ -23,7 +23,7 @@ func TestService_RestoreSnapshot_InvalidatesCache(t *testing.T) {
 
 	// Seed fact A and snapshot the tree.
 	a := memory.New(memory.ScopeGlobal, "original text", memory.CategoryFact, memory.SourceAgent)
-	if err := svc.store.Put(ctx, a); err != nil {
+	if err := svc.activeStore().Put(ctx, a); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.List(ctx); err != nil { // warm the cache
@@ -44,7 +44,7 @@ func TestService_RestoreSnapshot_InvalidatesCache(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	b := memory.New(memory.ScopeGlobal, "added after snapshot", memory.CategoryFact, memory.SourceAgent)
-	if err := svc.store.Put(ctx, b); err != nil {
+	if err := svc.activeStore().Put(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	warm, err := svc.List(ctx)
@@ -93,7 +93,7 @@ func has(recs []memory.Record, id string) bool {
 func TestSnapshotEndpoints_RoundTrip(t *testing.T) {
 	svc := newSvc(t)
 	ctx := context.Background()
-	if err := svc.store.Put(ctx, memory.New(memory.ScopeGlobal, "a fact", memory.CategoryFact, memory.SourceAgent)); err != nil {
+	if err := svc.activeStore().Put(ctx, memory.New(memory.ScopeGlobal, "a fact", memory.CategoryFact, memory.SourceAgent)); err != nil {
 		t.Fatal(err)
 	}
 	h := &Handler{Service: svc}

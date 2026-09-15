@@ -61,7 +61,8 @@ func (e *countingEmbedder) Embed(_ context.Context, texts []string) ([][]float32
 func TestEmbedRecordsCachesByTextHash(t *testing.T) {
 	ctx := context.Background()
 	emb := &countingEmbedder{dim: 4}
-	s := &Service{embedder: emb, embedCache: make(map[string][]float32)}
+	s := &Service{embedCache: make(map[string][]float32)}
+	b := &semanticBackend{embedder: emb}
 
 	recs := []memory.Record{
 		{ID: "a", Text: "race detector"},
@@ -70,7 +71,7 @@ func TestEmbedRecordsCachesByTextHash(t *testing.T) {
 	}
 
 	// First pass: 3 records but only 2 DISTINCT texts → 2 embeds; all ids resolved.
-	out, err := s.embedRecords(ctx, recs)
+	out, err := s.embedRecords(ctx, b, recs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +83,7 @@ func TestEmbedRecordsCachesByTextHash(t *testing.T) {
 	}
 
 	// Second pass over the SAME records: everything is cached → no new embeds.
-	if _, err := s.embedRecords(ctx, recs); err != nil {
+	if _, err := s.embedRecords(ctx, b, recs); err != nil {
 		t.Fatal(err)
 	}
 	if emb.texts != 2 {
@@ -91,7 +92,7 @@ func TestEmbedRecordsCachesByTextHash(t *testing.T) {
 
 	// Edit one record's text: only the changed text is re-embedded (new hash → miss).
 	recs[1].Text = "concurrent safety verified under load"
-	if _, err := s.embedRecords(ctx, recs); err != nil {
+	if _, err := s.embedRecords(ctx, b, recs); err != nil {
 		t.Fatal(err)
 	}
 	if emb.texts != 3 {
@@ -117,9 +118,10 @@ func TestWarmEmbedCacheZeroReembedAfterRestart(t *testing.T) {
 
 	// Restarted process: cold in-process cache + a warm source over the same store.
 	emb := &countingEmbedder{dim: 4}
-	s := &Service{embedder: emb, embedCache: make(map[string][]float32), warmSrc: chromaVecs}
+	s := &Service{embedCache: make(map[string][]float32)}
+	b := &semanticBackend{embedder: emb, warmSrc: chromaVecs}
 
-	out, err := s.embedRecords(ctx, corpus)
+	out, err := s.embedRecords(ctx, b, corpus)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +139,7 @@ func TestWarmEmbedCacheZeroReembedAfterRestart(t *testing.T) {
 	}
 
 	// Second pass: warmed flag + cache both hold → still zero embeds, no second load.
-	if _, err := s.embedRecords(ctx, corpus); err != nil {
+	if _, err := s.embedRecords(ctx, b, corpus); err != nil {
 		t.Fatal(err)
 	}
 	if emb.texts != 0 {
@@ -156,13 +158,14 @@ func TestWarmEmbedCacheEmbedsOnlyNewFacts(t *testing.T) {
 		{ID: "a", Document: "warmed fact", Embedding: []float32{1, 0}},
 	}}
 	emb := &countingEmbedder{dim: 2}
-	s := &Service{embedder: emb, embedCache: make(map[string][]float32), warmSrc: chromaVecs}
+	s := &Service{embedCache: make(map[string][]float32)}
+	b := &semanticBackend{embedder: emb, warmSrc: chromaVecs}
 
 	recs := []memory.Record{
 		{ID: "a", Text: "warmed fact"},    // resolved from the warm
 		{ID: "b", Text: "brand new fact"}, // not indexed yet → must be embedded
 	}
-	out, err := s.embedRecords(ctx, recs)
+	out, err := s.embedRecords(ctx, b, recs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,17 +190,18 @@ func TestWarmEmbedCacheRetriesAfterFailure(t *testing.T) {
 		recs: []chroma.VectorRecord{{ID: "a", Document: "warmable", Embedding: []float32{1}}},
 	}
 	emb := &countingEmbedder{dim: 1}
-	s := &Service{embedder: emb, embedCache: make(map[string][]float32), warmSrc: fake}
+	s := &Service{embedCache: make(map[string][]float32)}
+	b := &semanticBackend{embedder: emb, warmSrc: fake}
 	recs := []memory.Record{{ID: "a", Text: "warmable"}}
 
 	// First pass: warm fails → fall back to embedding the fact.
-	if _, err := s.embedRecords(ctx, recs); err != nil {
+	if _, err := s.embedRecords(ctx, b, recs); err != nil {
 		t.Fatal(err)
 	}
 	if emb.texts != 1 {
 		t.Fatalf("warm failure should fall back to embedding, texts=%d", emb.texts)
 	}
-	if s.warmed {
+	if b.warmed {
 		t.Fatal("warm must not be marked done after a failure")
 	}
 
@@ -205,10 +209,10 @@ func TestWarmEmbedCacheRetriesAfterFailure(t *testing.T) {
 	s.embedCache = make(map[string][]float32)
 	fake.clearErr()
 
-	if _, err := s.embedRecords(ctx, recs); err != nil {
+	if _, err := s.embedRecords(ctx, b, recs); err != nil {
 		t.Fatal(err)
 	}
-	if !s.warmed {
+	if !b.warmed {
 		t.Fatal("warm should succeed and latch on retry")
 	}
 	if emb.texts != 1 {
@@ -222,8 +226,8 @@ func TestWarmEmbedCacheRetriesAfterFailure(t *testing.T) {
 // TestPruneEmbedCacheDropsStaleTexts proves the cache is bounded by the live corpus: entries for
 // texts no longer present (edited/deleted facts) are dropped, live entries are kept.
 func TestPruneEmbedCacheDropsStaleTexts(t *testing.T) {
-	emb := &countingEmbedder{dim: 1}
-	s := &Service{embedder: emb, embedCache: make(map[string][]float32)}
+	s := &Service{embedCache: make(map[string][]float32)}
+	b := &semanticBackend{embedder: &countingEmbedder{dim: 1}}
 	for _, txt := range []string{"alpha fact", "beta fact", "stale edited fact"} {
 		s.embedCache[embedKey(txt)] = []float32{1}
 	}
@@ -233,7 +237,7 @@ func TestPruneEmbedCacheDropsStaleTexts(t *testing.T) {
 		{ID: "1", Text: "alpha fact"},
 		{ID: "2", Text: "beta fact"},
 	}
-	s.pruneEmbedCache(live)
+	s.pruneEmbedCache(b, live)
 
 	if _, ok := s.embedCache[embedKey("stale edited fact")]; ok {
 		t.Fatal("stale entry was not pruned")
@@ -246,11 +250,11 @@ func TestPruneEmbedCacheDropsStaleTexts(t *testing.T) {
 	}
 }
 
-// TestPruneEmbedCacheNoopWithoutEmbedder guards the keyword-mode path: with no embedder the
+// TestPruneEmbedCacheNoopWithoutEmbedder guards the keyword-mode path: with no backend the
 // cache is never populated, so pruning must do nothing (and never panics on a nil live set).
 func TestPruneEmbedCacheNoopWithoutEmbedder(t *testing.T) {
 	s := &Service{embedCache: map[string][]float32{embedKey("x"): {1}}}
-	s.pruneEmbedCache(nil)
+	s.pruneEmbedCache(nil, nil)
 	if len(s.embedCache) != 1 {
 		t.Fatalf("prune must be a no-op in keyword mode, cache size=%d", len(s.embedCache))
 	}

@@ -187,6 +187,29 @@ func (c *Client) GetEmbeddings(ctx context.Context, collID string, ids []string)
 	return recs, nil
 }
 
+// GetDocuments returns every stored id and its document, without embeddings. It is the cheap
+// half of GetEmbeddings: enough to tell which facts the collection already holds, and under
+// which text, without shipping a vector per row.
+func (c *Client) GetDocuments(ctx context.Context, collID string) (map[string]string, error) {
+	body := map[string]any{"include": []string{"documents"}}
+	var out struct {
+		IDs       []string `json:"ids"`
+		Documents []string `json:"documents"`
+	}
+	if err := c.do(ctx, http.MethodPost, c.dbPath("/collections/"+collID+"/get"), body, &out); err != nil {
+		return nil, err
+	}
+	docs := make(map[string]string, len(out.IDs))
+	for i, id := range out.IDs {
+		doc := ""
+		if i < len(out.Documents) {
+			doc = out.Documents[i]
+		}
+		docs[id] = doc
+	}
+	return docs, nil
+}
+
 // QueryHit is one semantic search result.
 type QueryHit struct {
 	ID       string

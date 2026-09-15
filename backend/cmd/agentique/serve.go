@@ -721,6 +721,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		uc.Start(context.Background())
 	}
 
+	// The brain's vector backend (docs/brain.md, the runbook). Started here, never in
+	// server.New or brain.New: attaching dials Chroma and the embedder and writes to the
+	// collection, and a constructor a test calls must do neither. Its first attempt is
+	// immediate, and it keeps retrying for the life of the process, so a backend that comes up
+	// after boot is picked up without a restart. Runs in test mode too — with no backend
+	// configured it returns at once.
+	if b := srv.Brain(); b != nil {
+		go b.RunSemantic(context.Background())
+	}
+
 	// Cross-machine project identity: recompute each project's canonical git
 	// remote key (multi-machine). Non-destructive metadata refresh (one
 	// read-only git call per project) off the boot critical path — runs in

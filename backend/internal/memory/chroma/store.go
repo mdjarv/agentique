@@ -174,27 +174,69 @@ func (s *Store) Reindex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var ids, texts []string
-	var metas []map[string]any
+	var durable []memory.Record
+	for _, r := range recs {
+		if !r.Source.Staged() {
+			durable = append(durable, r)
+		}
+	}
+	return s.upsertBatched(ctx, "reindex", durable)
+}
+
+// IndexStale brings the collection up to date with the base store without rebuilding it:
+// only the durable facts the collection does not hold, or holds under a different text, are
+// embedded and upserted, in the same bounded batches as Reindex. It returns how many facts it
+// indexed. A fresh collection is therefore indexed whole, and one that missed writes while it
+// was unreachable is caught up by exactly those writes.
+//
+// It never deletes. A vector whose fact is gone costs a search slot and nothing else, because
+// recall only scores candidates it listed from the base store; deleting what the base store
+// does not name would let a copy of the brain pointed at a shared collection empty the index
+// the original is recalling from.
+func (s *Store) IndexStale(ctx context.Context) (int, error) {
+	recs, err := s.base.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	indexed, err := s.client.GetDocuments(ctx, s.coll)
+	if err != nil {
+		return 0, fmt.Errorf("chroma: read indexed documents: %w", err)
+	}
+	var stale []memory.Record
 	for _, r := range recs {
 		if r.Source.Staged() {
 			continue
 		}
-		ids = append(ids, r.ID)
-		texts = append(texts, r.Text)
-		metas = append(metas, metadataFor(r))
+		if doc, ok := indexed[r.ID]; ok && doc == r.Text {
+			continue
+		}
+		stale = append(stale, r)
+	}
+	if err := s.upsertBatched(ctx, "index stale", stale); err != nil {
+		return 0, err
+	}
+	return len(stale), nil
+}
+
+// upsertBatched embeds and upserts recs reindexBatch at a time. op names the caller in errors.
+func (s *Store) upsertBatched(ctx context.Context, op string, recs []memory.Record) error {
+	ids := make([]string, len(recs))
+	texts := make([]string, len(recs))
+	metas := make([]map[string]any, len(recs))
+	for i, r := range recs {
+		ids[i], texts[i], metas[i] = r.ID, r.Text, metadataFor(r)
 	}
 	for start := 0; start < len(ids); start += reindexBatch {
 		end := min(start+reindexBatch, len(ids))
 		emb, err := s.embedder.Embed(ctx, texts[start:end])
 		if err != nil {
-			return fmt.Errorf("chroma: reindex embed facts %d-%d of %d: %w", start, end, len(ids), err)
+			return fmt.Errorf("chroma: %s embed facts %d-%d of %d: %w", op, start, end, len(ids), err)
 		}
 		if len(emb) != end-start {
-			return fmt.Errorf("chroma: reindex embed facts %d-%d of %d: embedder returned %d vectors", start, end, len(ids), len(emb))
+			return fmt.Errorf("chroma: %s embed facts %d-%d of %d: embedder returned %d vectors", op, start, end, len(ids), len(emb))
 		}
 		if err := s.client.Upsert(ctx, s.coll, ids[start:end], emb, texts[start:end], metas[start:end]); err != nil {
-			return fmt.Errorf("chroma: reindex upsert facts %d-%d of %d: %w", start, end, len(ids), err)
+			return fmt.Errorf("chroma: %s upsert facts %d-%d of %d: %w", op, start, end, len(ids), err)
 		}
 	}
 	return nil

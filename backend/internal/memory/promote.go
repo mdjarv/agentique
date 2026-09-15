@@ -192,7 +192,8 @@ func PlanGlobalPromotion(ctx context.Context, store Store, pr Promoter, opts Con
 // refuses with ErrStalePlan if any affected scope changed since the plan was made,
 // drops hallucinated/protected subsumed IDs, and enforces a per-scope over-deletion
 // safety net. With opts.DryRun it builds the full changelog (Promoted = global
-// facts created, Deleted = project copies removed) but writes nothing.
+// facts created, Deleted = project copies removed) but writes nothing. opts.SimOptions make
+// the global scope's relink embedding-aware, as they do a per-scope ApplyPlan's.
 func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opts ConsolidateOptions) (Report, error) {
 	if plan.Skipped {
 		// Incremental short-circuit: the planner found no project changed since the
@@ -306,7 +307,7 @@ func ApplyGlobalPromotion(ctx context.Context, store Store, plan GlobalPlan, opt
 		rep.Deleted = append(rep.Deleted, r)
 	}
 	if !opts.DryRun {
-		if _, err := RelinkScope(ctx, store, ScopeGlobal); err != nil {
+		if _, err := RelinkScope(ctx, store, ScopeGlobal, opts.SimOptions...); err != nil {
 			return rep, err
 		}
 	}

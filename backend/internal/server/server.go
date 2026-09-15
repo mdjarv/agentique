@@ -259,6 +259,8 @@ type Server struct {
 	browserSvc *session.BrowserService
 	authSvc    *auth.Service
 	brainAuto  *brain.Automation
+	// brainSvc is nil when [brain] enabled is off or the brain failed to build.
+	brainSvc *brain.Service
 	// assistantSvc is nil when [experimental] assistant is off. Shutdown closes
 	// it, which is what stops the head's subprocess and drops the credential
 	// file behind it.
@@ -340,6 +342,10 @@ func (s *Server) Assistant() *assistant.Service { return s.assistantSvc }
 // it dials other machines, which no constructor a test calls may do. Nil when
 // neither the assistant nor voice is on.
 func (s *Server) PeerPoller() *peerPoller { return s.peerPoller }
+
+// Brain is the brain service, or nil when it is off. Serve starts its vector-backend attach
+// loop (brain.Service.RunSemantic) — here rather than in New because it dials the network.
+func (s *Server) Brain() *brain.Service { return s.brainSvc }
 
 // RunSteward starts this machine's steward and blocks until ctx ends. From
 // serve's production block, never a constructor: its passes write the findings
@@ -1113,7 +1119,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			mux.Handle("GET /api/brain/snapshots", httperror.HandlerFunc(bh.HandleListSnapshots))
 			mux.Handle("POST /api/brain/snapshots", httperror.HandlerFunc(bh.HandleCreateSnapshot))
 			mux.Handle("POST /api/brain/snapshots/{id}/restore", httperror.HandlerFunc(bh.HandleRestoreSnapshot))
-			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticEnabled())
+			slog.Info("brain: enabled", "dir", cfg.BrainDir, "semantic", brainSvc.SemanticStatus().State)
 
 			// The assistant is the brain's only reader. With the store on and the
 			// assistant off, memory is written and browsable and nothing recalls it —
@@ -1479,6 +1485,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		svc:                svc,
 		browserSvc:         browserSvc,
 		brainAuto:          brainAuto,
+		brainSvc:           brainSvc,
 		assistantSvc:       assistantSvc,
 		assistantHeartbeat: assistantHeartbeat,
 		assistantState:     assistantState,
