@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -29,18 +30,19 @@ func ClaudeBaselineOptions() []claudecli.Option {
 	}
 }
 
-// ClaudeContainedOptions are what a contained persona's connector adds on top
-// of [ClaudeBaselineOptions] (see PersonaRuntimeParams.Contained).
+// ClaudePersonaOptions are what the connector for one persona tool set adds on
+// top of [ClaudeBaselineOptions] (see PersonaRuntimeParams.Tools).
 //
-// Each one takes away a way to reach something other than the MCP servers the
-// persona is handed:
+// Each one takes away a way to reach something other than what the set names
+// and the MCP servers the persona is handed:
 //
-//   - WithBuiltinTools("") is `--tools ""`: no provider-native tool at all.
-//     That covers the ones that run code or touch files, and also the ones that
+//   - WithBuiltinTools is `--tools`: the set's native tools and no others —
+//     none for the head, WebSearch and WebFetch for a web-only persona. That
+//     removes the tools that run code or touch files, and also the ones that
 //     park on a person (AskUserQuestion, plan mode), spawn a second context
-//     (Agent, Workflow), or act outside the machine (RemoteTrigger, SendMessage,
-//     Artifact). It is also what removes ToolSearch, so MCP tools arrive loaded
-//     rather than deferred behind a lookup.
+//     (Agent, Workflow), or act outside the machine (RemoteTrigger,
+//     SendMessage, Artifact). It is also what removes ToolSearch, so MCP tools
+//     arrive loaded rather than deferred behind a lookup.
 //   - WithStrictMCPConfig ignores every MCP server but the --mcp-config ones: the
 //     user's own servers and claude.ai connectors (Drive, Gmail) are not the
 //     persona's.
@@ -51,13 +53,20 @@ func ClaudeBaselineOptions() []claudecli.Option {
 // up (MCP_TOOL_TIMEOUT), and must sit above whatever bounds those tools on the
 // server side: a client that gives up first leaves the model believing a call
 // failed that may still be running. The CLI's own default is 60s. Zero leaves
-// that default.
+// that default, which is right for a set whose persona is handed no MCP tools.
 //
-// Verified against claude 2.1.270: a CLI started this way reports exactly its
-// MCP tools in its init event and calls them directly.
-func ClaudeContainedOptions(toolTimeout time.Duration) []claudecli.Option {
+// It panics on a set that is not one: the sets are a closed list in this
+// package, and a connector built for an unknown one is a wiring mistake.
+//
+// Verified against claude 2.1.270: a CLI started with set "none" reports
+// exactly its MCP tools in its init event and calls them directly.
+func ClaudePersonaOptions(tools PersonaTools, toolTimeout time.Duration) []claudecli.Option {
+	builtin, known := tools.builtinTools()
+	if !known {
+		panic(fmt.Sprintf("session: %q is not a persona tool set", tools))
+	}
 	opts := []claudecli.Option{
-		claudecli.WithBuiltinTools(""),
+		claudecli.WithBuiltinTools(builtin),
 		claudecli.WithStrictMCPConfig(),
 		claudecli.WithDisableSlashCommands(),
 	}

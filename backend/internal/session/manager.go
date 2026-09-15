@@ -179,11 +179,12 @@ func (m *Manager) SetProviderConnector(provider string, connector runtime.CLICon
 	m.connWrap.setProvider(provider, connector)
 }
 
-// SetContainedConnector registers the connector a Contained persona is spawned
-// through (PersonaRuntimeParams.Contained). It is a separate route rather than
-// a provider name, so no session can select it: see capturingConnector.
-func (m *Manager) SetContainedConnector(connector runtime.CLIConnector) {
-	m.connWrap.setContained(connector)
+// SetPersonaConnector registers the connector a sessionless persona holding
+// tools is spawned through (PersonaRuntimeParams.Tools). Each tool set is its
+// own route rather than a provider name, so no session can select one: see
+// capturingConnector.
+func (m *Manager) SetPersonaConnector(tools PersonaTools, connector runtime.CLIConnector) {
+	m.connWrap.setPersona(tools, connector)
 }
 
 // capturingConnector wraps the configured runtime.CLIConnector and stashes
@@ -205,35 +206,39 @@ type capturingConnector struct {
 	providers map[string]runtime.CLIConnector
 	next      string // provider key to route the next Connect call
 
-	// contained is the route a Contained persona connects through. It is kept
-	// out of providers on purpose: that map is keyed by names a session row
-	// carries, and a name is not a thing that can be allowed to choose
-	// containment — nor to escape it. Only hintContained reaches it.
-	contained     runtime.CLIConnector
-	nextContained bool
+	// personas are the routes a sessionless persona connects through, one per
+	// tool set. They are kept out of providers on purpose: that map is keyed by
+	// names a session row carries, and a name is not a thing that can be
+	// allowed to choose a tool set — nor to escape one. Only hintPersona
+	// reaches them, and nothing routes a persona through inner.
+	personas    map[PersonaTools]runtime.CLIConnector
+	nextPersona PersonaTools
 }
 
-// errNoContainedConnector is what a contained start answers when the server
-// wired no contained route. Refused, never downgraded to the ordinary
-// connector: a caller asking for containment is counting on it.
-var errNoContainedConnector = errors.New("no contained connector is wired, so a contained persona cannot start")
+// errNoPersonaConnector is what a persona start answers when the server wired
+// no route for its tool set. Refused, never downgraded to the ordinary
+// connector, whose CLI carries every tool it has.
+var errNoPersonaConnector = errors.New("no connector is wired for this persona's tool set, so it cannot start")
 
-func (c *capturingConnector) setContained(conn runtime.CLIConnector) {
+func (c *capturingConnector) setPersona(tools PersonaTools, conn runtime.CLIConnector) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.contained = conn
+	if c.personas == nil {
+		c.personas = make(map[PersonaTools]runtime.CLIConnector)
+	}
+	c.personas[tools] = conn
 }
 
-func (c *capturingConnector) hasContained() bool {
+func (c *capturingConnector) hasPersona(tools PersonaTools) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.contained != nil
+	return c.personas[tools] != nil
 }
 
-// hintContained routes the next Connect through the contained connector.
-func (c *capturingConnector) hintContained() {
+// hintPersona routes the next Connect through the connector for tools.
+func (c *capturingConnector) hintPersona(tools PersonaTools) {
 	c.mu.Lock()
-	c.nextContained = true
+	c.nextPersona = tools
 	c.next = ""
 	c.mu.Unlock()
 }
@@ -257,9 +262,9 @@ func (c *capturingConnector) Connect(ctx context.Context, p runtime.ConnectParam
 	c.mu.Lock()
 	pick := c.inner
 	switch {
-	case c.nextContained:
-		pick = c.contained
-		c.nextContained = false
+	case c.nextPersona != "":
+		pick = c.personas[c.nextPersona]
+		c.nextPersona = ""
 	case c.next != "":
 		if alt, ok := c.providers[c.next]; ok {
 			pick = alt
@@ -268,7 +273,7 @@ func (c *capturingConnector) Connect(ctx context.Context, p runtime.ConnectParam
 	}
 	c.mu.Unlock()
 	if pick == nil {
-		return nil, errNoContainedConnector
+		return nil, errNoPersonaConnector
 	}
 
 	cli, err := pick.Connect(ctx, p)

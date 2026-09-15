@@ -334,6 +334,10 @@ func (s *Service) startWebOnlyPersona(ctx context.Context, d *Discussion, channe
 		Model:    model,
 		Effort:   effort,
 		WorkDir:  d.scratchDir,
+		// It reads arbitrary web pages and runs fullAuto, so the web is all it
+		// holds: a prompt-injected page must find no shell, no file writer and
+		// none of the operator's own connectors to act with.
+		Tools: PersonaToolsWeb,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start persona runtime: %w", err)

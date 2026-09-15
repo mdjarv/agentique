@@ -16,57 +16,54 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// A contained persona connects through the contained route, and an ordinary
-// one does not.
-func TestContainedPersonaConnectsThroughTheContainedRoute(t *testing.T) {
+// A persona connects through the route for the tool set it names, and never
+// through the ordinary connector, whose CLI carries every tool it has.
+func TestAPersonaConnectsThroughItsToolSetsRoute(t *testing.T) {
 	t.Parallel()
-	ordinary, contained := &paramsConnector{}, &paramsConnector{}
+	ordinary, none, web := &paramsConnector{}, &paramsConnector{}, &paramsConnector{}
 	mgr := NewManager(nil, nil, nil, ordinary)
-	mgr.SetContainedConnector(contained)
+	mgr.SetPersonaConnector(PersonaToolsNone, none)
+	mgr.SetPersonaConnector(PersonaToolsWeb, web)
 
-	rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{
-		WorkDir: t.TempDir(), Contained: true,
-	})
-	if err != nil {
-		t.Fatalf("start contained persona: %v", err)
+	for _, tools := range []PersonaTools{PersonaToolsNone, PersonaToolsWeb, PersonaToolsWeb} {
+		rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{
+			WorkDir: t.TempDir(), Tools: tools,
+		})
+		if err != nil {
+			t.Fatalf("start %s persona: %v", tools, err)
+		}
+		t.Cleanup(func() { _ = rt.Close() })
 	}
-	t.Cleanup(func() { _ = rt.Close() })
-	if len(contained.params) != 1 || len(ordinary.params) != 0 {
-		t.Fatalf("contained start connected %d times contained, %d ordinary; want 1 and 0",
-			len(contained.params), len(ordinary.params))
-	}
-
-	plain, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{WorkDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("start ordinary persona: %v", err)
-	}
-	t.Cleanup(func() { _ = plain.Close() })
-	if len(contained.params) != 1 || len(ordinary.params) != 1 {
-		t.Errorf("ordinary start connected %d times contained, %d ordinary; want 1 and 1",
-			len(contained.params), len(ordinary.params))
+	if len(none.params) != 1 || len(web.params) != 2 || len(ordinary.params) != 0 {
+		t.Errorf("connected none=%d web=%d ordinary=%d; want 1, 2 and 0",
+			len(none.params), len(web.params), len(ordinary.params))
 	}
 }
 
-// Asking for containment where there is none is refused before anything is
-// spawned, never quietly served by the ordinary connector.
-func TestContainedPersonaIsRefusedWithoutAContainedRoute(t *testing.T) {
+// A persona that names no set, an unknown set, or a set nobody wired a route
+// for is refused before anything is spawned — never served by the ordinary
+// connector.
+func TestAPersonaWithoutARouteIsRefused(t *testing.T) {
 	t.Parallel()
-	ordinary := &paramsConnector{}
+	ordinary, web := &paramsConnector{}, &paramsConnector{}
 	mgr := NewManager(nil, nil, nil, ordinary)
+	mgr.SetPersonaConnector(PersonaToolsWeb, web)
 
-	rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{
-		WorkDir: t.TempDir(), Contained: true,
-	})
-	if err == nil {
-		_ = rt.Close()
-		t.Fatal("a contained persona started with no contained route")
+	for _, tools := range []PersonaTools{"", "everything", PersonaToolsNone} {
+		rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{
+			WorkDir: t.TempDir(), Tools: tools,
+		})
+		if err == nil {
+			_ = rt.Close()
+			t.Errorf("a persona with tool set %q started", tools)
+		}
 	}
-	if len(ordinary.params) != 0 {
-		t.Errorf("the ordinary connector was used %d times for a contained start", len(ordinary.params))
+	if len(ordinary.params)+len(web.params) != 0 {
+		t.Errorf("a refused start still connected: ordinary=%d web=%d", len(ordinary.params), len(web.params))
 	}
 }
 
-// ContainedRouteSuite covers the one way a session could reach the contained
+// ContainedRouteSuite covers the one way a session could reach a persona
 // route: by the provider name it carries.
 type ContainedRouteSuite struct {
 	testutil.DBSuite
@@ -77,15 +74,16 @@ func TestContainedRouteSuite(t *testing.T) {
 	suite.Run(t, new(ContainedRouteSuite))
 }
 
-// The route has no name, so no provider a session row carries can select it —
-// including names that look as though they should.
-func (s *ContainedRouteSuite) TestASessionCannotNameTheContainedRoute() {
-	ordinary, contained := &paramsConnector{}, &paramsConnector{}
+// The routes have no provider name, so no provider a session row carries can
+// select one — including names that look as though they should.
+func (s *ContainedRouteSuite) TestASessionCannotNameAPersonaRoute() {
+	ordinary, none, web := &paramsConnector{}, &paramsConnector{}, &paramsConnector{}
 	mgr := NewManager(s.DB, s.Queries, s.Broadcaster, ordinary)
-	mgr.SetContainedConnector(contained)
+	mgr.SetPersonaConnector(PersonaToolsNone, none)
+	mgr.SetPersonaConnector(PersonaToolsWeb, web)
 	s.T().Cleanup(mgr.CloseAll)
 
-	for _, provider := range []string{"", "claude", "contained", "claude-contained", "persona"} {
+	for _, provider := range []string{"", "claude", "none", "web", "contained", "claude-contained", "persona"} {
 		_, err := mgr.Create(context.Background(), CreateParams{
 			ProjectID: s.Project.ID,
 			Name:      "provider " + provider,
@@ -95,33 +93,31 @@ func (s *ContainedRouteSuite) TestASessionCannotNameTheContainedRoute() {
 		})
 		s.Require().NoError(err, "provider %q", provider)
 	}
-	s.Empty(contained.params, "a session reached the contained connector by the provider it named")
+	s.Empty(none.params, "a session reached the head's route by the provider it named")
+	s.Empty(web.params, "a session reached the web persona's route by the provider it named")
 }
 
-// What ClaudeContainedOptions actually puts on the CLI's command line, read from
-// a stand-in binary rather than assumed from the option names — and that the
-// head's MCP config still reaches it as a path.
-func TestContainedConnectorSpawnsTheCLIWithNoToolsOfItsOwn(t *testing.T) {
-	t.Parallel()
+// spawnedArgv starts a persona through a connector built from the given
+// options around a stand-in CLI binary, and answers the argv it was spawned
+// with and the MCP_TOOL_TIMEOUT it saw — read from the process rather than
+// assumed from the option names.
+func spawnedArgv(t *testing.T, tools PersonaTools, opts []claudecli.Option, mcpConfigs []string) ([]string, string) {
+	t.Helper()
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args")
+	argsFile, envFile := filepath.Join(dir, "args"), filepath.Join(dir, "env")
 	fake := filepath.Join(dir, "claude")
-	envFile := filepath.Join(dir, "env")
 	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > '" + argsFile + "'\nprintf '%s' \"$MCP_TOOL_TIMEOUT\" > '" +
 		envFile + "'\nexit 1\n"
 	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatalf("write fake cli: %v", err)
 	}
 
-	opts := append(ClaudeBaselineOptions(), ClaudeContainedOptions(2*time.Minute)...)
 	opts = append(opts, claudecli.WithBinaryPath(fake), claudecli.WithSkipVersionCheck(),
 		claudecli.WithInitTimeout(2*time.Second))
 	mgr := NewManager(nil, nil, nil, &paramsConnector{})
-	mgr.SetContainedConnector(claudeadapter.NewConnector(opts...))
-
-	mcpConfig := filepath.Join(dir, "assistant-head-mcp.json")
+	mgr.SetPersonaConnector(tools, claudeadapter.NewConnector(opts...))
 	rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{
-		WorkDir: dir, Contained: true, MCPConfigs: []string{mcpConfig},
+		WorkDir: dir, Tools: tools, MCPConfigs: mcpConfigs,
 	})
 	if err == nil {
 		_ = rt.Close()
@@ -131,22 +127,54 @@ func TestContainedConnectorSpawnsTheCLIWithNoToolsOfItsOwn(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("the stand-in CLI was never spawned: %v (start error %v)", readErr, err)
 	}
-	args := strings.Split(string(bytes.TrimSuffix(raw, []byte{0})), "\x00")
+	env, _ := os.ReadFile(envFile)
+	return strings.Split(string(bytes.TrimSuffix(raw, []byte{0})), "\x00"), string(env)
+}
+
+// What ClaudePersonaOptions puts on the head's command line: no native tool, no
+// MCP server but its own (handed over as a path), and a tool timeout above the
+// verbs' own deadline.
+func TestTheHeadsCLIHoldsNoToolOfItsOwn(t *testing.T) {
+	t.Parallel()
+	mcpConfig := filepath.Join(t.TempDir(), "assistant-head-mcp.json")
+	opts := append(ClaudeBaselineOptions(), ClaudePersonaOptions(PersonaToolsNone, 2*time.Minute)...)
+	args, timeout := spawnedArgv(t, PersonaToolsNone, opts, []string{mcpConfig})
 
 	if !hasFlagValue(args, "--tools", "") {
 		t.Errorf(`argv carries no --tools "": the CLI keeps its own tool set. argv = %q`, args)
 	}
+	assertNoForeignTools(t, args)
+	if !hasFlagValue(args, "--mcp-config", mcpConfig) {
+		t.Errorf("argv does not hand the MCP config over as its path. argv = %q", args)
+	}
+	if timeout != "120000" {
+		t.Errorf("MCP_TOOL_TIMEOUT = %q, want 120000: the CLI would give up on a tool call at its own 60s", timeout)
+	}
+}
+
+// A web-only discussion persona holds the two web tools and nothing else.
+func TestAWebPersonasCLIHoldsOnlyTheWebTools(t *testing.T) {
+	t.Parallel()
+	opts := append(ClaudeBaselineOptions(), ClaudePersonaOptions(PersonaToolsWeb, 0)...)
+	args, timeout := spawnedArgv(t, PersonaToolsWeb, opts, nil)
+
+	if !hasFlagValue(args, "--tools", "WebSearch,WebFetch") {
+		t.Errorf(`argv carries no --tools "WebSearch,WebFetch". argv = %q`, args)
+	}
+	assertNoForeignTools(t, args)
+	if timeout != "" {
+		t.Errorf("MCP_TOOL_TIMEOUT = %q, want the CLI's own: a web persona is handed no MCP tools", timeout)
+	}
+}
+
+// assertNoForeignTools checks the two options every persona set shares.
+func assertNoForeignTools(t *testing.T, args []string) {
+	t.Helper()
 	if !slices.Contains(args, "--strict-mcp-config") {
 		t.Errorf("argv carries no --strict-mcp-config: the user's MCP servers come along. argv = %q", args)
 	}
 	if !slices.Contains(args, "--disable-slash-commands") {
 		t.Errorf("argv carries no --disable-slash-commands. argv = %q", args)
-	}
-	if !hasFlagValue(args, "--mcp-config", mcpConfig) {
-		t.Errorf("argv does not hand the MCP config over as its path. argv = %q", args)
-	}
-	if env, _ := os.ReadFile(envFile); string(env) != "120000" {
-		t.Errorf("MCP_TOOL_TIMEOUT = %q, want 120000: the CLI would give up on a tool call at its own 60s", env)
 	}
 }
 

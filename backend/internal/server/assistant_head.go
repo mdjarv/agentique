@@ -38,8 +38,8 @@ import (
 // is worth nothing while the CLI underneath it carries a shell: the head runs
 // fullAuto (there is no screen to approve anything on) and it is fed untrusted
 // agent text on every single turn, as news and as reports. So the head starts
-// Contained — its MCP endpoint is its whole tool set, with no native tool and
-// no MCP server from the user's own configuration — and the working directory
+// with PersonaToolsNone — its MCP endpoint is its whole tool set, with no native
+// tool and no MCP server from the user's own configuration — and the working directory
 // is a scratch directory of its own. internal/assistant cannot spell either: it
 // is provider-neutral, and what "no native tool" takes is claude's.
 
@@ -104,7 +104,7 @@ func (a *assistantHeads) StartHead(ctx context.Context, p assistant.HeadParams) 
 		// Task and Bash while the CLI offered the head Agent, Workflow,
 		// SendMessage, RemoteTrigger, the user's Drive connector and
 		// AskUserQuestion — which parked a whole turn on 2026-09-15.
-		Contained: true,
+		Tools:     session.PersonaToolsNone,
 		OnText:    p.OnText,
 		OnThought: p.OnThought,
 	})

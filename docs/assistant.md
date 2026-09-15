@@ -441,7 +441,7 @@ recorder could not see this, because a native tool never passes
 
 Four rules close it, each at the layer that owns it:
 
-- **No native tool.** The head is `Contained` (see "Security"), so
+- **No native tool.** The head holds `PersonaToolsNone` (see "Security"), so
   `AskUserQuestion`, plan mode and everything else that parks on a person is not
   in its tool list. That is the fix. The three below hold even if a tool slips
   through, or a CLI stops honouring the flag.
@@ -485,7 +485,7 @@ Four rules close it, each at the layer that owns it:
   the unknown-outcome problem with nobody told. Measured on 2.1.270 with a
   stand-in server: 60.0s twice by default; `MCP_TOOL_TIMEOUT=20000` gave up at
   20s; at 120000 and 150000 a 100s call answered. So serve builds the contained
-  connector with `ClaudeContainedOptions(assistant.HeadToolTimeout)`
+  connector with `ClaudePersonaOptions(PersonaToolsNone, assistant.HeadToolTimeout)`
   (`VerbBudget` + 30s), which sets `MCP_TOOL_TIMEOUT`. The ordering holds by
   construction rather than by the CLI's default.
 
@@ -552,14 +552,15 @@ stated so nobody widens a tier to save a click.
 
 **The head's own tools are an allowlist, and it is empty.** Everything above
 holds only while the verb table is the head's whole reach, and the CLI under it
-brings tools of its own. So the head starts `Contained`
-(`session.PersonaRuntimeParams`): it connects through a second claude connector,
-built by serve from the options every session gets plus
-`session.ClaudeContainedOptions()`. Those are `--tools ""` (no provider-native
-tool at all), `--strict-mcp-config` (no MCP server but the head's own endpoint),
-and `--disable-slash-commands` (no skill listing for skills it cannot run). The
-head's init event reports exactly its `mcp__agentique__*` verbs, and it calls
-them directly: with no `ToolSearch` they arrive loaded, not deferred.
+brings tools of its own. So the head starts with `Tools: PersonaToolsNone`
+(`session.PersonaRuntimeParams`): it connects through that tool set's own claude
+connector, built by serve from the options every session gets plus
+`session.ClaudePersonaOptions(PersonaToolsNone, HeadToolTimeout)`. Those are
+`--tools ""` (no provider-native tool at all), `--strict-mcp-config` (no MCP
+server but the head's own endpoint), `--disable-slash-commands` (no skill listing
+for skills it cannot run) and the tool timeout below. The head's init event
+reports exactly its `mcp__agentique__*` verbs, and it calls them directly: with
+no `ToolSearch` they arrive loaded, not deferred.
 
 It is an allowlist because the deny list it replaced went out of date without
 anyone touching it. `headDisallowedTools` named Bash, Read, Write, the web
@@ -573,11 +574,12 @@ to deny is written against one release. That day `AskUserQuestion` parked a
 whole turn (see "A turn waits on nothing it cannot have").
 
 The route is private: it is not a provider name, so no session row can select
-it (`normalizeProvider` would fold any name to claude first anyway). A contained
-start with no contained connector wired is **refused**, never served by the
-ordinary connector: the head counts on its containment. Discussion personas are
-not contained, because reading the web is their job and the operator is
-watching the conversation they run in.
+it (`normalizeProvider` would fold any name to claude first anyway). A persona
+start whose tool set has no connector wired, or that names no set, is
+**refused**. It is never served by the ordinary connector, whose CLI carries
+everything, and no sessionless persona has an uncontained path left. Web-only
+discussion personas hold `PersonaToolsWeb`, the web pair and nothing else
+(`docs/channels.md`).
 
 ## Phasing
 
@@ -1564,7 +1566,7 @@ so where it says it carries no working directory, for the same reason.
 
 *Superseded 2026-09-15:* the deny list is gone. By then the CLI offered the head
 a dozen tools it did not name, one of which hung a turn. The head is now
-`Contained`, an allowlist of its own MCP endpoint (see "Security").
+`PersonaToolsNone`, an allowlist of its own MCP endpoint (see "Security").
 
 **The verb table is on the head's own MCP endpoint.** Every verb was registered
 on the one shared `/mcp` handler, and agentkit answers `tools/list` from

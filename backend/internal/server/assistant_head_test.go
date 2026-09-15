@@ -44,9 +44,10 @@ func (c *recordingCLIConnector) connects() []runtime.ConnectParams {
 // endpoint as the only tools it is handed — still as a 0600 file path.
 func TestTheHeadStartsContained(t *testing.T) {
 	t.Setenv("AGENTIQUE_HOME", t.TempDir())
-	ordinary, contained := &recordingCLIConnector{}, &recordingCLIConnector{}
+	ordinary, web, contained := &recordingCLIConnector{}, &recordingCLIConnector{}, &recordingCLIConnector{}
 	mgr := session.NewManager(nil, nil, nil, ordinary)
-	mgr.SetContainedConnector(contained)
+	mgr.SetPersonaConnector(session.PersonaToolsWeb, web)
+	mgr.SetPersonaConnector(session.PersonaToolsNone, contained)
 	heads := &assistantHeads{mgr: mgr, tokens: mcphttp.NewTokenStore(), mcpURL: "http://127.0.0.1:1/mcp/assistant"}
 
 	rt, err := heads.StartHead(context.Background(), assistant.HeadParams{Preamble: "you are the head"})
@@ -55,8 +56,8 @@ func TestTheHeadStartsContained(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = rt.Close() })
 
-	if n := len(ordinary.connects()); n != 0 {
-		t.Errorf("the head connected through the ordinary route %d times", n)
+	if n := len(ordinary.connects()) + len(web.connects()); n != 0 {
+		t.Errorf("the head connected through a route that carries tools %d times", n)
 	}
 	got := contained.connects()
 	if len(got) != 1 {
@@ -74,20 +75,22 @@ func TestTheHeadStartsContained(t *testing.T) {
 	}
 }
 
-// With no contained route the head does not start — it is not started with the
-// CLI's own tool set instead.
+// With no route for its tool set the head does not start — it is not started
+// with the CLI's own tool set, or the web persona's, instead.
 func TestTheHeadIsNeverStartedUncontained(t *testing.T) {
 	t.Setenv("AGENTIQUE_HOME", t.TempDir())
-	ordinary := &recordingCLIConnector{}
-	heads := &assistantHeads{mgr: session.NewManager(nil, nil, nil, ordinary)}
+	ordinary, web := &recordingCLIConnector{}, &recordingCLIConnector{}
+	mgr := session.NewManager(nil, nil, nil, ordinary)
+	mgr.SetPersonaConnector(session.PersonaToolsWeb, web)
+	heads := &assistantHeads{mgr: mgr}
 
 	rt, err := heads.StartHead(context.Background(), assistant.HeadParams{Preamble: "you are the head"})
 	if err == nil {
 		_ = rt.Close()
 		t.Fatal("the head started with no contained route")
 	}
-	if n := len(ordinary.connects()); n != 0 {
-		t.Errorf("the ordinary route was used %d times", n)
+	if n := len(ordinary.connects()) + len(web.connects()); n != 0 {
+		t.Errorf("a route that carries tools was used %d times", n)
 	}
 }
 

@@ -70,8 +70,9 @@ func (c *paramsConnector) last() (runtime.ConnectParams, *testutil.MockCLISessio
 // the background, answering the result channel once it returns.
 func startTestPersona(t *testing.T, conn *paramsConnector) (personaRuntime, <-chan personaTurnEnd) {
 	t.Helper()
-	mgr := NewManager(nil, nil, nil, conn)
-	rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{WorkDir: t.TempDir()})
+	mgr := NewManager(nil, nil, nil, &paramsConnector{})
+	mgr.SetPersonaConnector(PersonaToolsWeb, conn)
+	rt, err := mgr.StartPersonaRuntime(context.Background(), PersonaRuntimeParams{WorkDir: t.TempDir(), Tools: PersonaToolsWeb})
 	if err != nil {
 		t.Fatalf("start persona: %v", err)
 	}

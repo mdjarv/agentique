@@ -296,24 +296,22 @@ type PersonaRuntimeParams struct {
 	// and never inline: /proc/<pid>/cmdline is world-readable.
 	MCPConfigs []string
 
-	// Contained spawns the persona with MCPConfigs as its whole tool set: no
-	// provider-native tool, and no MCP server from the user's own
-	// configuration. It goes through the connector registered with
-	// [Manager.SetContainedConnector], and a start is refused when there is
-	// none rather than downgraded to the ordinary one.
+	// Tools is what the persona holds besides its MCPConfigs, and every
+	// sessionless persona names one: the zero value is refused. It goes through
+	// the connector registered for that set with [Manager.SetPersonaConnector],
+	// and a start with no connector for its set is refused rather than served
+	// by the ordinary one, whose CLI carries everything it has.
 	//
 	// It matters because a persona runs fullAuto — the approval pump
 	// auto-allows everything, by design, since there is no screen to ask — so
-	// the tools it holds are the tools it can use without anybody agreeing. It
-	// is an allowlist, never a list of names to deny: the CLI adds tools between
-	// releases, and a deny list written against one release is out of date on
-	// the next. The head's said Task and Bash while the CLI was offering it
-	// Agent, Workflow, SendMessage, RemoteTrigger, Artifact, the user's Google
-	// Drive connector and AskUserQuestion, which is the one that hung a turn.
-	//
-	// A discussion persona is not contained: reading the web is its job, and it
-	// is started by the operator for a conversation they are watching.
-	Contained bool
+	// the tools it holds are the tools it can use without anybody agreeing. A
+	// set is an allowlist, never a list of names to deny: the CLI adds tools
+	// between releases, and a deny list written against one release is out of
+	// date on the next. The head's said Task and Bash while the CLI was offering
+	// it Agent, Workflow, SendMessage, RemoteTrigger, Artifact, the user's
+	// Google Drive connector and AskUserQuestion, which is the one that hung a
+	// turn.
+	Tools PersonaTools
 
 	// OnText receives assistant text deltas as the reply streams. Optional, and
 	// opting in turns on the provider's partial messages, which is what emits
@@ -324,6 +322,35 @@ type PersonaRuntimeParams struct {
 	// provider sends it encrypted (Claude does). Optional. Called from a runtime
 	// goroutine, so it must not block.
 	OnThought func(text string)
+}
+
+// PersonaTools names the provider-native tools a sessionless persona holds on
+// top of its MCP configs. A closed set: a persona that needs something else is
+// a new member with its own reason, never a caller-supplied list.
+type PersonaTools string
+
+const (
+	// PersonaToolsNone is no native tool at all, so the persona's MCP configs
+	// are its whole tool set. The assistant's head: the verb table is how it
+	// reaches the world, and nothing else may be.
+	PersonaToolsNone PersonaTools = "none"
+	// PersonaToolsWeb is the two tools that read the web, WebSearch and
+	// WebFetch, and nothing that writes, runs a command, spawns a subagent or
+	// asks a person. A web-only discussion persona: it reads arbitrary pages,
+	// so a prompt-injected page must find nothing to act with. It writes
+	// nothing either — its scratch directory is only somewhere to stand.
+	PersonaToolsWeb PersonaTools = "web"
+)
+
+// builtinTools is the CLI's --tools value for a set, "" meaning none.
+func (t PersonaTools) builtinTools() (string, bool) {
+	switch t {
+	case PersonaToolsNone:
+		return "", true
+	case PersonaToolsWeb:
+		return "WebSearch,WebFetch", true
+	}
+	return "", false
 }
 
 // withReaperMarker returns preamble carrying procctl.CLIProcessMarker, adding
@@ -358,23 +385,22 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	}
 	pr := &sessionlessPersona{id: id, rt: m.rt, onText: p.OnText, onThought: p.OnThought}
 
-	// Checked before anything is spawned: a caller asking for containment is
-	// counting on it, so no contained route means no persona.
-	if p.Contained && !m.connWrap.hasContained() {
-		return nil, fmt.Errorf("start persona runtime: %w", errNoContainedConnector)
+	// Checked before anything is spawned: a persona that named no set, or a set
+	// with no route, does not start — there is no uncontained fallback.
+	if _, known := p.Tools.builtinTools(); !known {
+		return nil, fmt.Errorf("start persona runtime: tool set %q is not one a persona can hold", p.Tools)
+	}
+	if !m.connWrap.hasPersona(p.Tools) {
+		return nil, fmt.Errorf("start persona runtime (%s): %w", p.Tools, errNoPersonaConnector)
 	}
 
-	// Serialize the routing handshake under routeMu — see Create. The default
-	// connector is claude (only "codex" is registered as an alternate), so
-	// hinting "claude" falls through to the default. pop() keeps the capture
-	// buffer balanced against concurrent DB-session creates even though a
-	// sessionless persona never needs direct CLI access.
+	// Serialize the routing handshake under routeMu — see Create. A persona is
+	// claude-only and routes by its tool set, never through the default
+	// connector. pop() keeps the capture buffer balanced against concurrent
+	// DB-session creates even though a sessionless persona never needs direct
+	// CLI access.
 	m.routeMu.Lock()
-	if p.Contained {
-		m.connWrap.hintContained()
-	} else {
-		m.connWrap.hintNext("claude")
-	}
+	m.connWrap.hintPersona(p.Tools)
 	// Detached context: the CLI process lifetime is independent of the request
 	// ctx — see the comment in Create.
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{

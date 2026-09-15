@@ -41,8 +41,10 @@ func TestPersonaRuntimeCarriesReaperMarker(t *testing.T) {
 	t.Parallel()
 	for _, preamble := range []string{"", "You are the assistant to a developer.", buildPersonaPreamble("", "")} {
 		conn := &paramsConnector{}
-		rt, err := NewManager(nil, nil, nil, conn).StartPersonaRuntime(context.Background(),
-			PersonaRuntimeParams{Preamble: preamble, WorkDir: t.TempDir()})
+		mgr := NewManager(nil, nil, nil, &paramsConnector{})
+		mgr.SetPersonaConnector(PersonaToolsNone, conn)
+		rt, err := mgr.StartPersonaRuntime(context.Background(),
+			PersonaRuntimeParams{Preamble: preamble, WorkDir: t.TempDir(), Tools: PersonaToolsNone})
 		if err != nil {
 			t.Fatalf("start persona: %v", err)
 		}

@@ -854,7 +854,13 @@ teardown, not to fence out a hostile lead.
 
 Web-only discussion personas are sessionless and claude-only. Drive them through
 `runtime.Manager` — a bare connector bypasses the permission pump and tools block
-forever. They post as the third `sender_type: "persona"` (skipped by the legacy
+forever. **They hold `PersonaToolsWeb`: WebSearch and WebFetch, nothing else.** A
+persona reads arbitrary pages under fullAuto, and before 2026-09-15 it did so
+with Bash, Write, Edit, Agent and the operator's own claude.ai connectors (Drive
+trash and share). One prompt-injected page was enough to do damage off this
+machine. Its scratch dir is only somewhere to stand, so it needs no Write. Never
+add Bash. A new need is a new closed `PersonaTools` member with its reason, never
+a caller-supplied list. They post as the third `sender_type: "persona"` (skipped by the legacy
 event mirror) and live in project-less channels whose WS events fan out on the
 global topic. There is a fourth, `system`, and it belongs to the assistant's
 conversation alone — the heartbeat's wake-up note (`role: "system"` on the wire,
@@ -1855,13 +1861,13 @@ rule exists to prevent.
 ### The assistant — `docs/assistant.md`
 
 **The head's native tools are an allowlist, and it is empty.** The head starts
-`Contained`, through the private contained connector (`--tools ""`,
+with `PersonaToolsNone`, through that set's private connector (`--tools ""`,
 `--strict-mcp-config`, `--disable-slash-commands`), so its own MCP endpoint is
 its whole tool set. Never go back to a deny list. The CLI adds tools between
 releases, and on 2026-09-15 the head's list named Task and Bash while it was
 offered Agent, Workflow, SendMessage, RemoteTrigger, the user's Drive connector
-and `AskUserQuestion`, which parked a turn for ten minutes. A contained start
-with no contained connector is refused, never downgraded.
+and `AskUserQuestion`, which parked a turn for ten minutes. A persona whose set
+has no connector is refused, never downgraded.
 
 **A head turn waits only on the model and its verbs, and each is bounded.** A
 sessionless persona refuses a question or approval the moment it is raised.

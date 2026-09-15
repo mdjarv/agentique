@@ -25,6 +25,7 @@ func TestDiscussionSuite(t *testing.T) {
 func (s *DiscussionSuite) SetupTest() {
 	s.DBSuite.SetupTest()
 	s.mgr = NewManager(s.DB, s.Queries, s.Broadcaster, connectorAdapter{s.Connector})
+	s.mgr.SetPersonaConnector(PersonaToolsWeb, connectorAdapter{s.Connector})
 	s.svc = NewService(s.mgr, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner())
 }
 
@@ -60,6 +61,7 @@ func (s *DiscussionSuite) driveTurn(mock *testutil.MockCLISession, text string, 
 func (s *DiscussionSuite) TestStartPersonaRuntime_QueryAndClose() {
 	ctx := context.Background()
 	rt, err := s.mgr.StartPersonaRuntime(ctx, PersonaRuntimeParams{
+		Tools:    PersonaToolsWeb,
 		Preamble: "you are a test persona",
 		Model:    "opus",
 		WorkDir:  s.T().TempDir(),
