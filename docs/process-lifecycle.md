@@ -61,7 +61,14 @@ mechanisms below. There is **no ambient-context safety net**.
   process still a direct child of the server — catching the shutdown race (#2).
 - A session-package test (`preamble_marker_test.go`) asserts the marker stays a
   substring of `preambleIdentity`, so a preamble reword can't silently blind the
-  reaper. Windows does not enumerate (`findCLIProcesses` returns nil) — orphans
+  reaper.
+- A sessionless persona's preamble is written by its caller, so
+  `StartPersonaRuntime` adds the marker itself (`withReaperMarker`, one sentence
+  at the front, once). **Before 2026-09-15 the assistant's head never carried
+  it**: its instruction opens "You are the assistant to a developer…", and a head
+  orphaned by a server crash was invisible to the reaper. Verified in a sandbox
+  server: `procctl.FindCLIProcesses` matched 0 processes while a head was live on
+  the old build, and matched the head on two fresh starts with the fix. Windows does not enumerate (`findCLIProcesses` returns nil) — orphans
   are prevented there rather than reaped; see "Job-object containment" below.
 
 ### Idle eviction — `internal/session/idle_evict.go` (Layer C)

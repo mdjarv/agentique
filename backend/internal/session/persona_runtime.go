@@ -11,6 +11,7 @@ import (
 
 	"github.com/allbin/agentkit/runtime"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 )
 
 // personaRuntime drives one discussion persona's turns, abstracting how the
@@ -325,6 +326,26 @@ type PersonaRuntimeParams struct {
 	OnThought func(text string)
 }
 
+// withReaperMarker returns preamble carrying procctl.CLIProcessMarker, adding
+// one sentence at the front when it does not already.
+//
+// The orphan reaper recognises an agentique CLI by that marker in its
+// --append-system-prompt value and by nothing else, so a persona whose caller
+// wrote its own preamble was invisible to it: the assistant's head never
+// carried the marker, and a head orphaned by a server crash was never reaped.
+// The manager owns the process lifecycle, so the guarantee lives here rather
+// than in every caller's prompt.
+func withReaperMarker(preamble string) string {
+	if strings.Contains(preamble, procctl.CLIProcessMarker) {
+		return preamble
+	}
+	line := "You are " + procctl.CLIProcessMarker + "."
+	if preamble == "" {
+		return line
+	}
+	return line + "\n\n" + preamble
+}
+
 // StartPersonaRuntime starts a sessionless web-only persona: a raw runtime CLI
 // session driven through runtime.Manager (for the state machine, watchdog, and
 // fullAuto approval pump) but with no agentique sessions row, worktree, project,
@@ -359,7 +380,7 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
 		SessionID:   id,
 		WorkDir:     p.WorkDir,
-		Preamble:    p.Preamble,
+		Preamble:    withReaperMarker(p.Preamble),
 		Model:       p.Model,
 		AutoApprove: runtime.AutoApproveAll,
 		Effort:      resolveEffort(p.Effort),
