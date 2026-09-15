@@ -454,6 +454,7 @@ func main() {
 	// and an unregistered element type generates `unknown[]` — the rows would
 	// reach the UI shapeless.
 	g.register(update.CLIAutoUpdate{}, "UpdateCLIAutoUpdate")
+	g.register(update.CLIPublished{}, "UpdateCLIPublished")
 	g.register(update.CLIStatus{}, "UpdateCLIStatus")
 	// Same reason as CLIStatus: Status carries the source verdict as a pointer,
 	// and an unregistered target generates `unknown` — the row would reach the

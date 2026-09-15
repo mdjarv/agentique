@@ -695,10 +695,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		uc.Start(context.Background())
 	}
 
-	// Which provider CLI would this machine spawn, and how did it get there.
-	// Started here for the same reason: detection spawns `--version`, and a
-	// constructor a test calls must not spawn anything. Offline and read-only —
-	// no network, no config writes, no session started.
+	// Which provider CLI would this machine spawn, how did it get there, and is
+	// it behind what its own channel publishes. Started here for the same
+	// reason: detection spawns `--version` and the published check reaches the
+	// network (for codex, through `codex doctor`), and a constructor a test
+	// calls must do neither. Detection is offline on its own beat; the
+	// published check runs on a much slower one. Read-only — no config writes,
+	// no session started.
 	if cp := srv.UpdateCLIProbe(); cp != nil {
 		cp.Start(context.Background())
 	}

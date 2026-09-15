@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,24 +12,22 @@ import (
 )
 
 // CLIStatus is one provider CLI's account of itself on this machine: the binary
-// agentique would spawn for the next session, how it got there, and what would
-// update it.
+// agentique would spawn for the next session, how it got there, what would
+// update it, and — once the slow beat has asked — what its release channel
+// publishes.
 //
 // Every field comes from the provider's own library, through the connector that
 // spawns sessions with it. agentique never resolves a binary and never runs a
 // CLI to fill this in — see the ownership rule in docs/upgrades.md (C1, C13).
 //
-// Nothing here is a verdict. There is deliberately no "behind" and no published
-// version: the pinned stack cannot compute one yet, and a field that says
-// `behind: false` because nobody looked is worse than no field (C15).
-//
-// When a verdict does arrive it must be THREE-valued, not a bool. A published
-// version is only comparable when the channel consulted is the one this install
-// actually tracks and both versions parse; otherwise there is no verdict, which
-// is not the same as being up to date. claudecli-go reports that as an explicit
-// `Comparable` flag after finding its own API could manufacture ten patch
-// versions of "behind" on an install sitting exactly on its channel's head.
-// Whatever lands here must preserve the distinction rather than flatten it.
+// The one verdict here is Published.Status, and it is THREE-valued, never a
+// bool: "current", "behind", or "" for no verdict. A published version is only
+// comparable when the channel consulted is the one this install actually
+// tracks and both versions parse, and only the provider library knows that
+// (runtime.PublishedVersionReportable). Everything that is not a sound
+// comparison — no trustworthy source, a check that has not run yet, an install
+// that moved since the check — reads as no verdict, which is not the same as
+// being up to date (C15).
 type CLIStatus struct {
 	// Tool is the provider this describes ("claude", "codex").
 	Tool string `json:"tool"`
@@ -79,6 +78,12 @@ type CLIStatus struct {
 	// product does not run. Empty after a restart, which is honest: nothing has
 	// been observed yet.
 	LastRan string `json:"lastRan,omitempty"`
+	// Published is what this install's release channel publishes, absent until
+	// the slow published-version beat has an answer for it. Absent means nobody
+	// has looked yet; present with an empty Status means somebody looked and
+	// there is no verdict to give. Kept apart because those are different
+	// claims and only the second has a Reason.
+	Published *CLIPublished `json:"published,omitempty"`
 }
 
 // CLIAutoUpdate is what a CLI says about keeping itself current. Reported, not
@@ -103,6 +108,11 @@ type CLIAutoUpdate struct {
 	LastOutcome string `json:"lastOutcome,omitempty"`
 	LastTo      string `json:"lastTo,omitempty"`
 	LastAt      string `json:"lastAt,omitempty"`
+	// LastSucceeded is the provider library's own reading of LastOutcome
+	// (runtime.UpdateAttempt.Succeeded). Carried as a fact so no client has to
+	// match the provider's vocabulary, which changes between CLI releases.
+	// False for anything not recognisably a success, including no attempt.
+	LastSucceeded bool `json:"lastSucceeded,omitempty"`
 }
 
 // defaultCLIProbeTimeout bounds one provider's detection. Detection is offline
@@ -111,12 +121,17 @@ type CLIAutoUpdate struct {
 const defaultCLIProbeTimeout = 10 * time.Second
 
 // CLIProbe holds what each provider connector last said about its own CLI, and
-// refreshes it on a slow beat.
+// refreshes it on two beats.
 //
 // It exists because the connector is the only thing that knows which binary it
 // will spawn: it owns the client options, so a binary-path override lives
 // there. A PATH lookup here would agree today by coincidence and drift apart
 // silently the moment one exists.
+//
+// Detection (runtime.InstallInspectable) is offline and runs on interval. The
+// published version (runtime.PublishedVersionReportable) makes a network call
+// — and for codex spawns the CLI — so it runs on its own, much slower beat
+// with its own deadline, and never on a launch path. See cli_published.go.
 //
 // Status never performs IO, exactly like Checker: a probe that fails leaves the
 // previous answer standing rather than blanking a row that was correct a minute
@@ -126,43 +141,100 @@ type CLIProbe struct {
 	interval   time.Duration
 	timeout    time.Duration
 
+	// reporters answer the published-version question, keyed by provider like
+	// inspectors. A provider absent here simply never gets a Published.
+	reporters         map[string]runtime.PublishedVersionReportable
+	publishedInterval time.Duration
+	publishedTimeout  time.Duration
+
 	mu        sync.RWMutex
-	cached    []CLIStatus
+	cached    []cliRow
 	checkedAt time.Time
 	// lastRan is what each provider's CLI reported when a session actually
 	// started, keyed by provider. Kept beside the cache rather than inside it
 	// because the two are refreshed by completely different events: detection
 	// on a timer, this on a session starting.
 	lastRan map[string]string
+	// published is each provider's last published-version answer, for the same
+	// reason: a third beat, folded in on read.
+	published map[string]publishedEntry
+	// installChanged wakes the published loop when detection sees a provider's
+	// install change, so a verdict about the old binary does not wait a whole
+	// slow beat to be replaced. Buffered one: a nudge pending is a nudge.
+	installChanged chan struct{}
 
 	done     chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
 }
 
-// NewCLIProbe builds a probe over the connectors that can answer. Connectors
-// that do not implement runtime.InstallInspectable are simply absent — not
-// implementing it is not an error. Performs no IO; the poll loop starts from
-// serve.go's production block, never from a constructor a test might call.
-func NewCLIProbe(inspectors map[string]runtime.InstallInspectable, interval time.Duration) *CLIProbe {
-	if interval <= 0 {
-		interval = time.Hour
-	}
-	return &CLIProbe{
-		inspectors: inspectors,
-		interval:   interval,
-		timeout:    defaultCLIProbeTimeout,
-		lastRan:    map[string]string{},
-		done:       make(chan struct{}),
+// cliRow is one detected CLI and the provider key it was asked under. The
+// provider is what lastRan and published are keyed by; Tool is only what the
+// library chose to call itself.
+type cliRow struct {
+	provider string
+	status   CLIStatus
+}
+
+// CLIProbeOption configures a CLIProbe.
+type CLIProbeOption func(*CLIProbe)
+
+// WithPublishedReporters adds the connectors that can report their published
+// version. Without it the probe only detects, and no row carries a verdict.
+func WithPublishedReporters(reporters map[string]runtime.PublishedVersionReportable) CLIProbeOption {
+	return func(p *CLIProbe) { p.reporters = reporters }
+}
+
+// WithPublishedInterval sets the slow beat. Non-positive keeps the default.
+func WithPublishedInterval(d time.Duration) CLIProbeOption {
+	return func(p *CLIProbe) {
+		if d > 0 {
+			p.publishedInterval = d
+		}
 	}
 }
 
-// Start probes once and then re-probes on interval until Stop.
+// NewCLIProbe builds a probe over the connectors that can answer. Connectors
+// that do not implement runtime.InstallInspectable are simply absent — not
+// implementing it is not an error. Performs no IO; the poll loops start from
+// serve.go's production block, never from a constructor a test might call.
+func NewCLIProbe(inspectors map[string]runtime.InstallInspectable, interval time.Duration, opts ...CLIProbeOption) *CLIProbe {
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	p := &CLIProbe{
+		inspectors:        inspectors,
+		interval:          interval,
+		timeout:           defaultCLIProbeTimeout,
+		publishedInterval: defaultPublishedInterval,
+		publishedTimeout:  defaultPublishedTimeout,
+		lastRan:           map[string]string{},
+		published:         map[string]publishedEntry{},
+		installChanged:    make(chan struct{}, 1),
+		done:              make(chan struct{}),
+	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
+}
+
+// Start detects once, starts the published-version loop, and then re-detects
+// on interval until Stop. The published loop starts only after the first
+// detection so it knows which providers are installed: a machine without codex
+// must not spawn `codex doctor` to learn that.
 func (p *CLIProbe) Start(ctx context.Context) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
 		p.Refresh(ctx)
+		if len(p.reporters) > 0 {
+			p.wg.Add(1)
+			go func() {
+				defer p.wg.Done()
+				p.publishedLoop(ctx)
+			}()
+		}
 		t := time.NewTicker(p.interval)
 		defer t.Stop()
 		for {
@@ -178,7 +250,7 @@ func (p *CLIProbe) Start(ctx context.Context) {
 	}()
 }
 
-// Stop halts the poll loop and waits for an in-flight probe to park.
+// Stop halts the poll loops and waits for in-flight probes to park.
 func (p *CLIProbe) Stop() {
 	p.stopOnce.Do(func() { close(p.done) })
 	p.wg.Wait()
@@ -196,22 +268,23 @@ func (p *CLIProbe) RecordRan(provider, version string) {
 	p.lastRan[provider] = version
 }
 
-// Status returns the cached answer, with each row's observed version folded in.
-// Never blocks on a probe.
+// Status returns the cached answer, with each row's observed version and
+// published version folded in. Never blocks on a probe.
 //
-// The fold happens on read rather than at refresh time because the two facts
-// arrive independently: a session can start between two hourly probes, and that
-// observation should not have to wait an hour to be visible.
+// The fold happens on read rather than at refresh time because the facts
+// arrive independently: a session can start between two hourly probes, and a
+// published check lands on its own beat. Neither should wait for the other.
 func (p *CLIProbe) Status() []CLIStatus {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	if len(p.lastRan) == 0 {
-		return p.cached
-	}
 	out := make([]CLIStatus, len(p.cached))
-	copy(out, p.cached)
-	for i := range out {
-		out[i].LastRan = p.lastRan[out[i].Tool]
+	for i, row := range p.cached {
+		st := row.status
+		st.LastRan = p.lastRan[row.provider]
+		if e, ok := p.published[row.provider]; ok {
+			st.Published = e.forInstall(st.Installed)
+		}
+		out[i] = st
 	}
 	return out
 }
@@ -221,20 +294,55 @@ func (p *CLIProbe) Status() []CLIStatus {
 // that errors is left out entirely rather than rendered as a broken row: a
 // machine without codex installed is a normal state, not a problem to solve.
 func (p *CLIProbe) Refresh(ctx context.Context) []CLIStatus {
-	out := make([]CLIStatus, 0, len(p.inspectors))
+	rows := make([]cliRow, 0, len(p.inspectors))
 	for _, provider := range sortedProviders(p.inspectors) {
 		st, ok := p.probeOne(ctx, provider, p.inspectors[provider])
 		if !ok {
 			continue
 		}
-		out = append(out, st)
+		rows = append(rows, cliRow{provider: provider, status: st})
 	}
 
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.cached = out
+	changed := !p.checkedAt.IsZero() && installsChanged(p.cached, rows)
+	p.cached = rows
 	p.checkedAt = time.Now().UTC()
+	p.mu.Unlock()
+
+	if changed {
+		select {
+		case p.installChanged <- struct{}{}:
+		default:
+		}
+	}
+	out := make([]CLIStatus, len(rows))
+	for i, row := range rows {
+		out[i] = row.status
+	}
 	return out
+}
+
+// installsChanged reports whether any provider's install differs between two
+// detections, including one appearing. A provider disappearing needs no
+// recheck: it has no row to carry a verdict.
+func installsChanged(before, after []cliRow) bool {
+	prev := make(map[string]string, len(before))
+	for _, row := range before {
+		prev[row.provider] = installFingerprint(row.status)
+	}
+	for _, row := range after {
+		if fp, ok := prev[row.provider]; !ok || fp != installFingerprint(row.status) {
+			return true
+		}
+	}
+	return false
+}
+
+// installFingerprint is what makes two detections the same install: where it
+// is, what it resolves to, how it got there, and what it says it is. A
+// published answer is about one of these, not about a provider name.
+func installFingerprint(st CLIStatus) string {
+	return strings.Join([]string{st.Path, st.RealPath, st.Method, st.Installed}, "\x00")
 }
 
 func (p *CLIProbe) probeOne(ctx context.Context, provider string, in runtime.InstallInspectable) (CLIStatus, bool) {
@@ -291,6 +399,7 @@ func autoUpdate(in *runtime.AutoUpdate) *CLIAutoUpdate {
 	if in.LastAttempt != nil {
 		out.LastOutcome = in.LastAttempt.Outcome
 		out.LastTo = in.LastAttempt.To
+		out.LastSucceeded = in.LastAttempt.Succeeded()
 		if !in.LastAttempt.Time.IsZero() {
 			out.LastAt = in.LastAttempt.Time.UTC().Format(time.RFC3339)
 		}

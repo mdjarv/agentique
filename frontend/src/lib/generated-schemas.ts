@@ -587,6 +587,16 @@ export const UpdateCLIAutoUpdateSchema = z.object({
   lastOutcome: z.string().optional(),
   lastTo: z.string().optional(),
   lastAt: z.string().optional(),
+  lastSucceeded: z.boolean().optional(),
+});
+
+export const UpdateCLIPublishedSchema = z.object({
+  status: z.string().optional(),
+  version: z.string().optional(),
+  channel: z.string().optional(),
+  source: z.string().optional(),
+  reason: z.string().optional(),
+  checkedAt: z.string(),
 });
 
 export const UpdateCLIStatusSchema = z.object({
@@ -603,6 +613,7 @@ export const UpdateCLIStatusSchema = z.object({
   warnings: z.array(z.string()).optional(),
   autoUpdate: UpdateCLIAutoUpdateSchema.optional(),
   lastRan: z.string().optional(),
+  published: UpdateCLIPublishedSchema.optional(),
 });
 
 export const UpdateSourceStatusSchema = z.object({

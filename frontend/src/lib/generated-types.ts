@@ -585,6 +585,16 @@ export interface UpdateCLIAutoUpdate {
   lastOutcome?: string;
   lastTo?: string;
   lastAt?: string;
+  lastSucceeded?: boolean;
+}
+
+export interface UpdateCLIPublished {
+  status?: string;
+  version?: string;
+  channel?: string;
+  source?: string;
+  reason?: string;
+  checkedAt: string;
 }
 
 export interface UpdateCLIStatus {
@@ -601,6 +611,7 @@ export interface UpdateCLIStatus {
   warnings?: string[];
   autoUpdate?: UpdateCLIAutoUpdate;
   lastRan?: string;
+  published?: UpdateCLIPublished;
 }
 
 export interface UpdateSourceStatus {

@@ -418,6 +418,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	if in, ok := connector.(runtime.InstallInspectable); ok {
 		cliInspectors["claude"] = in
 	}
+	// "What does this install's own channel publish" hangs off the same seam,
+	// for the same reason, plus one: only the provider library knows which
+	// channel an install follows, so the connector picks it and nothing here
+	// passes one.
+	cliReporters := map[string]runtime.PublishedVersionReportable{}
+	if pr, ok := connector.(runtime.PublishedVersionReportable); ok {
+		cliReporters["claude"] = pr
+	}
 	// The same seam, for "what is this account allowed to spend" (docs/usage.md).
 	// A provider whose connector implements it needs no collector of its own;
 	// Claude does not, because Anthropic exposes usage over HTTP rather than
@@ -432,6 +440,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		mgr.SetProviderConnector("codex", codexConnector)
 		if in, ok := codexConnector.(runtime.InstallInspectable); ok {
 			cliInspectors["codex"] = in
+		}
+		if pr, ok := codexConnector.(runtime.PublishedVersionReportable); ok {
+			cliReporters["codex"] = pr
 		}
 		if ai, ok := codexConnector.(runtime.AccountInspectable); ok {
 			accountInspectors["codex"] = ai
@@ -580,7 +591,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		updateApplier = applier
 		// CLI detection follows the same switch as the release check: turning
 		// [update] off silences all of it, not just the part about ourselves.
-		updateCLIs = update.NewCLIProbe(cliInspectors, interval)
+		// Detection rides the release check's interval; the published version
+		// keeps its own slow default, because it touches the network and for
+		// codex spawns the CLI.
+		updateCLIs = update.NewCLIProbe(cliInspectors, interval, update.WithPublishedReporters(cliReporters))
 		// The version a CLI reports when a session starts is the only account of
 		// it that comes from something that happened rather than from inspecting
 		// a binary — the one check on detection being right.
