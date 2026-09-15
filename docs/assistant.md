@@ -466,6 +466,19 @@ Four rules close it, each at the layer that owns it:
   journal) first. A verb that answers late is logged with what it answered,
   since for a write that line is the only record of whether it went through. A
   caller that went away is not a timeout, and is not reported as one.
+
+  The budget is uniform, so a verb whose normal work does not fit it answers at
+  once and delivers later. It never gets a longer budget of its own. Measured in
+  a sandbox server (real CLI, one or two runs each): `create_session` local
+  1.1–1.3s, `run_prompt` into a stopped session that lazy-resumes 1.5s and 2.0s,
+  `summarize_session` 5.5s and 6.8s (bounded at 45s), `digest` 0–1ms (no
+  model). A paired machine's create is bounded by its client at four 10s
+  requests. The one that did not fit was `compact_journal`: ten foldable days
+  had folded three when the 90s deadline cut the pass, and the cut pass lost its
+  own `compaction` entry. It now takes the one-pass lock, starts the pass on a
+  context detached from the call, and answers "started" at once. The pass's
+  `compaction` entry is the result, which the head reads as news. Seven days
+  then folded in about 140s after a 0ms answer.
 - **The client waits longer than the verb.** The Claude CLI gives up on an HTTP
   MCP tool call after 60s by default. It then tells the model "The operation
   timed out." and the model moves on while the verb is still running, which is
@@ -964,7 +977,9 @@ of its verdict: the first tick after local midnight whose
 `Service.Compact(ctx)`; the stamp is written first, so a failing pass is
 retried the next day and never every tick. `Compact` is also a contained
 verb, `compact_journal`, and a WS op `assistant.compact` (mutation, through
-`handleRequestAsync`) for the operator.
+`handleRequestAsync`) for the operator. *Since 2026-09-15 the verb starts the
+pass and answers at once* (see "A turn waits on nothing it cannot have"): a
+pass is a model call per day, which no verb deadline fits.
 
 **What.** For each calendar day (local time) older than `compactAfter`
 (fourteen days, a constant chosen to exceed the in-flight lookback so

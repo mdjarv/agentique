@@ -213,6 +213,13 @@ func (s *Service) Compact(ctx context.Context) (CompactReport, error) {
 		return report, nil
 	}
 	defer s.compactMu.Unlock()
+	return s.compactLocked(ctx)
+}
+
+// compactLocked is one pass, run by a caller that holds compactMu and has
+// checked there is a summariser.
+func (s *Service) compactLocked(ctx context.Context) (CompactReport, error) {
+	var report CompactReport
 
 	// The parent context outlives the budget deliberately: the row that records
 	// what a pass DID must not be lost to the clock that bounded the doing, the
@@ -767,32 +774,47 @@ func (s *Service) compactTick(ctx context.Context, now time.Time, mark string) b
 // operator can ask for it in the conversation — "tidy the journal up" — and
 // because the answer is worth saying back, which a heartbeat pass has nobody to
 // say it to.
+//
+// It starts the pass and answers at once, and the pass's own `compaction` entry
+// is the result: the head reads it as news on its next turn, and the journal
+// shows it now. A pass is one model call per day, up to [maxCompactDays] of them
+// inside [compactBudget], so waiting on it could never fit a verb's deadline.
+// Measured in a sandbox: ten foldable days had folded three when [VerbBudget]
+// ran out. The cancelled pass then lost its own `compaction` entry, and the head
+// could only say the outcome was unknown. So the pass runs on a context
+// detached from the call, and the lock it needs is taken here before answering,
+// so "it has started" is true when it is said.
 func (s *Service) verbCompactJournal(ctx context.Context, _ map[string]any) (map[string]any, error) {
 	if s.summarizer == nil {
 		return refuse("no-summarizer", "I cannot fold the journal on this machine: there is "+
 			"nothing here that can write a day's summary, and deleting entries nothing has "+
 			"summarised would lose them. Say that plainly."), nil
 	}
-	report, err := s.Compact(ctx)
-	if err != nil {
-		return nil, err
+	if !s.compactMu.TryLock() {
+		return map[string]any{
+			"started": false,
+			"note": "A pass is already folding the journal, so nothing new was started. Say so in " +
+				"one line; what it folds lands in the journal when it finishes.",
+		}, nil
 	}
-	out := map[string]any{
-		"days":      report.Days,
-		"rows":      report.Rows,
-		"summaries": report.Summaries,
-		"expired":   report.Expired,
-		"note": "Say it in one line. The days that folded are older than a fortnight, so " +
-			"nothing anybody is working on has changed.",
-	}
-	if report.Pending > 0 {
-		out["pending"] = report.Pending
-	}
-	if report.Dropped > 0 {
-		out["dropped"] = report.Dropped
-	}
-	if report.Note != "" {
-		out["why"] = report.Note
-	}
-	return out, nil
+
+	detached := context.WithoutCancel(ctx)
+	go func() {
+		defer s.compactMu.Unlock()
+		report, err := s.compactLocked(detached)
+		if err != nil {
+			s.log.Warn("assistant: the journal was not compacted", "error", err)
+			return
+		}
+		s.log.Info("assistant: a compaction the head asked for finished",
+			"days", report.Days, "rows", report.Rows, "expired", report.Expired, "pending", report.Pending)
+	}()
+
+	return map[string]any{
+		"started": true,
+		"note": "It is folding now, in the background; only days older than a fortnight are " +
+			"touched, so nothing anybody is working on changes. Say in one line that it has " +
+			"started. Do not wait for it and do not claim a result: when it finishes, the journal " +
+			"gets a compaction entry saying what it folded.",
+	}, nil
 }

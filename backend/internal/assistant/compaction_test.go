@@ -968,3 +968,58 @@ func firstLineOf(text string) string {
 	}
 	return text
 }
+
+// The head's compact verb starts a pass and answers at once, and the pass's own
+// entry is the result. A pass is a model call per day, which no verb deadline
+// fits: waiting on it in a sandbox had folded three days of ten when the
+// deadline cut the pass, and the cut pass lost its entry. So the call's
+// context ending — here, long before the fold does — must not reach the pass,
+// and a second ask while it runs says so rather than starting another.
+func TestTheCompactVerbAnswersAtOnceAndItsEntryIsTheResult(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, summarizer, _ := compactWorld(t)
+	svc.verbBudget = 50 * time.Millisecond
+	happenedAt(t, svc, "2026-08-20T08:00:00Z", journalWrite{
+		Kind: JournalSessionFinished, SessionID: "s1", Summary: "old",
+	})
+
+	inside, release := make(chan struct{}), make(chan struct{})
+	summarizer.before = func() {
+		close(inside)
+		<-release
+	}
+
+	answered := svc.ToolHandler(ctx, VerbCompactJournal, nil)
+	if answered["started"] != true {
+		t.Fatalf("answer = %v, want the pass started and the verb answered", answered)
+	}
+	select {
+	case <-inside:
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("the pass never reached its model call: the call's context ended it")
+	}
+
+	// Well past the verb's deadline, with the pass still inside its model call.
+	time.Sleep(4 * 50 * time.Millisecond)
+	again := svc.ToolHandler(ctx, VerbCompactJournal, nil)
+	if again["started"] != false {
+		t.Errorf("second answer = %v, want it told a pass is already running", again)
+	}
+	close(release)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for len(entriesOfKind(t, svc, JournalCompaction)) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the pass never journaled what it folded: the call's context reached it")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := len(entriesOfKind(t, svc, JournalDaySummary)); got != 1 {
+		t.Errorf("day summaries = %d, want the one day folded", got)
+	}
+	if summarizer.called() != 1 {
+		t.Errorf("the summariser ran %d times for one day", summarizer.called())
+	}
+}
