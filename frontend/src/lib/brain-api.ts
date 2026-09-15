@@ -1,3 +1,4 @@
+import type { SemanticReading } from "~/lib/brain-semantic";
 import { throwIfNotOk } from "~/lib/http";
 
 const BASE = "/api/brain";
@@ -111,8 +112,10 @@ export interface BrainCounts {
   corroboratedTotal: number;
 }
 
-export interface BrainStatus {
-  semantic: boolean;
+// BrainStatus is `GET /api/brain/status`: where semantic recall stands (the fields
+// lib/brain-semantic reads — semanticState and the rest are optional, so an older backend
+// that sends only `semantic` still decodes) plus the health counts.
+export interface BrainStatus extends SemanticReading {
   // Present from the F6 backend; optional so an older backend still decodes.
   counts?: BrainCounts;
 }

@@ -3,7 +3,7 @@
 //
 // Every machine runs one, and it has no model. It reads what the machine's own
 // collectors already know — the CLI's sign-in, the disk, the loops, the
-// sessions, the update checker, the backups — and turns that into typed
+// sessions, the update checker, the backups, the brain's vector backend — and turns that into typed
 // findings with a severity, facts, and a remedy. It opens a finding when a
 // condition starts holding and resolves it when the condition stops, and it
 // says so to whoever listens: the machine's own UI, its assistant if it has
@@ -44,12 +44,18 @@ const (
 	KindUpdateWaiting Kind = "update-waiting"
 	// KindBackupFailing: no database backup has landed for several intervals.
 	KindBackupFailing Kind = "backup-failing"
+	// KindSemanticRecallDown: the brain's configured vector backend has been
+	// unreachable long enough to be an outage, so memory recall is keyword-only
+	// and consolidation is paused. The brain retries on its own; bringing Chroma
+	// or the embedder back is a hand's job.
+	KindSemanticRecallDown Kind = "semantic-recall-down"
 )
 
 // Kinds is the closed set, for tests and for a surface that must render every
 // one.
 var Kinds = []Kind{
 	KindCLISignedOut, KindDiskLow, KindLoopPaused, KindSessionBlockedLong, KindUpdateWaiting, KindBackupFailing,
+	KindSemanticRecallDown,
 }
 
 // Severity is how much a finding claims attention.
@@ -103,6 +109,7 @@ type Observation struct {
 	Blocked  []BlockedSession
 	Update   Update
 	Backup   Backup
+	Brain    Brain
 	Observed map[Kind]bool
 }
 
@@ -148,16 +155,33 @@ type Backup struct {
 	Interval time.Duration
 }
 
+// Brain is where the brain's semantic recall stands.
+type Brain struct {
+	// Down: a vector backend is configured and not attached.
+	Down bool
+	// DownSince is when it was lost — the brain's own clock, so a detached
+	// period that outlives many passes is one condition, not one per pass.
+	DownSince time.Time
+	// Reason is the brain's closed reason: which half failed.
+	Reason string
+}
+
 // The thresholds. A disk floor, not a percentage: a small disk at 88% is its
 // normal state (usage.md). The floor is the frontend's LOW_DISK_BYTES
 // (lib/storage/fleet.ts), the one predicate the disk meter and its notch read —
 // under 3 GiB the next dependency install in a worktree fails — because a
 // finding that opens at a different level from the amber meter reports two
 // things about one disk. The others are "longer than a person means".
+//
+// SemanticDownAfter is longer than any attach a working backend takes and
+// than the detach threshold's blip, so a restart of the containers is not
+// news; it opens at most once per detached period, because the period's start
+// is the brain's DownSince rather than a clock the steward restarts.
 const (
 	DiskFloorBytes    = 3 << 30
 	BlockedAfter      = 30 * time.Minute
 	BackupMissedAfter = 3
+	SemanticDownAfter = 10 * time.Minute
 )
 
 // Evaluate turns an observation into the findings that hold now. Pure: the
@@ -216,6 +240,12 @@ func Evaluate(obs Observation, now time.Time) []Finding {
 			out = append(out, Finding{Kind: KindBackupFailing, Severity: SeverityWarning, Remedy: RemedyHand,
 				Facts: facts})
 		}
+	}
+	if obs.Observed[KindSemanticRecallDown] && obs.Brain.Down && !obs.Brain.DownSince.IsZero() &&
+		now.Sub(obs.Brain.DownSince) >= SemanticDownAfter {
+		out = append(out, Finding{Kind: KindSemanticRecallDown, Severity: SeverityWarning, Remedy: RemedyHand,
+			Facts: map[string]any{"reason": obs.Brain.Reason,
+				"since": obs.Brain.DownSince.UTC().Format(time.RFC3339)}})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key() < out[j].Key() })
 	return out

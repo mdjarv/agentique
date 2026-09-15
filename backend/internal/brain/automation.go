@@ -171,7 +171,7 @@ func (a *Automation) runPass(ctx context.Context, ex memory.Extractor) <-chan st
 		}
 	}
 	// After every scope is consolidated, recompute cross-scope topic areas once (B).
-	n, err := a.svc.AssignAreas(ctx)
+	n, err := a.svc.AssignAreas(ctx, AreasOpts{})
 	switch {
 	case errors.Is(err, ErrSemanticUnavailable):
 		slog.Warn("brain: scheduled consolidation: areas refresh deferred until the vector backend attaches")

@@ -67,6 +67,10 @@ type Config struct {
 	// own floor (DecayPolicy.ArchiveFloor) is separate and DOES default to 0.35 when 0.
 	ArchiveFloor float64
 
+	// OnSemanticChange, when set, hears every change of [Service.SemanticStatus] — an attach, a
+	// detach, a failed attempt with a new reason. The server broadcasts it (EventBrainSemantic).
+	OnSemanticChange func(SemanticStatus)
+
 	// Graph tunes the knowledge-graph view (semantic kNN edge density + force-layout
 	// curves). Zero-valued fields take the built-in defaults via GraphConfig.withDefaults.
 	Graph GraphConfig
@@ -156,6 +160,8 @@ type Service struct {
 	status   SemanticStatus
 	// loggedDown latches while a detached period has been logged, so retries stay quiet.
 	loggedDown atomic.Bool
+	// onSemanticChange hears status changes (Config.OnSemanticChange); read-only after New.
+	onSemanticChange func(SemanticStatus)
 	// attachMu guards attachCh, closed and replaced on every attach (nextAttach).
 	attachMu sync.Mutex
 	attachCh chan struct{}
@@ -233,16 +239,17 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// calls List every turn, and the cache avoids re-reading every markdown file each
 	// time. All writes funnel through this Service's store, so the cache stays consistent.
 	svc := &Service{
-		cache:          cachestore.New(filestore.New(cfg.Dir)),
-		dir:            cfg.Dir,
-		snapshotRetain: cfg.SnapshotRetain,
-		archiveFloor:   cfg.ArchiveFloor,
-		embedCache:     make(map[string][]float32),
-		semEdgeCache:   make(map[string][]memory.Edge),
-		graph:          cfg.Graph.withDefaults(),
-		fpPath:         filepath.Join(cfg.Dir, ".fingerprints.json"),
-		gmPath:         filepath.Join(cfg.Dir, ".global-manifest.json"),
-		timing:         defaultSemanticTiming(),
+		cache:            cachestore.New(filestore.New(cfg.Dir)),
+		dir:              cfg.Dir,
+		snapshotRetain:   cfg.SnapshotRetain,
+		archiveFloor:     cfg.ArchiveFloor,
+		embedCache:       make(map[string][]float32),
+		semEdgeCache:     make(map[string][]memory.Edge),
+		graph:            cfg.Graph.withDefaults(),
+		fpPath:           filepath.Join(cfg.Dir, ".fingerprints.json"),
+		gmPath:           filepath.Join(cfg.Dir, ".global-manifest.json"),
+		timing:           defaultSemanticTiming(),
+		onSemanticChange: cfg.OnSemanticChange,
 		semCfg: semanticConfig{
 			chromaURL:   cfg.ChromaURL,
 			embedURL:    cfg.EmbedURL,
@@ -1160,7 +1167,7 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 	// Service method (s.AssignAreas), not memory.AssignAreas directly, so the rebuild is
 	// embedding-aware in semantic mode (C); the bare memory call was lexical-only even
 	// with an embedder configured. s.AssignAreas does not take s.mu, so no re-entrancy.
-	if _, aerr := s.AssignAreas(ctx); aerr != nil {
+	if _, aerr := s.AssignAreas(ctx, AreasOpts{}); aerr != nil {
 		slog.Warn("brain: assign areas after global apply failed", "error", aerr)
 	}
 	return rep, nil
@@ -1173,8 +1180,8 @@ func (s *Service) ApplyGlobal(ctx context.Context, plan memory.GlobalPlan, dryRu
 // idempotent; the area index is rebuildable, never the source of truth. Returns the
 // number of records whose area changed, or ErrSemanticUnavailable while a configured vector
 // backend is detached.
-func (s *Service) AssignAreas(ctx context.Context) (int, error) {
-	b, err := s.clusteringBackend(false)
+func (s *Service) AssignAreas(ctx context.Context, opts AreasOpts) (int, error) {
+	b, err := s.clusteringBackend(opts.AllowLexical)
 	if err != nil {
 		return 0, err
 	}
@@ -1184,14 +1191,21 @@ func (s *Service) AssignAreas(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	durable := durableRecords(all)
-	opts, err := s.semanticSimOptions(ctx, b, durable)
+	simOpts, err := s.semanticSimOptions(ctx, b, durable)
 	if err != nil {
 		return 0, err
 	}
 	// Whole-brain checkpoint: trim cache entries for texts no longer present (edits/deletes
 	// since the last pass) so the cache stays bounded by the live corpus.
 	s.pruneEmbedCache(b, durable)
-	return memory.AssignAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, opts...)
+	return memory.AssignAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes, simOpts...)
+}
+
+// AreasOpts are the knobs of [Service.AssignAreas]. AllowLexical lets it stamp areas computed
+// without embeddings while a configured vector backend is detached — an operator's explicit
+// choice, as for [ConsolidateOpts]. The zero value is what every automatic pass uses.
+type AreasOpts struct {
+	AllowLexical bool
 }
 
 // PreviewAreas computes the same cross-scope areas as [Service.AssignAreas] and persists
@@ -1268,22 +1282,51 @@ func (s *Service) scopeSimOptions(ctx context.Context, b *semanticBackend, scope
 }
 
 // semanticSimOptions returns the SimOptions that turn on embedding-blended similarity for
-// a clustering pass: a lookup over freshly-computed vectors for `records` plus backend b's
-// cosine threshold. Returns nil (lexical-only) when b is nil or there are no records; an embed
+// a clustering pass: the vectors for `records`, embedded up front, plus backend b's cosine
+// threshold. Returns nil (lexical-only) when b is nil or there are no records; an embed
 // failure is returned, for the caller to refuse the pass or — when it persists nothing — to
 // fall back to lexical itself.
+//
+// The lookup is keyed by text, not id, because a consolidation pass relinks the records it
+// just wrote: a rewritten fact keeps its id under a new text, and an abstracted one has an id
+// nobody had when these vectors were computed. Both resolve through vectorFor.
 func (s *Service) semanticSimOptions(ctx context.Context, b *semanticBackend, records []memory.Record) ([]memory.SimOption, error) {
 	if b == nil || b.embedder == nil || len(records) == 0 {
 		return nil, nil
 	}
-	vecs, err := s.embedRecords(ctx, b, records)
-	if err != nil {
+	if _, err := s.embedRecords(ctx, b, records); err != nil {
 		return nil, fmt.Errorf("brain: embed for similarity: %w", err)
 	}
 	return []memory.SimOption{
-		memory.WithEmbeddingLookup(func(id string) []float32 { return vecs[id] }),
+		memory.WithRecordEmbeddingLookup(func(r memory.Record) []float32 { return s.vectorFor(ctx, b, r.Text) }),
 		memory.WithCosineThreshold(b.cosThresh),
 	}, nil
+}
+
+// vectorFor returns text's vector from the embed cache, embedding it through b on a miss. The
+// misses are the texts a pass minted or rewrote after its vectors were embedded up front, a
+// handful per pass, so they go one at a time. A failure answers nil, which clusters that one
+// record lexically for this pass and says so; the next pass embeds it.
+func (s *Service) vectorFor(ctx context.Context, b *semanticBackend, text string) []float32 {
+	key := embedKey(text)
+	s.embedMu.Lock()
+	v, ok := s.embedCache[key]
+	s.embedMu.Unlock()
+	if ok {
+		return v
+	}
+	vecs, err := b.embedder.Embed(ctx, []string{text})
+	if err == nil && (len(vecs) != 1 || len(vecs[0]) == 0) {
+		err = fmt.Errorf("embedder returned %d vectors for one text", len(vecs))
+	}
+	if err != nil {
+		slog.Warn("brain: embed a fact written by this pass failed; its links are lexical until the next pass", "error", err)
+		return nil
+	}
+	s.embedMu.Lock()
+	s.embedCache[key] = vecs[0]
+	s.embedMu.Unlock()
+	return vecs[0]
 }
 
 // embedRecords returns id → vector for the records, embedding only texts not already in

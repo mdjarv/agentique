@@ -186,10 +186,12 @@ func (s *Service) SemanticStatus() SemanticStatus {
 	return s.status
 }
 
+// setStatus records where semantic recall stands and, when that changed, tells onSemanticChange
+// — outside the lock, since a listener is a broadcast.
 func (s *Service) setStatus(state SemanticState, reason SemanticReason) {
 	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
 	now := time.Now().UTC()
+	changed := s.status.State != state || s.status.Reason != reason
 	if s.status.State != state {
 		s.status.Since = now
 	}
@@ -201,6 +203,32 @@ func (s *Service) setStatus(state SemanticState, reason SemanticReason) {
 	}
 	s.status.State = state
 	s.status.Reason = reason
+	st := s.status
+	s.statusMu.Unlock()
+	if changed && s.onSemanticChange != nil {
+		s.onSemanticChange(st)
+	}
+}
+
+// EventBrainSemantic is pushed to every tab when semantic recall's state changes, carrying
+// [SemanticStatus.Wire], so the Memory page's badge follows an attach or a detach live.
+const EventBrainSemantic = "brain.semantic"
+
+// Wire is the status as /api/brain/status and the brain.semantic push carry it. `semantic` is
+// whether recall is hybrid, kept for readers that know only it; the rest say why not. Kept in
+// sync by hand with brain-api.ts.
+func (st SemanticStatus) Wire() map[string]any {
+	out := map[string]any{
+		"semantic":      st.State == SemanticOn,
+		"semanticState": st.State,
+	}
+	if st.Reason != "" {
+		out["semanticReason"] = st.Reason
+	}
+	if !st.DownSince.IsZero() {
+		out["semanticDownSince"] = st.DownSince.UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 // nextAttach returns a channel closed by the next successful attach. Take it BEFORE checking

@@ -112,6 +112,19 @@ func FindingSentence(f Finding) string {
 			return fmt.Sprintf("%s: no database backup since %s", where, newest)
 		}
 		return where + ": no database backup has been written"
+	case "semantic-recall-down":
+		if !f.Opened {
+			return where + ": memory recall is semantic again"
+		}
+		part := "the vector index"
+		switch str("reason") {
+		case "chroma-unreachable":
+			part = "Chroma"
+		case "embedder-unreachable":
+			part = "the embedding service"
+		}
+		return fmt.Sprintf("%s: %s has not answered since %s, so memory recall is keyword-only and consolidation is paused until it does",
+			where, part, orWord(str("since"), "a while"))
 	default:
 		state := "opened"
 		if !f.Opened {

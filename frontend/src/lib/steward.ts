@@ -6,15 +6,19 @@
  * the popover it opens read the same table, so they cannot report two things
  * about one fact.
  *
- * Only three kinds are the mark's. The others already have a home on this
+ * Only four kinds are the mark's. The others already have a home on this
  * line or on a row, and one mark means one thing across surfaces:
  * `update-waiting` is `UpdateMark`, `disk-low` is the disk meter turning amber,
  * `session-blocked-long` is the triangle on the session's own row. What is left
- * is what nothing else in the UI says — a CLI that is signed out, a loop that
- * paused itself, backups that stopped landing — and all three need a hand.
+ * is what nothing else on the line says — a CLI that is signed out, a loop that
+ * paused itself, backups that stopped landing, a brain whose vector index has
+ * been gone for ten minutes — and all four need a hand. The Memory page's
+ * badge says the last one too, but nobody reads a page they have no reason to
+ * open, which is how an outage once ran eleven hours unnoticed.
  */
 
 import { Stethoscope } from "lucide-react";
+import { semanticFindingDetail } from "~/lib/brain-semantic";
 import { formatTurnTime } from "~/lib/format";
 import { apiFetch } from "~/lib/machines/api";
 
@@ -24,7 +28,8 @@ export type FindingKind =
   | "loop-paused"
   | "session-blocked-long"
   | "update-waiting"
-  | "backup-failing";
+  | "backup-failing"
+  | "semantic-recall-down";
 
 export interface Finding {
   kind: FindingKind | string;
@@ -43,6 +48,7 @@ const FOOTER_KINDS: ReadonlySet<string> = new Set([
   "cli-signed-out",
   "loop-paused",
   "backup-failing",
+  "semantic-recall-down",
 ]);
 
 /** The findings the footer's mark stands for, oldest first. */
@@ -77,6 +83,11 @@ export function findingRow(f: Finding): { label: string; detail: string } {
           : `The newest is from ${formatTurnTime(newest)}.`,
       };
     }
+    case "semantic-recall-down":
+      return {
+        label: "Semantic recall is down",
+        detail: semanticFindingDetail(fact(f, "reason"), fact(f, "since")),
+      };
     default:
       return { label: String(f.kind), detail: "" };
   }

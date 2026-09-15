@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import type { useWebSocket } from "~/hooks/useWebSocket";
 import type { ConsolidationJob } from "~/lib/brain-api";
+import type { SemanticReading } from "~/lib/brain-semantic";
 import { useBrainStore } from "~/stores/brain-store";
 
 // Subscribes to brain push events broadcast to every tab: consolidation job
@@ -22,6 +23,10 @@ export function useBrainSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     const unsubUpdated = ws.subscribe("brain.updated", () => {
       useBrainStore.getState().onBrainUpdated();
     });
+    // The vector backend attached or went away: the Memory badge follows without a reload.
+    const unsubSemantic = ws.subscribe("brain.semantic", (payload) => {
+      useBrainStore.getState().setSemantic(payload as SemanticReading);
+    });
     // On (re)connect, resync the consolidation job. If the backend restarted mid
     // preview the job is gone, so this returns null and clears a stale "Analyzing…"
     // spinner instead of leaving it hung forever.
@@ -31,6 +36,7 @@ export function useBrainSubscriptions(ws: ReturnType<typeof useWebSocket>) {
     return () => {
       unsubJob();
       unsubUpdated();
+      unsubSemantic();
       unsubConnect();
     };
   }, [ws]);

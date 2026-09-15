@@ -643,18 +643,8 @@ func (h *Handler) HandleStatus(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	st := h.Service.SemanticStatus()
-	body := map[string]any{
-		"semantic":      h.Service.SemanticEnabled(),
-		"semanticState": st.State,
-		"counts":        computeStatusCounts(recs),
-	}
-	if st.Reason != "" {
-		body["semanticReason"] = st.Reason
-	}
-	if !st.DownSince.IsZero() {
-		body["semanticDownSince"] = st.DownSince.UTC().Format(time.RFC3339)
-	}
+	body := h.Service.SemanticStatus().Wire()
+	body["counts"] = computeStatusCounts(recs)
 	httperror.JSON(w, http.StatusOK, body)
 	return nil
 }

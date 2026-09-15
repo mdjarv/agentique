@@ -307,7 +307,7 @@ func TestConsolidationRefusesWhileDetached(t *testing.T) {
 	if _, err := svc.ApplyGlobal(ctx, memory.GlobalPlan{}, false); !errors.Is(err, ErrSemanticUnavailable) {
 		t.Fatalf("ApplyGlobal while detached = %v, want ErrSemanticUnavailable", err)
 	}
-	if _, err := svc.AssignAreas(ctx); !errors.Is(err, ErrSemanticUnavailable) {
+	if _, err := svc.AssignAreas(ctx, AreasOpts{}); !errors.Is(err, ErrSemanticUnavailable) {
 		t.Fatalf("AssignAreas while detached = %v, want ErrSemanticUnavailable", err)
 	}
 	if _, err := svc.Consolidate(ctx, scope, nil, memory.DecayPolicy{}, true, ConsolidateOpts{}); err != nil {

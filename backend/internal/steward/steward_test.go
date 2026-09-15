@@ -37,10 +37,11 @@ func TestEvaluateEachKind(t *testing.T) {
 		Blocked: []BlockedSession{{ID: "s1", Waiting: "an approval", Since: t0.Add(-time.Hour)}, {ID: "s2", Since: t0.Add(-time.Minute)}},
 		Update:  Update{Behind: true, Current: "v0.6.0", Latest: "v0.7.1"},
 		Backup:  Backup{Enabled: true, Interval: 15 * time.Minute, Newest: t0.Add(-2 * time.Hour)},
+		Brain:   Brain{Down: true, DownSince: t0.Add(-time.Hour), Reason: "chroma-unreachable"},
 	}
 	got := kindsOf(Evaluate(obs, t0))
 	want := map[Kind]int{KindCLISignedOut: 1, KindDiskLow: 1, KindLoopPaused: 1, KindSessionBlockedLong: 1,
-		KindUpdateWaiting: 1, KindBackupFailing: 1}
+		KindUpdateWaiting: 1, KindBackupFailing: 1, KindSemanticRecallDown: 1}
 	for k, n := range want {
 		if got[k] != n {
 			t.Errorf("%s: got %d findings, want %d (all: %v)", k, got[k], n, got)
@@ -62,11 +63,14 @@ func TestEvaluateIsQuietWhenHealthyOrUnobserved(t *testing.T) {
 		Disk:     Disk{FreeBytes: 40 << 30},
 		Blocked:  []BlockedSession{{ID: "s1", Since: t0.Add(-5 * time.Minute)}},
 		Backup:   Backup{Enabled: true, Interval: 15 * time.Minute, Newest: t0.Add(-20 * time.Minute)},
+		// Lost a moment ago: a container restart, not an outage.
+		Brain: Brain{Down: true, DownSince: t0.Add(-2 * time.Minute)},
 	}
 	if got := Evaluate(healthy, t0); len(got) != 0 {
 		t.Fatalf("healthy = %+v", got)
 	}
-	blind := Observation{Disk: Disk{FreeBytes: 0}, Agents: []AgentAuth{{ID: "claude", SignedOut: true}}}
+	blind := Observation{Disk: Disk{FreeBytes: 0}, Agents: []AgentAuth{{ID: "claude", SignedOut: true}},
+		Brain: Brain{Down: true, DownSince: t0.Add(-time.Hour)}}
 	if got := Evaluate(blind, t0); len(got) != 0 {
 		t.Fatalf("unobserved sensors produced findings: %+v", got)
 	}
@@ -94,7 +98,9 @@ func (m *memStore) Open(_ context.Context, f Finding) error {
 	return nil
 }
 
-func (m *memStore) Refresh(_ context.Context, f Finding) error { return m.Open(context.Background(), f) }
+func (m *memStore) Refresh(_ context.Context, f Finding) error {
+	return m.Open(context.Background(), f)
+}
 
 func (m *memStore) Resolve(_ context.Context, f Finding) error {
 	m.mu.Lock()
@@ -166,5 +172,42 @@ func TestBlockedClockIsRemembered(t *testing.T) {
 	_ = s.Pass(ctx)
 	if len(st.open) != 0 {
 		t.Fatal("a new wait inherited the old clock")
+	}
+}
+
+// A vector backend down for one long period opens one finding however many passes see it,
+// resolves when it attaches, and a new detached period starts its own clock — so a flapping
+// backend cannot open a finding per pass.
+func TestSemanticRecallDownOpensOncePerDetachedPeriod(t *testing.T) {
+	st := &memStore{open: map[string]Finding{}}
+	var changes []Change
+	brain := Brain{Down: true, DownSince: t0, Reason: "embedder-unreachable"}
+	s := New(func(context.Context) Observation {
+		return Observation{Observed: map[Kind]bool{KindSemanticRecallDown: true}, Brain: brain}
+	}, st, func(_ context.Context, c Change) { changes = append(changes, c) })
+	now := t0
+	s.now = func() time.Time { return now }
+	ctx := context.Background()
+
+	for range 12 { // a pass a minute across the threshold and past it
+		_ = s.Pass(ctx)
+		now = now.Add(time.Minute)
+	}
+	if len(changes) != 1 || !changes[0].Opened || changes[0].Finding.Facts["reason"] != "embedder-unreachable" {
+		t.Fatalf("changes over one detached period = %+v, want one open", changes)
+	}
+
+	brain = Brain{}
+	_ = s.Pass(ctx)
+	if len(changes) != 2 || changes[1].Opened {
+		t.Fatalf("attach did not resolve: %+v", changes)
+	}
+
+	// Lost again a minute later: a new period, and nothing until it is long.
+	brain = Brain{Down: true, DownSince: now}
+	now = now.Add(time.Minute)
+	_ = s.Pass(ctx)
+	if len(changes) != 2 {
+		t.Fatalf("a fresh detach opened at once: %+v", changes)
 	}
 }

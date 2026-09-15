@@ -38,7 +38,8 @@ import {
   refineMemory,
 } from "~/lib/brain-api";
 import { GLOBAL_SCOPE, isCapture, scopeLabel } from "~/lib/brain-labels";
-import { getErrorMessage } from "~/lib/utils";
+import { semanticBadge } from "~/lib/brain-semantic";
+import { cn, getErrorMessage } from "~/lib/utils";
 import { useAppStore } from "~/stores/app-store";
 import { useBrainStore } from "~/stores/brain-store";
 
@@ -58,7 +59,7 @@ const CONSOLIDATE_MODES: { value: ConsolidateMode; label: string }[] = [
 export function BrainPage() {
   const {
     memories,
-    semantic,
+    semanticReading,
     loaded,
     load,
     graph,
@@ -103,6 +104,7 @@ export function BrainPage() {
   // memories orbiting a central brain model in true 3D.
   const [view, setView] = useState<"list" | "graph" | "graph3d">("graph");
   const graphView = view === "graph" || view === "graph3d";
+  const badge = semanticBadge(semanticReading);
   const [reviewing, setReviewing] = useState(false);
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   // The review queue: the brain's least-trusted / flagged facts (RFC P2 confirm + D2).
@@ -243,8 +245,14 @@ export function BrainPage() {
   return (
     <div className="flex flex-col h-full">
       <AssistantHeader title="Memory">
-        <Badge variant={semantic ? "default" : "secondary"} className="ml-1">
-          {semantic ? "Semantic" : "Keyword"}
+        <Badge
+          variant={
+            badge.tone === "on" ? "default" : badge.tone === "warning" ? "outline" : "secondary"
+          }
+          className={cn("ml-1", badge.tone === "warning" && "border-warning/60 text-warning")}
+          title={badge.title}
+        >
+          {badge.label}
         </Badge>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {memories.length} {memories.length === 1 ? "memory" : "memories"}

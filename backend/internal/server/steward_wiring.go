@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/brain"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/peer"
 	"github.com/mdjarv/agentique/backend/internal/schedule"
@@ -37,13 +38,14 @@ type StewardBackup struct {
 // stewardDeps is everything the sensors read. Each may be nil, and a nil one
 // leaves its kinds unobserved rather than reporting a condition it cannot see.
 type stewardDeps struct {
-	queries  *store.Queries
-	svc      *session.Service
-	usage    *usage.Collector
-	updates  *update.Checker
-	storage  *storage.Handler
-	outbox   *peer.Outbox
-	assist   *assistant.Service
+	queries *store.Queries
+	svc     *session.Service
+	usage   *usage.Collector
+	updates *update.Checker
+	storage *storage.Handler
+	outbox  *peer.Outbox
+	assist  *assistant.Service
+	brain   *brain.Service
 }
 
 // stewardStore is the findings table behind steward.Store.
@@ -165,6 +167,16 @@ func (d stewardDeps) sense(backup StewardBackup) func(ctx context.Context) stewa
 			if st.CheckedAt != "" && st.CheckError == "" {
 				obs.Observed[steward.KindUpdateWaiting] = true
 				obs.Update = steward.Update{Behind: st.Behind, Current: st.Current, Latest: st.Latest}
+			}
+		}
+
+		// Observed whenever the brain runs, not only while a backend is configured:
+		// reading the config IS the sensor, so a finding left open by a backend
+		// that was then unconfigured resolves instead of outliving its cause.
+		if d.brain != nil {
+			obs.Observed[steward.KindSemanticRecallDown] = true
+			if st := d.brain.SemanticStatus(); d.brain.SemanticConfigured() && st.State != brain.SemanticOn {
+				obs.Brain = steward.Brain{Down: true, DownSince: st.DownSince, Reason: string(st.Reason)}
 			}
 		}
 

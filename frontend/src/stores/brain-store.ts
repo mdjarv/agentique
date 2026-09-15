@@ -26,6 +26,7 @@ import {
   startScopePreview,
   updateMemory,
 } from "~/lib/brain-api";
+import type { SemanticReading } from "~/lib/brain-semantic";
 
 interface ScopePreview {
   report: ConsolidateReport;
@@ -39,6 +40,9 @@ interface GlobalPreview {
 interface BrainState {
   memories: Memory[];
   semantic: boolean;
+  // Why recall is or is not semantic (lib/brain-semantic). Follows the status fetch and the
+  // brain.semantic push, so the badge flips on an attach or a detach without a reload.
+  semanticReading: SemanticReading;
   // Brain-health distribution from the status endpoint (F6); null until first load. Refreshed
   // on brain.updated so the health strip tracks the live corpus.
   counts: BrainCounts | null;
@@ -97,6 +101,7 @@ interface BrainState {
   setJob: (job: ConsolidationJob | null) => void;
   hydrateJob: () => Promise<void>;
   onBrainUpdated: () => void;
+  setSemantic: (reading: SemanticReading) => void;
 }
 
 // upsert replaces a memory by id or appends it, preserving a stable array
@@ -112,6 +117,7 @@ function upsert(list: Memory[], m: Memory): Memory[] {
 export const useBrainStore = create<BrainState>((set, get) => ({
   memories: [],
   semantic: false,
+  semanticReading: { semantic: false },
   counts: null,
   loaded: false,
   loading: false,
@@ -136,6 +142,7 @@ export const useBrainStore = create<BrainState>((set, get) => ({
       set({
         memories,
         semantic: status.semantic,
+        semanticReading: semanticReadingOf(status),
         counts: status.counts ?? null,
         loaded: true,
         loading: false,
@@ -308,6 +315,10 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     }
   },
 
+  setSemantic: (reading) => {
+    set({ semantic: reading.semantic, semanticReading: semanticReadingOf(reading) });
+  },
+
   onBrainUpdated: () => {
     set((s) => ({ flareSeq: s.flareSeq + 1 }));
     // Coalesce bursts (e.g. scheduled consolidation broadcasts once per scope) into a single
@@ -315,6 +326,16 @@ export const useBrainStore = create<BrainState>((set, get) => ({
     scheduleRefresh();
   },
 }));
+
+// semanticReadingOf copies just the semantic fields, so the stored reading carries no counts.
+function semanticReadingOf(r: SemanticReading): SemanticReading {
+  return {
+    semantic: r.semantic,
+    semanticState: r.semanticState,
+    semanticReason: r.semanticReason,
+    semanticDownSince: r.semanticDownSince,
+  };
+}
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleRefresh() {
@@ -329,7 +350,11 @@ function scheduleRefresh() {
       .catch((err) => console.error("Failed to refresh memories:", err));
     getStatus()
       .then((status) =>
-        useBrainStore.setState({ semantic: status.semantic, counts: status.counts ?? null }),
+        useBrainStore.setState({
+          semantic: status.semantic,
+          semanticReading: semanticReadingOf(status),
+          counts: status.counts ?? null,
+        }),
       )
       .catch((err) => console.error("Failed to refresh brain status:", err));
   }, 600);

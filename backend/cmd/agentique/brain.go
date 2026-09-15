@@ -45,9 +45,10 @@ var (
 	backfillSubsumedDryRun bool
 	backfillSubsumedForce  bool
 
-	assignAreasDir    string
-	assignAreasDryRun bool
-	assignAreasForce  bool
+	assignAreasDir     string
+	assignAreasDryRun  bool
+	assignAreasForce   bool
+	assignAreasLexical bool
 )
 
 func init() {
@@ -79,6 +80,7 @@ func init() {
 	assignAreasCmd.Flags().StringVar(&assignAreasDir, "brain-dir", "", "target brain directory (default: the live brain next to the database)")
 	assignAreasCmd.Flags().BoolVar(&assignAreasDryRun, "dry-run", false, "preview the cross-scope areas without writing")
 	assignAreasCmd.Flags().BoolVarP(&assignAreasForce, "force", "f", false, "skip the confirmation prompt")
+	assignAreasCmd.Flags().BoolVar(&assignAreasLexical, "allow-lexical", false, "stamp areas computed without embeddings when the configured vector backend is unreachable")
 
 	brainCmd.AddCommand(backfillCmd)
 	brainCmd.AddCommand(consolidateCmd)
@@ -303,7 +305,7 @@ func runBrainConsolidate(cmd *cobra.Command, args []string) error {
 
 	rep, err := svc.Consolidate(ctx, scope, ex, memory.DecayPolicy{}, consolidateDryRun, opts)
 	if errors.Is(err, brain.ErrSemanticUnavailable) {
-		return fmt.Errorf("consolidate refused: the configured vector backend is unreachable, and this pass would rewrite the scope's links and communities without embeddings — bring Chroma and the embedder back, or pass --allow-lexical to rebuild them lexically anyway")
+		return lexicalRefusal("consolidate", "the scope's links and communities")
 	}
 	if err != nil {
 		return fmt.Errorf("consolidate: %w", err)
@@ -552,9 +554,15 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 	if brainDir == "" {
 		brainDir = filepath.Join(filepath.Dir(resolveDBPath()), "brain")
 	}
-	store := filestore.New(brainDir)
+	// Through the service, not the filestore: with a vector backend configured the areas are
+	// embedding-aware, and the gate that stops a lexical pass from rewriting them holds here too.
+	svc, err := newBrainServiceIn(ctx, brainDir)
+	if err != nil {
+		return err
+	}
+	detached := svc.SemanticConfigured() && !svc.SemanticEnabled()
 
-	infos, err := memory.PreviewAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
+	infos, err := svc.PreviewAreas(ctx)
 	if err != nil {
 		return fmt.Errorf("preview areas: %w", err)
 	}
@@ -563,6 +571,9 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 		facts += a.Size
 	}
 	fmt.Printf("brain: %s\n", brainDir)
+	if detached {
+		fmt.Println("the vector backend is unreachable — this preview is lexical")
+	}
 	fmt.Printf("%d cross-scope areas covering %d facts\n", len(infos), facts)
 	for i, a := range infos {
 		if i >= 20 {
@@ -580,6 +591,10 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 		fmt.Println("\nno cross-scope areas to assign")
 		return nil
 	}
+	// Refuse before asking, rather than after a yes.
+	if detached && !assignAreasLexical {
+		return lexicalRefusal("assign-areas", "every fact's area")
+	}
 	if !assignAreasForce {
 		fmt.Printf("\nAbout to stamp Record.Area on the facts above in %s.\n", brainDir)
 		fmt.Print("Proceed? [y/N] ")
@@ -590,12 +605,31 @@ func runBrainAssignAreas(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	n, err := memory.AssignAreas(ctx, store, memory.DefaultAreaThreshold, memory.DefaultMinPromotionScopes)
+	n, err := assignAreasCore(ctx, svc, assignAreasLexical)
 	if err != nil {
-		return fmt.Errorf("assign areas: %w", err)
+		return err
 	}
 	fmt.Printf("\nassigned areas to %d fact(s)\n", n)
 	return nil
+}
+
+// assignAreasCore stamps areas through the brain service, refusing in words while a configured
+// vector backend is unreachable unless allowLexical.
+func assignAreasCore(ctx context.Context, svc *brain.Service, allowLexical bool) (int, error) {
+	n, err := svc.AssignAreas(ctx, brain.AreasOpts{AllowLexical: allowLexical})
+	if errors.Is(err, brain.ErrSemanticUnavailable) {
+		return 0, lexicalRefusal("assign-areas", "every fact's area")
+	}
+	if err != nil {
+		return 0, fmt.Errorf("assign areas: %w", err)
+	}
+	return n, nil
+}
+
+// lexicalRefusal is what a brain command says when it would persist similarity-derived
+// structure (what) while the configured vector backend is unreachable.
+func lexicalRefusal(command, what string) error {
+	return fmt.Errorf("%s refused: the configured vector backend is unreachable, and this pass would rewrite %s without embeddings — bring Chroma and the embedder back, or pass --allow-lexical to rebuild lexically anyway", command, what)
 }
 
 // --- Reindex ----------------------------------------------------------------
@@ -964,12 +998,17 @@ func promptForTarget(src bundleProject, bySlug map[string]store.Project, reader 
 // (not env), so reading the file here is what lets `brain reindex`/`calibrate` see the
 // same embedder + Chroma the server uses instead of silently degrading to keyword mode.
 func newBrainService(ctx context.Context, dbFile string) (*brain.Service, error) {
+	return newBrainServiceIn(ctx, filepath.Join(filepath.Dir(dbFile), "brain"))
+}
+
+// newBrainServiceIn is newBrainService for an explicit brain directory.
+func newBrainServiceIn(ctx context.Context, brainDir string) (*brain.Service, error) {
 	fileCfg, err := config.Load(config.Path())
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	svc, err := brain.New(ctx, brain.Config{
-		Dir:         filepath.Join(filepath.Dir(dbFile), "brain"),
+		Dir:         brainDir,
 		ChromaURL:   firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_CHROMA_URL"), fileCfg.Brain.ChromaURL),
 		EmbedURL:    firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_URL"), fileCfg.Brain.EmbedURL),
 		EmbedModel:  firstNonEmpty(os.Getenv("AGENTIQUE_BRAIN_EMBED_MODEL"), fileCfg.Brain.EmbedModel),

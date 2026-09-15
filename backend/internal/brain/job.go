@@ -250,7 +250,7 @@ func (h *Handler) runConsolidateAllJob(job JobState, m claudecli.Model) {
 		h.publishJob(job)
 	}
 	// Recompute cross-scope topic areas once after the whole bulk pass (B).
-	if n, aerr := h.Service.AssignAreas(ctx); errors.Is(aerr, ErrSemanticUnavailable) {
+	if n, aerr := h.Service.AssignAreas(ctx, AreasOpts{}); errors.Is(aerr, ErrSemanticUnavailable) {
 		h.failJob(job, errors.New(detachedRefusal))
 		return
 	} else if aerr != nil {

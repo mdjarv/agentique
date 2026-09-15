@@ -1080,6 +1080,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			Calibrate:         cfg.BrainCalibrate,
 			SnapshotRetain:    cfg.BrainSnapshotRetain,
 			ArchiveFloor:      recallArchiveFloor,
+			// The Memory page's badge follows an attach or a detach without a reload.
+			OnSemanticChange: func(st brain.SemanticStatus) { bus.Broadcast(brain.EventBrainSemantic, st.Wire()) },
 			Graph: brain.GraphConfig{
 				EdgeCap:          cfg.BrainGraph.EdgeCap,
 				EdgeThreshold:    cfg.BrainGraph.EdgeThreshold,
@@ -1477,7 +1479,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	s := &Server{
 		stewardDeps: stewardDeps{
 			queries: queries, svc: svc, usage: usageCollector, updates: updateChecker,
-			storage: sth, outbox: peerOutbox, assist: assistantSvc,
+			storage: sth, outbox: peerOutbox, assist: assistantSvc, brain: brainSvc,
 		},
 		peerPoller:         poller,
 		mux:                mux,

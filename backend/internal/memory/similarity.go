@@ -32,8 +32,9 @@ type Similarity struct {
 
 // simConfig is assembled from SimOptions.
 type simConfig struct {
-	embLookup func(id string) []float32
-	cosThresh float64
+	embLookup    func(id string) []float32
+	recordLookup func(r Record) []float32
+	cosThresh    float64
 }
 
 // SimOption configures how a Similarity is built. The zero set yields pure-Jaccard
@@ -45,6 +46,15 @@ type SimOption func(*simConfig)
 // Jaccard for its pairs — semantic mode degrades gracefully per record.
 func WithEmbeddingLookup(lookup func(id string) []float32) SimOption {
 	return func(c *simConfig) { c.embLookup = lookup }
+}
+
+// WithRecordEmbeddingLookup supplies a vector per record given the record itself, so the
+// lookup can key on the text. Use it wherever the records clustered can differ from the ones
+// the vectors were computed for — a consolidation pass rewrites facts under their ids and mints
+// new ones before it relinks, and an id-keyed lookup answers those with a stale vector or none.
+// It wins over WithEmbeddingLookup when both are set; nil/empty degrades that record to Jaccard.
+func WithRecordEmbeddingLookup(lookup func(r Record) []float32) SimOption {
+	return func(c *simConfig) { c.recordLookup = lookup }
 }
 
 // WithCosineThreshold overrides DefaultSemanticThreshold (calibrate per embedding model).
@@ -62,11 +72,15 @@ func newSimilarity(records []Record, opts ...SimOption) *Similarity {
 	for i, r := range records {
 		s.toks[i] = tokenSet(r.Text)
 	}
-	if cfg.embLookup != nil {
+	lookup := cfg.recordLookup
+	if lookup == nil && cfg.embLookup != nil {
+		lookup = func(r Record) []float32 { return cfg.embLookup(r.ID) }
+	}
+	if lookup != nil {
 		embs := make([][]float32, len(records))
 		any := false
 		for i, r := range records {
-			if v := cfg.embLookup(r.ID); len(v) > 0 {
+			if v := lookup(r); len(v) > 0 {
 				embs[i] = v
 				any = true
 			}

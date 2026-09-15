@@ -26,11 +26,13 @@ describe("footerFindings", () => {
       { kind: "session-blocked-long", severity: "notice", remedy: "hand" },
       { kind: "loop-paused", severity: "warning", remedy: "hand", facts: { loop: "nightly" } },
       { kind: "backup-failing", severity: "warning", remedy: "hand" },
+      { kind: "semantic-recall-down", severity: "warning", remedy: "hand" },
     ];
     expect(footerFindings(all).map((f) => f.kind)).toEqual([
       "cli-signed-out",
       "loop-paused",
       "backup-failing",
+      "semantic-recall-down",
     ]);
   });
 });
@@ -49,6 +51,17 @@ describe("findingsLabel", () => {
 
   it("gives a row the fix in words", () => {
     expect(findingRow(signedOut).detail).toContain("claude auth login");
+  });
+
+  it("names which half of a lost vector backend failed", () => {
+    const row = findingRow({
+      kind: "semantic-recall-down",
+      severity: "warning",
+      remedy: "hand",
+      facts: { reason: "chroma-unreachable", since: "2026-09-14T21:36:00Z" },
+    });
+    expect(row.label).toBe("Semantic recall is down");
+    expect(row.detail).toMatch(/^Chroma is not answering since /);
   });
 });
 
