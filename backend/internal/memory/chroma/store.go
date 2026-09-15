@@ -158,6 +158,15 @@ func (s *Store) LoadVectors(ctx context.Context) ([]VectorRecord, error) {
 	return s.client.GetEmbeddings(ctx, s.coll, nil)
 }
 
+// reindexBatch bounds how many facts one embed request, and the upsert behind
+// it, carries during a Reindex.
+//
+// Embedding endpoints cap a request's inputs — OpenAI at 2048,
+// text-embeddings-inference at its in-flight limit (512 by default, answered
+// with a 429) — so sending the corpus as one request fails on exactly the
+// brains big enough to need a reindex. The same number brain.embedRecords uses.
+const reindexBatch = 64
+
 // Reindex rebuilds the entire collection from the base store. Use after bulk
 // hand-edits, an embedder change, or to recover from index drift.
 func (s *Store) Reindex(ctx context.Context) error {
@@ -175,14 +184,20 @@ func (s *Store) Reindex(ctx context.Context) error {
 		texts = append(texts, r.Text)
 		metas = append(metas, metadataFor(r))
 	}
-	if len(ids) == 0 {
-		return nil
+	for start := 0; start < len(ids); start += reindexBatch {
+		end := min(start+reindexBatch, len(ids))
+		emb, err := s.embedder.Embed(ctx, texts[start:end])
+		if err != nil {
+			return fmt.Errorf("chroma: reindex embed facts %d-%d of %d: %w", start, end, len(ids), err)
+		}
+		if len(emb) != end-start {
+			return fmt.Errorf("chroma: reindex embed facts %d-%d of %d: embedder returned %d vectors", start, end, len(ids), len(emb))
+		}
+		if err := s.client.Upsert(ctx, s.coll, ids[start:end], emb, texts[start:end], metas[start:end]); err != nil {
+			return fmt.Errorf("chroma: reindex upsert facts %d-%d of %d: %w", start, end, len(ids), err)
+		}
 	}
-	emb, err := s.embedder.Embed(ctx, texts)
-	if err != nil {
-		return err
-	}
-	return s.client.Upsert(ctx, s.coll, ids, emb, texts, metas)
+	return nil
 }
 
 func scopeWhere(scopes []memory.Scope) map[string]any {

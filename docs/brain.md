@@ -395,6 +395,29 @@ go test ./internal/brain/ -run TestBrainSemanticWiring -v
 Run both containers with `--restart unless-stopped` if you want this to survive a
 reboot.
 
+**Where disk is tight, serve the embedder with text-embeddings-inference instead
+of Ollama.** `ollama/ollama` is 3.7 GB compressed; TEI's CPU image is about 240
+MB and serves the same all-MiniLM-L6-v2 on the same OpenAI route, so the default
+thresholds hold (`TestSemanticRecallVetoesGithubMisRecall` passes against it).
+It ignores the model field, so name the model it actually serves:
+
+```bash
+docker run -d --name agentique-embed --restart unless-stopped \
+  -p 127.0.0.1:8081:80 -v agentique-embed:/data \
+  ghcr.io/huggingface/text-embeddings-inference:cpu-latest \
+  --model-id sentence-transformers/all-MiniLM-L6-v2 --auto-truncate
+export AGENTIQUE_BRAIN_EMBED_URL=http://127.0.0.1:8081/v1/embeddings
+export AGENTIQUE_BRAIN_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
+```
+
+**Semantic mode is decided once, at boot.** `brain.New` probes Chroma's heartbeat
+and, when it does not answer, runs keyword-only for the life of the process — a
+Chroma that comes up a minute later is not picked up until the next restart. The
+boot line `brain: enabled ... semantic=false` says so, and the memory page's
+header badge reads Keyword rather than Semantic. After (re)creating the containers, run
+`agentique brain reindex` (a fresh Chroma holds no vectors) and restart the
+server.
+
 ## Why it works this way
 
 Condensed from nine RFC and ADR documents written between April and June 2026.
