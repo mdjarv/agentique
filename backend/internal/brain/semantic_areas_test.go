@@ -74,7 +74,9 @@ func mustAdd(t *testing.T, s *Service, ctx context.Context, scope memory.Scope, 
 // record a consolidation pass relinks without having embedded them up front.
 type mintingExtractor struct{ rewriteID, rewriteTo, abstract string }
 
-func (mintingExtractor) Extract(context.Context, []string) ([]memory.Candidate, error) { return nil, nil }
+func (mintingExtractor) Extract(context.Context, []string) ([]memory.Candidate, error) {
+	return nil, nil
+}
 
 func (m mintingExtractor) Reorganize(_ context.Context, facts []memory.Fact) ([]memory.Fact, error) {
 	out := make([]memory.Fact, 0, len(facts)+1)

@@ -589,12 +589,12 @@ func (d *assistantDirectory) toRow(ctx context.Context, info session.SessionInfo
 	row := assistant.SessionRow{
 		Reach:           assistant.ReachLocal,
 		AcceptsPolicies: true,
-		ID:        info.ID,
-		Name:      info.Name,
-		MachineID: d.machineID,
-		State:     info.State,
-		Attention: attentionOf(info),
-		Branch:    info.WorktreeBranch,
+		ID:              info.ID,
+		Name:            info.Name,
+		MachineID:       d.machineID,
+		State:           info.State,
+		Attention:       attentionOf(info),
+		Branch:          info.WorktreeBranch,
 		// The family name, never the version: that is the vocabulary the
 		// operator chose in and the one they will hear back.
 		Model:        providers.ModelFamilyName(info.Model),
