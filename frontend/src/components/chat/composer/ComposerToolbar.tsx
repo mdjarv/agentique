@@ -22,6 +22,7 @@ interface ComposerToolbarProps {
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  effortNote?: string;
   /** Narrow pane: the model name drops to its meter. */
   compact?: boolean;
 }
@@ -56,6 +57,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
   onModelChange,
   effort,
   onEffortChange,
+  effortNote,
   compact = false,
 }: ComposerToolbarProps) {
   const hasSettings = !!model || autoApproveMode !== undefined;
@@ -85,6 +87,7 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         onProviderChange={onProviderChange}
         effort={effort}
         onEffortChange={onEffortChange}
+        effortNote={effortNote}
         compact={compact}
       />
       {autoApproveMode !== undefined && (

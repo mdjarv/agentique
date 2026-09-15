@@ -8,17 +8,19 @@
  * where `Max` is visibly different from `XHigh` at 11px. The word survives in
  * the tooltip and in the menu.
  *
- * The two halves are not peers, and the design has to show that without a
- * sentence explaining it. `session.set-model` exists, gated on the runtime's
- * `ModelSwitch` capability; there is no `session.set-effort` anywhere, and the
- * provider did not accept a mid-session change when this was last checked. So
- * inside the menu the models are a list and effort is a **locked ramp** — filled
- * to its stop, inert, with one line saying when it was set.
+ * Inside the menu the models are a list and effort is a **ramp**, and each half
+ * is live or a reading on its own: `session.set-model` is gated on the
+ * runtime's `ModelSwitch` capability and `session.set-effort` on
+ * `EffortSwitch`, so a codex session can change how hard it thinks while its
+ * model stays put. A handler that is absent draws that half inert — the model
+ * as one plain row, the ramp **locked**, filled to its stop — and only when
+ * both are absent does the control stop being a menu at all.
  *
- * `locked` is the only difference between this and the new-session panel's
- * version, which is why both surfaces can finally render one component instead
- * of two dropdowns in one place and a read-only chip in the other. If
- * `session.set-effort` ever lands, the flag flips and no layout changes.
+ * `locked` is the only difference between the ramp here and the new-session
+ * panel's, which is why both surfaces render one component. The caller owns
+ * the one quiet line under it (`effortNote`), because only the caller knows
+ * whether a change costs the prompt cache, waits on a resume, or is not
+ * possible on the peer's release at all.
  */
 import { Check } from "lucide-react";
 import { memo, useMemo } from "react";
@@ -54,6 +56,8 @@ interface BrainControlProps {
   effort?: EffortLevel;
   /** Absent means the ramp is drawn locked — see the note above. */
   onEffortChange?: (value: EffortLevel) => void;
+  /** One quiet line under the ramp: what a change costs, or why it can't. */
+  effortNote?: string;
   /** Glyph-only model name, for the narrow pane. */
   compact?: boolean;
 }
@@ -96,6 +100,7 @@ export const BrainControl = memo(function BrainControl({
   onProviderChange,
   effort,
   onEffortChange,
+  effortNote,
   compact = false,
 }: BrainControlProps) {
   const catalog = useProviderStore((s) => s.models);
@@ -110,11 +115,12 @@ export const BrainControl = memo(function BrainControl({
   // panel does not pass a display name, and `opus[1m]` is a slug, not a name.
   const label = modelDisplayName || modelOptions.find((o) => o.value === model)?.label || model;
   const effortLabel = EFFORT_LABELS[(effort ?? "") as EffortLevel];
-  const title = `${label} · ${effortLabel} effort${onEffortChange ? "" : " (set when the session was created)"}`;
+  const reading = `${label} · ${effortLabel} effort`;
+  const title = !onEffortChange && effortNote ? `${reading}. ${effortNote}` : reading;
 
   // No handler at all: the whole control is a reading. The trigger still shows
   // both halves, because what it reports is the point.
-  if (!onModelChange) {
+  if (!onModelChange && !onEffortChange) {
     return (
       <span
         className="flex items-center gap-1.5 text-[11px] max-md:text-xs rounded-md px-2 py-1 text-muted-foreground shrink-0"
@@ -143,23 +149,32 @@ export const BrainControl = memo(function BrainControl({
         <div className="px-2 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-muted-foreground/70 select-none">
           Model
         </div>
-        {modelOptions.map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => {
-              const next = opt.value as ModelId;
-              const nextProvider = providerOf(opt.value) ?? providerForModel(next);
-              if (nextProvider && nextProvider !== provider) onProviderChange?.(nextProvider);
-              onModelChange(next);
-            }}
-            className="text-xs gap-2"
-          >
-            <Check className={cn("h-3 w-3", opt.value === model ? "opacity-100" : "opacity-0")} />
-            <span>{opt.label}</span>
-          </DropdownMenuItem>
-        ))}
+        {onModelChange ? (
+          modelOptions.map((opt) => (
+            <DropdownMenuItem
+              key={opt.value}
+              onClick={() => {
+                const next = opt.value as ModelId;
+                const nextProvider = providerOf(opt.value) ?? providerForModel(next);
+                if (nextProvider && nextProvider !== provider) onProviderChange?.(nextProvider);
+                onModelChange(next);
+              }}
+              className="text-xs gap-2"
+            >
+              <Check className={cn("h-3 w-3", opt.value === model ? "opacity-100" : "opacity-0")} />
+              <span>{opt.label}</span>
+            </DropdownMenuItem>
+          ))
+        ) : (
+          // Rows that ignore a click read as broken, so a model that cannot
+          // change is the one it is, not a list of the ones it cannot be.
+          <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground select-none">
+            <Check className="h-3 w-3" />
+            <span>{label}</span>
+          </div>
+        )}
         <DropdownMenuSeparator />
-        <EffortRamp effort={effort} onEffortChange={onEffortChange} />
+        <EffortRamp effort={effort} onEffortChange={onEffortChange} note={effortNote} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -169,8 +184,8 @@ export const BrainControl = memo(function BrainControl({
  * Effort as a position on a ramp rather than an item in a list — the fact it
  * reports is "how much", and a list of five words does not say that.
  *
- * Locked is the common case, so it is the one drawn plainly: the fill stops
- * where the level is and nothing invites a drag. Live is the same geometry
+ * Locked is drawn plainly: the fill stops where the level is and nothing
+ * invites a drag. Live is the same geometry
  * made into a slider, so the two cannot drift apart — and it has to be a whole
  * slider, not a drawing of one with the words as buttons: a track and a thumb
  * that ignore the pointer read as broken, and 9px labels are not a target.
@@ -183,9 +198,11 @@ export const BrainControl = memo(function BrainControl({
 function EffortRamp({
   effort,
   onEffortChange,
+  note,
 }: {
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  note?: string;
 }) {
   const current = (effort ?? "") as EffortLevel;
   const idx = RAMP_LEVELS.indexOf(current);
@@ -195,18 +212,20 @@ function EffortRamp({
   const header = (
     <div className="flex items-baseline justify-between gap-2 pb-1">
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Effort</span>
-      <span className="text-[10px] text-muted-foreground">
-        {locked ? "set at creation" : EFFORT_LABELS[current]}
-      </span>
+      <span className="text-[10px] text-muted-foreground">{EFFORT_LABELS[current]}</span>
     </div>
   );
   const body = <RampTrack current={current} locked={locked} color={color} />;
+  const footnote = note && (
+    <p className="pt-1.5 text-[10px] leading-snug text-muted-foreground/70">{note}</p>
+  );
 
   if (locked) {
     return (
       <div className="px-2 pt-1.5 pb-2 select-none">
         {header}
         {body}
+        {footnote}
       </div>
     );
   }
@@ -254,6 +273,7 @@ function EffortRamp({
       >
         {body}
       </div>
+      {footnote}
     </DropdownMenuItem>
   );
 }

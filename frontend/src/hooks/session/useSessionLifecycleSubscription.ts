@@ -2,6 +2,7 @@ import type { NavigateFn } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { useWebSocket } from "~/hooks/useWebSocket";
 import { navigateToSession } from "~/lib/navigation";
+import { isEffortChangeOutstanding } from "~/lib/session/effort-switch";
 import { findNearestActiveSession } from "~/lib/session/utils";
 import { readArchivedAt, readUnseenCompletedAt } from "~/lib/wire-compat";
 import { useAppStore } from "~/stores/app-store";
@@ -96,6 +97,13 @@ export function useSessionLifecycleSubscription(
       useChatStore.getState().setSessionResolvedModel(payload.sessionId, payload.resolvedModel);
     });
 
+    const unsubEffortChanged = ws.subscribe("session.effort-changed", (payload) => {
+      // This tab's own drag is ahead of the pushes it caused; the change
+      // settles the level itself when its last request answers.
+      if (isEffortChangeOutstanding(payload.sessionId)) return;
+      useChatStore.getState().setSessionEffort(payload.sessionId, payload.effort ?? "");
+    });
+
     const unsubPinned = ws.subscribe("session.pinned", (payload) => {
       useChatStore.getState().setSessionPinned(payload.sessionId, payload.pinned, payload.pinOrder);
     });
@@ -148,6 +156,7 @@ export function useSessionLifecycleSubscription(
       unsubCreated();
       unsubRenamed();
       unsubModelResolved();
+      unsubEffortChanged();
       unsubPinned();
       unsubDeleted();
       unsubPrUpdated();

@@ -886,6 +886,15 @@ function dispatch(client: WsClientConnection, msg: ClientMessage) {
       }, 600);
       break;
 
+    case "session.set-effort":
+      respond(client, msg.id, { effort: p.effort });
+      push(client, "session.effort-changed", {
+        sessionId: p.sessionId,
+        effort: p.effort,
+        applied: p.effort,
+      });
+      break;
+
     case "session.rename":
       respond(client, msg.id);
       push(client, "session.renamed", {

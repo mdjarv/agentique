@@ -939,3 +939,24 @@ describe("resolved model metadata", () => {
     expect(meta?.resolvedModel).toBeUndefined();
   });
 });
+
+describe("session effort", () => {
+  beforeEach(() => {
+    useChatStore.setState({ sessions: {}, activeSessionId: null });
+    useChatStore.getState().addSession(makeMeta({ model: "opus[1m]", effort: "low" }));
+  });
+
+  it("changes the level and leaves the model alone", () => {
+    useChatStore.getState().setSessionEffort("sess-1", "max");
+
+    const meta = useChatStore.getState().sessions["sess-1"]?.meta;
+    expect(meta?.effort).toBe("max");
+    expect(meta?.model).toBe("opus[1m]");
+  });
+
+  it("takes a reset to the default", () => {
+    useChatStore.getState().setSessionEffort("sess-1", "");
+
+    expect(useChatStore.getState().sessions["sess-1"]?.meta.effort).toBe("");
+  });
+});

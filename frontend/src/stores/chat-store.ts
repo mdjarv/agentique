@@ -267,6 +267,8 @@ export interface ChatState {
   setSessionName: (sessionId: string, name: string) => void;
   setSessionPinned: (sessionId: string, pinned: boolean, pinOrder: number) => void;
   setSessionModel: (sessionId: string, model: string) => void;
+  /** The requested effort level — what the row persists and resume passes back. */
+  setSessionEffort: (sessionId: string, effort: string) => void;
   setSessionResolvedModel: (sessionId: string, resolvedModel: string) => void;
   setPendingApproval: (sessionId: string, approval: PendingApproval) => void;
   clearPendingApproval: (sessionId: string) => void;
@@ -601,6 +603,7 @@ export const useChatStore = create<ChatState>((set) => ({
     ),
   setSessionResolvedModel: (sessionId, resolvedModel) =>
     set((s) => updateMeta(s, sessionId, { resolvedModel })),
+  setSessionEffort: (sessionId, effort) => set((s) => updateMeta(s, sessionId, { effort })),
 
   setPendingApproval: (sessionId, approval) =>
     set((s) => updateSession(s, sessionId, { pendingApproval: approval })),

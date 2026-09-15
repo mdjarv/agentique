@@ -10,6 +10,19 @@ links to their own notes, rather than reconstructed here after the fact.
 
 ## Unreleased
 
+### Added
+
+- **Reasoning effort changes on a running session.** The effort ramp in the
+  composer's model menu was locked at whatever the session was created with; it
+  is now a live slider on any connected Claude or codex session. Claude applies
+  the new level from its next request, including the rest of a turn already
+  running, and codex from the next turn. A change makes the next request
+  re-write the conversation into the prompt cache, which the ramp says in one
+  line. The level is kept across a stop and resume. If the model caps it, a
+  toast names the level it actually runs at. Changing it needs the machine that
+  owns the session to run this release or later; a session on an older machine
+  keeps the locked ramp.
+
 ### Fixed
 
 - **A new machine no longer lists its home directory as a project.** With

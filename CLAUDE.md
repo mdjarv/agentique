@@ -400,9 +400,23 @@ it thinks. The trigger is the model name plus a five-bar meter, because a meter
 reads as a *quantity* — that is what stops the level looking like a second
 dropdown, and it is the only form where Max differs visibly from XHigh at 11px.
 Inside, models are a list and effort is a **ramp**, drawn locked or live from one
-flag: there is no `session.set-effort` anywhere, and the provider did not accept
-a mid-session change when last checked. That flag is the only difference between
-this and the new-session panel's copy, so both surfaces render one component.
+flag. That flag is the only difference between this and the new-session panel's
+copy, so both surfaces render one component. The two halves are gated apart —
+`session.set-model` on `modelSwitch`, `session.set-effort` on `effortSwitch` — so
+codex gets a live ramp beside a model it cannot change.
+
+**A live effort change costs the prompt cache, and the row keeps the request.**
+Claude applies it to the next API request, the rest of a running turn included,
+and that request re-writes the conversation into the cache; codex applies it from
+the next turn. The provider answers with the level in force, which can differ
+(capped, or `""` for a model with no effort), but `sessions.effort` stores what
+was *asked* for, because resume passes it back as the connect-time level. The
+ramp is live only where the server would take a change: `effortSwitch === true`
+(absent is an older peer that does not know the verb) and a connected session,
+since a parked one answers `ErrNotLive`. A drag names every stop it crosses, so
+`lib/session/effort-switch.ts` keeps one request out per session, sends the latest
+level when it answers, and ignores `session.effort-changed` pushes while its own
+change is outstanding — they describe levels the thumb has already passed.
 
 **The permission mode is a mark, not a label.** It is almost always Full Auto,
 which argues for demoting the word and never for dropping the fact —

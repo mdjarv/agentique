@@ -12,6 +12,8 @@ import type {
   SessionDeleteBulkResult,
   SessionDeleteBulkResultItem,
   SessionEnqueueResult,
+  SessionSetEffortPayload,
+  SessionSetEffortResult,
 } from "~/lib/generated-types";
 import { readArchivedAt, readUnseenCompletedAt } from "~/lib/wire-compat";
 import type { WsClient } from "~/lib/ws-client";
@@ -198,6 +200,22 @@ export async function setSessionModel(
 ): Promise<void> {
   await ws.request("session.set-model", { sessionId, model });
   useChatStore.getState().setSessionModel(sessionId, model);
+}
+
+const setEffortRpc = define<SessionSetEffortResult, SessionSetEffortPayload>("session.set-effort");
+/**
+ * Changes a live session's reasoning effort and resolves with the level the
+ * provider reports in force afterwards, which can differ from the request.
+ * Touches no store: a live change goes through `changeSessionEffort`
+ * (`lib/session/effort-switch.ts`), which owns the optimistic level.
+ */
+export async function setSessionEffort(
+  ws: WsClient,
+  sessionId: string,
+  effort: string,
+): Promise<string> {
+  const result = await setEffortRpc(ws, { sessionId, effort });
+  return result?.effort ?? "";
 }
 
 export async function setSessionIcon(

@@ -63,6 +63,8 @@ interface MessageComposerProps {
   onModelChange?: (value: ModelId) => void;
   effort?: EffortLevel;
   onEffortChange?: (value: EffortLevel) => void;
+  /** One quiet line under the effort ramp: what a change costs, or why it can't. */
+  effortNote?: string;
   onEmptySubmit?: () => void;
   templatePicker?: React.ReactNode;
   /**
@@ -118,6 +120,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
       onModelChange,
       effort,
       onEffortChange,
+      effortNote,
       onEmptySubmit,
       templatePicker,
       focusMode,
@@ -234,6 +237,7 @@ export const MessageComposer = forwardRef<ComposerHandle, MessageComposerProps>(
         onModelChange={onModelChange}
         effort={effort}
         onEffortChange={onEffortChange}
+        effortNote={effortNote}
       />
     );
 

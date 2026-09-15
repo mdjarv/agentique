@@ -41,7 +41,7 @@ import { useIsMobile } from "~/hooks/useIsMobile";
 import { useProjectPresentation } from "~/hooks/useProjectPresentation";
 import { useWebSocket } from "~/hooks/useWebSocket";
 import { agentBadgeState, partitionAgentRuns } from "~/lib/agent-runs";
-import type { EffortLevel } from "~/lib/composer-constants";
+import { EFFORT_LABELS, type EffortLevel } from "~/lib/composer-constants";
 import { appendQuote } from "~/lib/diff-quote";
 import type { PromptTemplate } from "~/lib/generated-types";
 import { loopBadgeState } from "~/lib/loop-attention";
@@ -72,6 +72,7 @@ import {
   maxDockWidth,
   resolveDockView,
 } from "~/lib/session/dock";
+import { changeSessionEffort } from "~/lib/session/effort-switch";
 import { loadSessionHistory } from "~/lib/session/history";
 import { extractVariables, parseSettings } from "~/lib/template-utils";
 import { copyToClipboard, getErrorMessage, sessionShortId } from "~/lib/utils";
@@ -393,6 +394,23 @@ export function ChatPanel({
     [ws, sessionId],
   );
 
+  // A live effort change needs a peer that speaks session.set-effort — absent
+  // means an older release, so false — and a CLI to apply it to, since the
+  // server refuses a session that is not live. Otherwise the ramp is a reading.
+  const effortSwitchSupported = meta?.capabilities?.effortSwitch === true;
+  const effortLive = effortSwitchSupported && !!meta?.connected && !machineAway;
+
+  const handleEffortChange = useCallback(
+    (level: EffortLevel) => {
+      changeSessionEffort(ws, sessionId, level, {
+        failed: (err) => toast.error(getErrorMessage(err, "Failed to set effort")),
+        adjusted: (_requested, applied) =>
+          toast.warning(`Effort capped at ${EFFORT_LABELS[applied as EffortLevel] ?? applied}`),
+      });
+    },
+    [ws, sessionId],
+  );
+
   const handleTextPersist = useCallback(
     (text: string) => {
       useUIStore.getState().setDraft(sessionId, text);
@@ -469,12 +487,20 @@ export function ChatPanel({
   const applyTemplateSettings = useCallback(
     (tmpl: PromptTemplate) => {
       const settings = parseSettings(tmpl.settings);
-      // Mutable settings only — worktree and effort can't change on a running session.
+      // Mutable settings only — the worktree is fixed once the session exists,
+      // and effort changes only where the ramp would take it.
       if (settings.model) handleModelChange(settings.model);
+      if (settings.effort && effortLive) handleEffortChange(settings.effort);
       if (settings.autoApproveMode) handleAutoApproveModeChange(settings.autoApproveMode);
       if (settings.planMode !== undefined) handlePlanModeChange(settings.planMode);
     },
-    [handleModelChange, handleAutoApproveModeChange, handlePlanModeChange],
+    [
+      handleModelChange,
+      handleEffortChange,
+      effortLive,
+      handleAutoApproveModeChange,
+      handlePlanModeChange,
+    ],
   );
 
   const handleTemplateSelect = useCallback(
@@ -820,6 +846,14 @@ export function ChatPanel({
                 modelDisplayName={sessionModelLabel(meta.model, meta.resolvedModel)}
                 onModelChange={modelSwitchSupported ? handleModelChange : undefined}
                 effort={(meta.effort as EffortLevel) ?? ""}
+                onEffortChange={effortLive ? handleEffortChange : undefined}
+                effortNote={
+                  effortLive
+                    ? "Changing it re-caches the conversation."
+                    : effortSwitchSupported
+                      ? "Resume the session to change it."
+                      : "Set when the session was created."
+                }
                 onEmptySubmit={isResumable ? handleResume : undefined}
                 stashedText={stashedText || undefined}
                 stashDepth={stashDepth}

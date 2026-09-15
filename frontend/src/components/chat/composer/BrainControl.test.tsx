@@ -3,7 +3,9 @@
  *
  * It regressed to a drawing of a slider — track and thumb inert, only the 9px
  * labels clickable — so these pin that the track itself takes the pointer and
- * the keys, and that a locked ramp takes neither.
+ * the keys, and that a locked ramp takes neither. The two halves are gated
+ * separately, so a session that can change effort but not model still opens
+ * the menu onto a live ramp.
  */
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -102,10 +104,73 @@ describe("BrainControl effort ramp", () => {
     expect(menu).toBeInTheDocument();
   });
 
-  it("draws a locked ramp with nothing to operate", async () => {
-    render(<BrainControl model="opus[1m]" onModelChange={vi.fn()} effort="high" />);
+  it("draws a locked ramp with nothing to operate, and says why", async () => {
+    render(
+      <BrainControl
+        model="opus[1m]"
+        onModelChange={vi.fn()}
+        effort="high"
+        effortNote="Resume the session to change it."
+      />,
+    );
     await openMenu();
     expect(screen.queryByRole("slider")).toBeNull();
-    expect(screen.getByText("set at creation")).toBeInTheDocument();
+    expect(screen.getByText("Resume the session to change it.")).toBeInTheDocument();
+  });
+
+  it("gives a live session's ramp its cost line", async () => {
+    const onEffortChange = vi.fn();
+    render(
+      <BrainControl
+        model="opus[1m]"
+        onModelChange={vi.fn()}
+        effort="medium"
+        onEffortChange={onEffortChange}
+        effortNote="Changing it re-caches the conversation."
+      />,
+    );
+    await openMenu();
+
+    const slider = screen.getByRole("slider", { name: "Effort" });
+    expect(slider).toHaveAttribute("aria-valuetext", "Medium");
+    expect(screen.getByText("Changing it re-caches the conversation.")).toBeInTheDocument();
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(onEffortChange).toHaveBeenLastCalledWith("high");
+  });
+
+  it("opens onto a live ramp when only effort can change", async () => {
+    const onEffortChange = vi.fn();
+    render(
+      <BrainControl
+        model="gpt-5.5"
+        modelDisplayName="GPT-5.5"
+        effort="low"
+        onEffortChange={onEffortChange}
+      />,
+    );
+    await openMenu();
+
+    // The model is stated, not offered.
+    const menu = screen.getByRole("menu");
+    expect(menu).toHaveTextContent("GPT-5.5");
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+    const slider = screen.getByRole("slider", { name: "Effort" });
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(onEffortChange).toHaveBeenLastCalledWith("medium");
+  });
+
+  it("is a plain reading when neither half can change", () => {
+    render(
+      <BrainControl
+        model="gpt-5.5"
+        modelDisplayName="GPT-5.5"
+        effort="low"
+        effortNote="Set when the session was created."
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(
+      screen.getByTitle("GPT-5.5 · Low effort. Set when the session was created."),
+    ).toBeInTheDocument();
   });
 });
