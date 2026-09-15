@@ -969,7 +969,37 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/sessions/{id}/query", sh.HandleQuery)
 	mux.HandleFunc("DELETE /api/sessions/{id}", sh.HandleDelete)
 
-	ch := &session.ContentHandler{Source: session.LocalContent{Queries: queries}}
+	// Paired machines (docs/peers.md): their sessions and projects read
+	// through each one's peer surface, and actions on them sent the same way,
+	// with the peer credential peerLink mints and holds. Built whatever the
+	// feature flags, because the content routes below relay a paired machine's
+	// session files through it; the assistant and the call pick them up
+	// further down. Lazy: nothing is dialled until something asks.
+	// A long poll holds its request open, so it gets a client whose timeout
+	// outlives the wait; everything else keeps the machine client's.
+	pollHTTPClient := *machineHTTPClient
+	pollHTTPClient.Timeout = peerPollWait + 20*time.Second
+	peerLink := peerlink.New(machineHTTPClient, queries,
+		peerlink.WithPollClient(&pollHTTPClient),
+		peerlink.WithLabel(func(ctx context.Context) string {
+			label, _ := hostPresentation(ctx)
+			return label
+		}))
+	peerSrc := newPeerSessions(queries, machineHTTPClient, peerLink, cfg.MachineID)
+
+	localContent := session.LocalContent{Queries: queries}
+	ch := &session.ContentHandler{Source: &sessionContent{
+		local: localContent,
+		isLocal: localSession(func(ctx context.Context, id string) error {
+			_, err := queries.GetSession(ctx, id)
+			return err
+		}),
+		locate: func(ctx context.Context, id string) (string, bool) {
+			loc, ok := peerSrc.Locate(ctx, id)
+			return loc.Machine.MachineID, ok
+		},
+		remote: peerLink,
+	}}
 	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", ch.HandleFile)
 	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", ch.HandleEventImage)
 
@@ -1053,6 +1083,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		peer.WithCatalog(catalog),
 		peer.WithOutbox(peerOutbox),
 		peer.WithTranscripts(queries),
+		peer.WithContent(session.LocalContent{Queries: queries}),
 		peer.WithProposalActions(newAssistantActions(svc, gitSvc, mgr, queries, catalog)),
 	).RegisterRoutes(mux)
 
@@ -1217,8 +1248,6 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		assistantDisp      *assistantDispatcher
 		assistantFacts     *assistantTurnFacts
 		summarizer         *sessionSummarizer
-		peerLink           *peerlink.Client
-		peerSrc            *peerSessions
 	)
 	if cfg.ExperimentalVoice || cfg.ExperimentalAssistant {
 		// The summariser keeps a session's transcript on this machine: it runs
@@ -1241,23 +1270,6 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 				label, _ := hostPresentation(ctx)
 				return label
 			})
-		// Paired machines (docs/peers.md): their sessions and projects read
-		// through each one's peer surface, and actions on them sent the same
-		// way, with the peer credential peerLink mints and holds. Without it
-		// the assistant knew only this machine's database, and a session the
-		// sidebar showed on zbook did not exist for it. Lazy: nothing is
-		// dialled until an assistant or a call asks.
-		// A long poll holds its request open, so it gets a client whose timeout
-		// outlives the wait; everything else keeps the machine client's.
-		pollHTTPClient := *machineHTTPClient
-		pollHTTPClient.Timeout = peerPollWait + 20*time.Second
-		peerLink = peerlink.New(machineHTTPClient, queries,
-			peerlink.WithPollClient(&pollHTTPClient),
-			peerlink.WithLabel(func(ctx context.Context) string {
-				label, _ := hostPresentation(ctx)
-				return label
-			}))
-		peerSrc = newPeerSessions(queries, machineHTTPClient, peerLink, cfg.MachineID)
 		assistantDir.peers, assistantDir.link = peerSrc, peerLink
 		assistantDisp.peers, assistantDisp.link = peerSrc, peerLink
 	}
@@ -1474,23 +1486,24 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		th.RegisterRoutes(mux)
 	}
 
+	// The poller carries news from paired machines to whatever here listens:
+	// the assistant, or a call's report registry. With neither there is no
+	// one to tell, so none runs, even though the peer client always exists.
 	var poller *peerPoller
-	if peerLink != nil {
-		var sink peerEventSink
-		switch {
-		case assistantSvc != nil:
-			sink = assistantPeerSink{svc: assistantSvc}
-		case reportRegistry != nil:
-			sink = registryPeerSink{reg: reportRegistry}
-		}
-		if sink != nil {
-			poller = newPeerPoller(queries, peerLink, sink, cfg.MachineID)
-			poller.onTurnEnd = func(machineID, sessionID string) {
-				// What the session is doing just changed, and a summary of it
-				// describes the turn before.
-				peerSrc.Invalidate(machineID)
-				summarizer.Forget(machineID + ":" + sessionID)
-			}
+	var sink peerEventSink
+	switch {
+	case assistantSvc != nil:
+		sink = assistantPeerSink{svc: assistantSvc}
+	case reportRegistry != nil:
+		sink = registryPeerSink{reg: reportRegistry}
+	}
+	if sink != nil {
+		poller = newPeerPoller(queries, peerLink, sink, cfg.MachineID)
+		poller.onTurnEnd = func(machineID, sessionID string) {
+			// What the session is doing just changed, and a summary of it
+			// describes the turn before.
+			peerSrc.Invalidate(machineID)
+			summarizer.Forget(machineID + ":" + sessionID)
 		}
 	}
 

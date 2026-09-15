@@ -79,6 +79,14 @@ func FromBytes(name string, body []byte, immutable bool) Item {
 	return Item{Name: name, Size: int64(len(body)), Body: bytes.NewReader(body), Immutable: immutable}
 }
 
+// CheckName reports whether rel could name something inside a root, without
+// touching a filesystem — for a caller that must refuse a bad name before
+// asking another machine for it.
+func CheckName(rel string) error {
+	_, err := localName(rel)
+	return err
+}
+
 // localName is rel in the root's own form, refused before any filesystem call
 // when it could not name something inside a root: empty, absolute, or climbing
 // out with "..". "notes..md" is an ordinary name.

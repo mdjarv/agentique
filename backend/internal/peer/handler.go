@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
 	"github.com/mdjarv/agentique/backend/internal/auth"
+	"github.com/mdjarv/agentique/backend/internal/content"
 	"github.com/mdjarv/agentique/backend/internal/httperror"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
@@ -57,6 +59,7 @@ type Handler struct {
 	outbox    *Outbox
 	events    session.TranscriptEvents
 	actions   assistant.Actions
+	content   session.ContentSource
 }
 
 // Option configures a [Handler].
@@ -81,6 +84,13 @@ func WithOutbox(o *Outbox) Option { return func(h *Handler) { h.outbox = o } }
 // its assistant can summarise work running here. Without it the route is absent.
 func WithTranscripts(events session.TranscriptEvents) Option {
 	return func(h *Handler) { h.events = events }
+}
+
+// WithContent serves a session's files and detached event images to a paired
+// server, which relays them to a browser that cannot reach this machine
+// (docs/multi-machine.md, "Session files"). Without it the routes are absent.
+func WithContent(src session.ContentSource) Option {
+	return func(h *Handler) { h.content = src }
 }
 
 // WithProposalActions serves a session's facts and performs the uncontained
@@ -117,6 +127,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	}
 	if h.events != nil {
 		mux.HandleFunc("GET /api/peer/sessions/{id}/transcript", h.handleTranscript)
+	}
+	if h.content != nil {
+		mux.HandleFunc("GET /api/peer/sessions/{id}/files", h.handleFile)
+		mux.HandleFunc("GET /api/peer/sessions/{id}/events/{eventId}/images/{idx}", h.handleEventImage)
 	}
 	if h.actions != nil {
 		mux.HandleFunc("GET /api/peer/sessions/{id}/facts/{kind}", h.handleFacts)
@@ -294,6 +308,62 @@ func (h *Handler) handleTranscript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httperror.JSON(w, http.StatusOK, TranscriptResponse{Transcript: text})
+}
+
+// ContentNameHeader carries the name a relayed item is served under, path-
+// escaped. Its presence is also what tells the relaying server the answer came
+// from this route: an older release answers an unmounted /api/ path with the
+// SPA's 200, and those bytes must not be served as somebody's file. The name
+// decides nothing on the relaying side but an event image's extension, which
+// that side still judges through its own allowlist.
+const ContentNameHeader = "X-Agentique-Content-Name"
+
+// handleFile answers GET /api/peer/sessions/{id}/files?path=rel. The path is a
+// query parameter, not a path suffix, because the peer scope rule accepts only
+// a clean, unencoded path and a file name may need escaping.
+func (h *Handler) handleFile(w http.ResponseWriter, r *http.Request) {
+	credential, id, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	if rel == "" {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "path is required"))
+		return
+	}
+	item, err := h.content.SessionFile(r.Context(), id, rel)
+	h.serveContent(w, r, credential, item, err)
+}
+
+// handleEventImage answers GET /api/peer/sessions/{id}/events/{eventId}/images/{idx}.
+func (h *Handler) handleEventImage(w http.ResponseWriter, r *http.Request) {
+	credential, _, ok := h.existingSession(w, r)
+	if !ok {
+		return
+	}
+	id, eventID, idx, herr := session.ParseEventImage(r)
+	if herr != nil {
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "%s", herr.Message))
+		return
+	}
+	item, err := h.content.EventImage(r.Context(), id, eventID, idx)
+	h.serveContent(w, r, credential, item, err)
+}
+
+func (h *Handler) serveContent(w http.ResponseWriter, r *http.Request, credential string, item content.Item, err error) {
+	switch {
+	case errors.Is(err, content.ErrNotFound):
+		h.refuse(w, r, credential, refuse(http.StatusNotFound, ReasonNotFound, "file not found"))
+		return
+	case errors.Is(err, content.ErrInvalidPath):
+		h.refuse(w, r, credential, refuse(http.StatusBadRequest, ReasonBadRequest, "invalid file path"))
+		return
+	case err != nil:
+		content.RespondError(w, err)
+		return
+	}
+	w.Header().Set(ContentNameHeader, url.PathEscape(item.Name))
+	content.Serve(w, r, item)
 }
 
 // existingSession is the common preamble of a route about one session: a peer

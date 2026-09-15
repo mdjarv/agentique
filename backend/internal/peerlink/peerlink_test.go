@@ -87,7 +87,7 @@ func newOwner(t *testing.T, withPeerSurface bool) *owner {
 
 // newOwnerWith is newOwner with the session service and project list the peer
 // handler acts on.
-func newOwnerWith(t *testing.T, withPeerSurface bool, sessions peer.Sessions, projects peer.Projects) *owner {
+func newOwnerWith(t *testing.T, withPeerSurface bool, sessions peer.Sessions, projects peer.Projects, extra ...peer.Option) *owner {
 	t.Helper()
 	db, q := openDB(t)
 	// The session the fake service describes exists as a row too, because the
@@ -125,8 +125,9 @@ func newOwnerWith(t *testing.T, withPeerSurface bool, sessions peer.Sessions, pr
 	})
 	if withPeerSurface {
 		svc.RegisterRoutes(mux)
-		peer.New(sessions, projects, peer.WithSettings(peer.Settings{AcceptActions: true}),
-			peer.WithOutbox(peer.NewOutbox(q, nil))).RegisterRoutes(mux)
+		opts := append([]peer.Option{peer.WithSettings(peer.Settings{AcceptActions: true}),
+			peer.WithOutbox(peer.NewOutbox(q, nil))}, extra...)
+		peer.New(sessions, projects, opts...).RegisterRoutes(mux)
 	} else {
 		// An older release: identity proof, no peer credential, no peer routes.
 		mux.HandleFunc("POST /api/auth/identity-proof", func(w http.ResponseWriter, r *http.Request) {

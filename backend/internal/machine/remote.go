@@ -172,6 +172,38 @@ func DoRemoteJSON(ctx context.Context, client *http.Client, peer RemotePeer, met
 	return nil
 }
 
+// OpenRemote is [FetchRemoteJSON] for a body too large to hold in memory: the
+// identity proof first, then a GET with the bearer. A 200 comes back open, for
+// the caller to read and close; any other status is a [*RemoteStatusError]
+// carrying at most maxErrorBytes of the body, so a caller that knows the
+// route's error shape can still decode a refusal.
+func OpenRemote(ctx context.Context, client *http.Client, peer RemotePeer, path string, maxErrorBytes int64) (*http.Response, error) {
+	if client == nil {
+		return nil, errors.New("remote machine HTTP client is unavailable")
+	}
+	if peer.IdentityKey == "" || peer.Token == "" {
+		return nil, errors.New("remote machine must be re-paired before it can be read")
+	}
+	if err := proveRemoteIdentity(ctx, client, peer.BaseURL, peer.MachineID, peer.IdentityKey); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, peer.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create remote request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+peer.Token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request %s: %w", path, err)
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
+	return nil, &RemoteStatusError{Status: resp.StatusCode, Body: raw}
+}
+
 // proveRemoteIdentity checks that the server at baseURL holds the signing key
 // pinned for machineID, by descriptor and then by a fresh signed challenge.
 func proveRemoteIdentity(ctx context.Context, client *http.Client, baseURL, machineID, identityKey string) error {
