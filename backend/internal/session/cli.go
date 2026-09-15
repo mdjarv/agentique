@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/allbin/agentkit/worktree"
 	claudecli "github.com/allbin/claudecli-go"
@@ -45,15 +47,31 @@ func ClaudeBaselineOptions() []claudecli.Option {
 //   - WithDisableSlashCommands drops the skill listing, which describes
 //     capabilities a persona with no Skill tool does not have.
 //
+// toolTimeout is how long the CLI waits on one MCP tool call before it gives
+// up (MCP_TOOL_TIMEOUT), and must sit above whatever bounds those tools on the
+// server side: a client that gives up first leaves the model believing a call
+// failed that may still be running. The CLI's own default is 60s. Zero leaves
+// that default.
+//
 // Verified against claude 2.1.270: a CLI started this way reports exactly its
 // MCP tools in its init event and calls them directly.
-func ClaudeContainedOptions() []claudecli.Option {
-	return []claudecli.Option{
+func ClaudeContainedOptions(toolTimeout time.Duration) []claudecli.Option {
+	opts := []claudecli.Option{
 		claudecli.WithBuiltinTools(""),
 		claudecli.WithStrictMCPConfig(),
 		claudecli.WithDisableSlashCommands(),
 	}
+	if toolTimeout > 0 {
+		opts = append(opts, claudecli.WithEnv(map[string]string{
+			mcpToolTimeoutEnv: strconv.FormatInt(toolTimeout.Milliseconds(), 10),
+		}))
+	}
+	return opts
 }
+
+// mcpToolTimeoutEnv is the Claude CLI's variable for its MCP tool-call timeout,
+// in milliseconds.
+const mcpToolTimeoutEnv = "MCP_TOOL_TIMEOUT"
 
 // BlockingRunner runs a single blocking Claude CLI invocation. Used by the
 // auto-title path — separate from the runtime.Manager-managed sessions.

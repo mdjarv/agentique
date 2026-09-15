@@ -1863,6 +1863,14 @@ offered Agent, Workflow, SendMessage, RemoteTrigger, the user's Drive connector
 and `AskUserQuestion`, which parked a turn for ten minutes. A contained start
 with no contained connector is refused, never downgraded.
 
+**A head turn waits only on the model and its verbs, and each is bounded.** A
+sessionless persona refuses a question or approval the moment it is raised.
+Each verb runs under `VerbBudget`, and the head CLI's `MCP_TOOL_TIMEOUT` is set
+above it (`HeadToolTimeout`), because the CLI's own 60s default would give up
+first and leave the model believing a still-running verb failed. A verb that
+writes and times out says its outcome is **unknown**, never that nothing
+happened: it may have created the session.
+
 **Uncontained means proposed, never performed.** The assistant's verb table
 (`internal/assistant`) carries a tier per verb, and the eight uncontained ones —
 merge, rebase, archive, delete, reclaim, dissolve, another session's model or

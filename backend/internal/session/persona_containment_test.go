@@ -106,12 +106,14 @@ func TestContainedConnectorSpawnsTheCLIWithNoToolsOfItsOwn(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args")
 	fake := filepath.Join(dir, "claude")
-	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > '" + argsFile + "'\nexit 1\n"
+	envFile := filepath.Join(dir, "env")
+	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > '" + argsFile + "'\nprintf '%s' \"$MCP_TOOL_TIMEOUT\" > '" +
+		envFile + "'\nexit 1\n"
 	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatalf("write fake cli: %v", err)
 	}
 
-	opts := append(ClaudeBaselineOptions(), ClaudeContainedOptions()...)
+	opts := append(ClaudeBaselineOptions(), ClaudeContainedOptions(2*time.Minute)...)
 	opts = append(opts, claudecli.WithBinaryPath(fake), claudecli.WithSkipVersionCheck(),
 		claudecli.WithInitTimeout(2*time.Second))
 	mgr := NewManager(nil, nil, nil, &paramsConnector{})
@@ -142,6 +144,9 @@ func TestContainedConnectorSpawnsTheCLIWithNoToolsOfItsOwn(t *testing.T) {
 	}
 	if !hasFlagValue(args, "--mcp-config", mcpConfig) {
 		t.Errorf("argv does not hand the MCP config over as its path. argv = %q", args)
+	}
+	if env, _ := os.ReadFile(envFile); string(env) != "120000" {
+		t.Errorf("MCP_TOOL_TIMEOUT = %q, want 120000: the CLI would give up on a tool call at its own 60s", env)
 	}
 }
 

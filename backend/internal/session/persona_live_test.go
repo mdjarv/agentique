@@ -39,7 +39,7 @@ func (s *LivePersonaSuite) SetupTest() {
 		claudeadapter.NewConnector(ClaudeBaselineOptions()...))
 	// Built the way serve builds it, for the same reason the ordinary one is.
 	s.mgr.SetContainedConnector(claudeadapter.NewConnector(
-		append(ClaudeBaselineOptions(), ClaudeContainedOptions()...)...))
+		append(ClaudeBaselineOptions(), ClaudeContainedOptions(2*time.Minute)...)...))
 }
 
 func (s *LivePersonaSuite) TearDownTest() {

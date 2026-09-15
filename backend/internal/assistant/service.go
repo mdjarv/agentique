@@ -126,8 +126,11 @@ type Service struct {
 	// memoryBudget bounds the memory briefing; [memoryBriefingBudget] unless a
 	// test shortens it.
 	memoryBudget time.Duration
-	actions      Actions
-	triager      Triager
+	// verbBudget bounds one verb the head calls; [VerbBudget] unless a test
+	// shortens it.
+	verbBudget time.Duration
+	actions    Actions
+	triager    Triager
 	// summarizer folds a day of the journal into one sentence. Nil means the
 	// journal is not folded at all — see [Service.Compact]: deleting rows nothing
 	// can account for is losing them.
@@ -272,6 +275,7 @@ func New(st Store, opts ...Option) (*Service, error) {
 		log:          slog.Default(),
 		now:          time.Now,
 		memoryBudget: memoryBriefingBudget,
+		verbBudget:   VerbBudget,
 		surfaces:     newSurfaceSet(),
 		stateBase:    make(map[string]outcomeBase),
 	}

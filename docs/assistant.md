@@ -420,6 +420,65 @@ text only. Everything a step quotes — an argument, a refusal, a fact — is sh
 as inert text, and nothing on the row acts except the operator's own verdict on
 a fact.
 
+## A turn waits on nothing it cannot have
+
+A head turn holds the conversation's one lock, and `headTurnBudget` (ten
+minutes) is its terminal bound. Anything that turn waits on and cannot get
+spends the whole budget. The operator then gets the generic failure note in
+place of their ask, and every message behind it waits too. So a turn waits on
+exactly two things, the model and its verbs, and each has its own bound.
+
+**What happened on 2026-09-15.** At 05:35 the operator asked for "an agentique
+prompt on review". The server log showed two `create_session` refusals, then
+nothing until `context deadline exceeded` at 05:45:14. The head CLI's own
+transcript (`~/.claude/projects/<assistant-head dir>/<session>.jsonl`) filled
+the gap. After `project-ambiguous` ("Agentique on zbook and Agentique"), the
+model called the CLI's native `AskUserQuestion`. A persona has no screen, the
+runtime's watchdog stands down while a question is pending, and `Query` waited
+for a completion until the budget cancelled it. No verb was slow. The steps
+recorder could not see this, because a native tool never passes
+`ToolHandler`.
+
+Four rules close it, each at the layer that owns it:
+
+- **No native tool.** The head is `Contained` (see "Security"), so
+  `AskUserQuestion`, plan mode and everything else that parks on a person is not
+  in its tool list. That is the fix. The three below hold even if a tool slips
+  through, or a CLI stops honouring the flag.
+- **A persona refuses what parks on a person, the moment it is raised.** The
+  sessionless persona (`internal/session/persona_runtime.go`) watches the
+  runtime's `PendingChangeEvent`. It cancels a question (it never answers one,
+  because an answer reads as the operator's choice) and denies an approval, and
+  logs each. `Query` also ends when the CLI reaches failed, done or stopped
+  mid-turn, instead of waiting for a completion a dead process cannot send.
+  This covers discussion personas too, which would otherwise park for
+  `discussionTurnTimeout`.
+- **Every verb has its own deadline.** `ToolHandler` runs the verb under
+  `VerbBudget` (90s: above a 45s summary with its locate, and above a paired
+  machine's mint plus create at two 10s requests). The verb runs on its own
+  goroutine with a context that ends at the deadline, so IO that honours it
+  stops. At the deadline the handler answers a refusal (`verb-timed-out:<verb>`,
+  logged through the one refusal path) and settles the step as failed with that
+  sentence. The words depend on the tier. A read says there is no answer. A
+  verb that writes says the outcome is **unknown**: it may have created the
+  session or delivered the prompt a moment before the deadline, so the head
+  is told not to say it did not happen and not to retry, but to look (sessions,
+  journal) first. A verb that answers late is logged with what it answered,
+  since for a write that line is the only record of whether it went through. A
+  caller that went away is not a timeout, and is not reported as one.
+- **The client waits longer than the verb.** The Claude CLI gives up on an HTTP
+  MCP tool call after 60s by default. It then tells the model "The operation
+  timed out." and the model moves on while the verb is still running, which is
+  the unknown-outcome problem with nobody told. Measured on 2.1.270 with a
+  stand-in server: 60.0s twice by default; `MCP_TOOL_TIMEOUT=20000` gave up at
+  20s; at 120000 and 150000 a 100s call answered. So serve builds the contained
+  connector with `ClaudeContainedOptions(assistant.HeadToolTimeout)`
+  (`VerbBudget` + 30s), which sets `MCP_TOOL_TIMEOUT`. The ordering holds by
+  construction rather than by the CLI's default.
+
+`headTurnBudget` stays the terminal bound. Deadlines on the parts are what keep
+it from being the thing that fires.
+
 ## Multi-machine
 
 One assistant per account, on whichever server enables it, and it works with

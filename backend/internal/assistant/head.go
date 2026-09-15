@@ -23,7 +23,10 @@ const headIdleTimeout = 30 * time.Minute
 //
 // Generous, because the head calls verbs and a verb can summarise a session,
 // and terminal rather than advisory: a turn that never returns holds the
-// conversation's one lock, so every later message waits behind it.
+// conversation's one lock, so every later message waits behind it. It is the
+// last bound, not the working one: each verb has its own ([VerbBudget]), and
+// nothing else a turn could wait on is allowed to exist (docs/assistant.md, "A
+// turn waits on nothing it cannot have").
 const headTurnBudget = 10 * time.Minute
 
 // headTailMessages is how much of the conversation goes into a fresh head's
@@ -76,10 +79,11 @@ type HeadRuntime interface {
 // expected to lose it.
 //
 // No tool list either, and for the same reason rather than by omission. The
-// head reaches the world through the verb table and nothing else, so the native
-// tools its provider's CLI would otherwise carry — a shell, a file writer, a
-// web fetcher — are denied where the subprocess is built, by the manager that
-// knows which provider it is spawning and what those tools are called. This
+// head reaches the world through the verb table and nothing else, so the tools
+// its provider's CLI would otherwise carry — a shell, a file writer, a web
+// fetcher, a question to a person nobody is there to be — are taken away where
+// the subprocess is built, by the manager that knows which provider it is
+// spawning (it starts contained: the verb endpoint is the whole tool set). This
 // package cannot name them: it is provider-neutral by construction, and a
 // containment claim spelled in a neutral vocabulary would be a claim nothing
 // enforces.

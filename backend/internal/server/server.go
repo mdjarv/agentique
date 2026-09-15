@@ -407,8 +407,10 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			claudeOpts = append(claudeOpts, claudecli.WithForwardSubagentText())
 		}
 		connector = claudeadapter.NewConnector(claudeOpts...)
+		// The only contained persona is the head, and its tools are the verb
+		// table, so the CLI waits on a tool call for as long as a verb may take.
 		containedConnector = claudeadapter.NewConnector(
-			append(slices.Clone(claudeOpts), session.ClaudeContainedOptions()...)...)
+			append(slices.Clone(claudeOpts), session.ClaudeContainedOptions(assistant.HeadToolTimeout)...)...)
 		runner = session.RealBlockingRunner()
 	}
 

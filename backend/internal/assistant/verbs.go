@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The verb table.
@@ -188,6 +189,40 @@ func (s *Service) Invoke(ctx context.Context, name string, args map[string]any) 
 	return verb.handler(ctx, args)
 }
 
+// VerbBudget bounds one verb the head calls.
+//
+// A head turn waits on two things, the model and its verbs, and it holds the
+// conversation's one lock while it does. A verb that never answers would take
+// the whole turn with it (headTurnBudget, ten minutes), and the operator would
+// get a generic failure note in place of their ask. So each verb gets its own
+// deadline, and running past it answers a refusal the head can say out loud
+// ([Service.ToolHandler]).
+//
+// Above the slowest verb that is working: a summary is bounded at 45s
+// (voice's summaryBudget) and waits on a locate before it; a paired machine's
+// create is a credential mint plus the call, two 10s requests. Well under
+// headTurnBudget, so a turn that meets one still has time to say so. And under
+// [HeadToolTimeout], so it is this deadline that answers and never the client's.
+const VerbBudget = 90 * time.Second
+
+// HeadToolTimeout is how long the head's MCP client must be willing to wait on
+// one verb before it gives up: [VerbBudget] and a margin for the answer to
+// travel back.
+//
+// The client giving up first is the failure this ordering exists to prevent.
+// The model reads "the operation timed out" and moves on while the verb is still
+// running, and may have created a session or sent a prompt it now believes did
+// not happen. The Claude CLI gives up on an HTTP MCP tool call after 60s unless
+// MCP_TOOL_TIMEOUT says otherwise (measured on 2.1.270: 60.0s twice by default,
+// 20s at 20000, a 100s call answered at 150000), which is under VerbBudget. So
+// serve sets that variable from this number on the contained connector, and the
+// relation holds by construction rather than by the CLI's default.
+const HeadToolTimeout = VerbBudget + 30*time.Second
+
+// errVerbTimedOut is what a verb that did not answer inside [VerbBudget] comes
+// back as, before [Service.refusalFor] turns it into words.
+var errVerbTimedOut = errors.New("the verb did not answer in time")
+
 // ToolHandler runs a verb for a head and answers with the payload to hand
 // back, always.
 //
@@ -205,7 +240,7 @@ func (s *Service) ToolHandler(ctx context.Context, name string, args map[string]
 	rec, step, recorded := s.beginVerbStep(name, args)
 	started := s.now()
 
-	payload, err := s.Invoke(ctx, name, args)
+	payload, err := s.invokeWithin(ctx, name, args)
 	failed := err != nil && !errors.Is(err, ErrUnknownVerb)
 	if err != nil {
 		payload = s.refusalFor(name, err)
@@ -223,17 +258,102 @@ func (s *Service) ToolHandler(ctx context.Context, name string, args map[string]
 	return payload
 }
 
+// verbAnswer is what one verb call came back with.
+type verbAnswer struct {
+	payload map[string]any
+	err     error
+}
+
+// invokeWithin runs one verb under [Service.verbBudget].
+//
+// The verb runs on its own goroutine with a context that ends at the deadline,
+// so IO that honours its context stops there; this answers at the deadline
+// whether or not the verb has noticed. A verb that answers anyway, later, is
+// logged with what it answered, because for a verb that writes that is the only
+// record of whether it went through.
+func (s *Service) invokeWithin(ctx context.Context, name string, args map[string]any) (map[string]any, error) {
+	verbCtx, cancel := context.WithTimeout(ctx, s.verbBudget)
+	done := make(chan verbAnswer, 1)
+	started := s.now()
+	go func() {
+		payload, err := s.Invoke(verbCtx, name, args)
+		done <- verbAnswer{payload, err}
+	}()
+
+	select {
+	case got := <-done:
+		cancel()
+		return got.payload, got.err
+	case <-verbCtx.Done():
+	}
+
+	// An answer that landed in the same instant is still an answer.
+	select {
+	case got := <-done:
+		cancel()
+		return got.payload, got.err
+	default:
+	}
+	cancel()
+	// The caller going away (the MCP request, the turn) is not this verb being
+	// slow, and there is nobody left to tell either way.
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	go s.logLateVerb(name, started, done)
+	return nil, errVerbTimedOut
+}
+
+// logLateVerb waits, boundedly, for a verb that ran past its deadline, and logs
+// what became of it.
+func (s *Service) logLateVerb(name string, started time.Time, done <-chan verbAnswer) {
+	timer := time.NewTimer(headTurnBudget)
+	defer timer.Stop()
+	select {
+	case got := <-done:
+		reason, _ := got.payload[reasonKey].(string)
+		s.log.Warn("assistant verb answered after its deadline", "verb", name,
+			"after", s.now().Sub(started).Round(time.Millisecond), "error", got.err, "refused", reason)
+	case <-timer.C:
+		s.log.Warn("assistant verb never answered", "verb", name, "after", s.now().Sub(started).Round(time.Second))
+	}
+}
+
 // refusalFor turns an Invoke error into something a head can read out.
 func (s *Service) refusalFor(name string, err error) map[string]any {
 	switch {
 	case errors.Is(err, ErrUnknownVerb):
 		return refuse("unknown-verb:"+name, fmt.Sprintf("There is no %q. Use only the tools you were "+
 			"given, and tell them plainly if what they asked for is not among them.", name))
+	case errors.Is(err, errVerbTimedOut):
+		return s.timedOutRefusal(name)
 	default:
 		s.log.Warn("assistant verb failed", "verb", name, "error", err)
 		return refuse("verb-failed:"+name, "That did not work. Say so plainly rather than guessing at "+
 			"what happened, and do not try it again without being asked.")
 	}
+}
+
+// timedOutRefusal is what a verb that ran past its deadline answers.
+//
+// A verb that only reads can say plainly that there is no answer. A verb that
+// writes cannot say that nothing happened, because it may have: a session
+// created, a prompt delivered, a proposal written, a moment before the deadline
+// or a moment after. Telling the operator it did not happen is how work gets
+// sent twice, or how an empty session is left behind by somebody told it was
+// never made. So its words say the outcome is unknown, and to look before
+// anything else.
+func (s *Service) timedOutRefusal(name string) map[string]any {
+	budget := s.verbBudget.Round(time.Second)
+	s.log.Warn("assistant verb timed out", "verb", name, "budget", budget)
+	if verb, ok := s.byName[name]; ok && verb.Tier == TierRead {
+		return refuse("verb-timed-out:"+name, fmt.Sprintf("%s did not answer within %s, so there is "+
+			"no answer to give. Say that plainly rather than guessing at what it would have said.", name, budget))
+	}
+	return refuse("verb-timed-out:"+name, fmt.Sprintf("%s did not answer within %s, and whether it went "+
+		"through is UNKNOWN: it may still have happened. Tell them exactly that. Do not say it did not "+
+		"happen, and do not try it again: look first — list their sessions or read the journal — and say "+
+		"what you find.", name, budget))
 }
 
 // refuse builds a refusal the reader will see and the log will keep.
