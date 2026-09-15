@@ -220,7 +220,8 @@ function FactChip({ fact }: { fact: AssistantStepFact }) {
           )}
           title={fact.text}
         >
-          {label && <span className="mr-1 text-muted-foreground-faint">{label}</span>}
+          {/* On a phone the label would be most of the chip; the popover says it. */}
+          {label && <span className="mr-1 text-muted-foreground-faint max-md:hidden">{label}</span>}
           {fact.text}
         </button>
       </PopoverTrigger>
