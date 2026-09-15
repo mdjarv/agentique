@@ -1875,7 +1875,10 @@ Each verb runs under `VerbBudget`, and the head CLI's `MCP_TOOL_TIMEOUT` is set
 above it (`HeadToolTimeout`), because the CLI's own 60s default would give up
 first and leave the model believing a still-running verb failed. A verb that
 writes and times out says its outcome is **unknown**, never that nothing
-happened: it may have created the session.
+happened: it may have created the session. So does a remote create or send that
+reached the paired machine and got no answer (`machine.UnansweredError`,
+classified once in `peerError`). The owner's dedupe does not span verb calls,
+so unknown must never invite a retry.
 
 **Uncontained means proposed, never performed.** The assistant's verb table
 (`internal/assistant`) carries a tier per verb, and the eight uncontained ones —

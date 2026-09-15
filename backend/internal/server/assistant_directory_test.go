@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/machine"
+	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/providers"
 	"github.com/mdjarv/agentique/backend/internal/session"
 )
@@ -164,5 +167,27 @@ func TestDisplayNameNeverSpeaksAnID(t *testing.T) {
 	}
 	if got := displayName(assistant.SessionRow{ID: "8f1c-…"}); strings.Contains(got, "8f1c") {
 		t.Errorf("displayName = %q, want no id read aloud", got)
+	}
+}
+
+// A peer request that reached the owner and got no answer is the one place a
+// create and a send are told apart from a failure: it becomes an unknown
+// outcome naming the machine. An owner's refusal and a plain error stay what
+// they were.
+func TestPeerErrorCallsAnUnansweredRequestUnknown(t *testing.T) {
+	t.Parallel()
+	unanswered := &machine.UnansweredError{Path: "/api/peer/sessions", Err: errors.New("i/o timeout")}
+	var unknown *assistant.OutcomeUnknownError
+	if err := peerError(fmt.Errorf("create: %w", unanswered), "zbook"); !errors.As(err, &unknown) || unknown.Machine != "zbook" {
+		t.Errorf("peerError(unanswered) = %v, want an unknown outcome on zbook", err)
+	}
+
+	refusal := &peerlink.RefusalError{Status: 403, Reason: "actions-off", Message: "does not accept work"}
+	if err := peerError(refusal, "zbook"); errors.As(err, &unknown) {
+		t.Errorf("peerError(refusal) = %v: the owner answered no", err)
+	}
+	plain := errors.New("dial tcp: connection refused")
+	if err := peerError(plain, "zbook"); errors.As(err, &unknown) {
+		t.Errorf("peerError(%v) = %v: nothing left this machine", plain, err)
 	}
 }

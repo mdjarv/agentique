@@ -49,6 +49,42 @@ type RefusedError struct {
 
 func (e *RefusedError) Error() string { return e.Reason + ": " + e.Say }
 
+// OutcomeUnknownError is an action that was sent and got no answer: another
+// machine had the request and did not say what it did with it.
+//
+// It is not a failure, and must never read as one. The owner may have created
+// the session or delivered the prompt, and a head told "that did not work"
+// tries again: the owner dedupes a retried create only within one call (the
+// request id is minted per create_session) and only once the first has
+// finished, so a second ask is a second session. The words it becomes are
+// [unknownOutcomeWords], the same ones a verb that ran past its deadline says.
+type OutcomeUnknownError struct {
+	// Machine names where it was sent, for the sentence.
+	Machine string
+	Err     error
+}
+
+func (e *OutcomeUnknownError) Error() string {
+	return fmt.Sprintf("%s did not answer, so the outcome is unknown: %v", e.Machine, e.Err)
+}
+
+func (e *OutcomeUnknownError) Unwrap() error { return e.Err }
+
+// outcomeUnknown returns the [OutcomeUnknownError] in err, if any.
+func outcomeUnknown(err error) (*OutcomeUnknownError, bool) {
+	var unknown *OutcomeUnknownError
+	return unknown, errors.As(err, &unknown)
+}
+
+// unknownOutcomeWords is the one sentence for an action whose outcome is not
+// known, whatever made it so: a verb past its deadline, a paired machine that
+// had the request and did not answer. what is the clause saying which.
+func unknownOutcomeWords(what string) string {
+	return what + ", and whether it went through is UNKNOWN: it may still have happened. Tell them " +
+		"exactly that. Do not say it did not happen, and do not try it again: look first — list their " +
+		"sessions or read the journal — and say what you find."
+}
+
 // refusedSay returns the relayable sentence of a [RefusedError] in err, if any.
 func refusedSay(err error) (string, string, bool) {
 	var refused *RefusedError

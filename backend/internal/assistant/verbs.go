@@ -91,6 +91,10 @@ var policyParam = Param{
 		"invent one: a name that is not theirs is refused, and nothing happens.",
 }
 
+// reasonDispatchUnknown is a send another machine had and did not answer.
+// Named because a create that dispatched reads it back to choose its words.
+const reasonDispatchUnknown = "dispatch-outcome-unknown"
+
 // reasonKey carries a refusal's machine-readable cause from the verb that
 // raised it to [Service.ToolHandler], which logs it and strips it. It never
 // reaches a model.
@@ -350,10 +354,8 @@ func (s *Service) timedOutRefusal(name string) map[string]any {
 		return refuse("verb-timed-out:"+name, fmt.Sprintf("%s did not answer within %s, so there is "+
 			"no answer to give. Say that plainly rather than guessing at what it would have said.", name, budget))
 	}
-	return refuse("verb-timed-out:"+name, fmt.Sprintf("%s did not answer within %s, and whether it went "+
-		"through is UNKNOWN: it may still have happened. Tell them exactly that. Do not say it did not "+
-		"happen, and do not try it again: look first — list their sessions or read the journal — and say "+
-		"what you find.", name, budget))
+	return refuse("verb-timed-out:"+name,
+		unknownOutcomeWords(fmt.Sprintf("%s did not answer within %s", name, budget)))
 }
 
 // refuse builds a refusal the reader will see and the log will keep.
@@ -880,6 +882,11 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		if errors.As(err, &unknown) {
 			return refuse("unknown-model", unknown.Error()), nil
 		}
+		if sent, ok := outcomeUnknown(err); ok {
+			s.log.Warn("assistant session creation outcome unknown", "project", project.ID, "error", err)
+			return refuse("create-outcome-unknown", unknownOutcomeWords(fmt.Sprintf("%s had the request to "+
+				"create a session in %s and did not answer", sent.Machine, project.DisplayName()))), nil
+		}
 		if reason, say, ok := refusedSay(err); ok {
 			return refuse("create-refused:"+reason, fmt.Sprintf("Nothing was created in %s: %s. Say so "+
 				"plainly.", projectWhere(project), say)), nil
@@ -944,6 +951,11 @@ func (s *Service) verbCreateSession(ctx context.Context, args map[string]any) (m
 		out[reasonKey] = "created-but-not-sent:" + inner
 		out["error"] = fmt.Sprintf("The session was created in %s, but the prompt did NOT go. Tell "+
 			"them both, in that order. %s", project.DisplayName(), refusal)
+		if inner == reasonDispatchUnknown {
+			// Not "did not go": it may have. Saying the session is empty is how the
+			// same prompt gets sent to it a second time.
+			out["error"] = fmt.Sprintf("The session was created in %s. %s", project.DisplayName(), refusal)
+		}
 		return out, nil
 	}
 
@@ -1019,6 +1031,11 @@ func (s *Service) dispatchPrompt(ctx context.Context, row SessionRow, prompt str
 	}
 
 	delivery, err := s.dispatch(ctx, row.ID, prompt, policy.ID)
+	if sent, ok := outcomeUnknown(err); ok {
+		s.log.Warn("assistant dispatch outcome unknown", "session", row.ID, "machine", row.MachineID, "error", err)
+		return refuse(reasonDispatchUnknown, unknownOutcomeWords(fmt.Sprintf("%s had the prompt for %s and "+
+			"did not answer", sent.Machine, DisplayFor(row))))
+	}
 	if err != nil {
 		s.log.Warn("assistant dispatch failed", "session", row.ID, "machine", row.MachineID, "error", err)
 		if reason, say, ok := refusedSay(err); ok {

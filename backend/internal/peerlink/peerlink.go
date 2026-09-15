@@ -257,6 +257,13 @@ func (c *Client) credential(ctx context.Context, machineID, stale string) (store
 	bearer := machine.RemotePeer{BaseURL: m.BaseUrl, MachineID: m.MachineID, IdentityKey: m.IdentityKey, Token: m.Token}
 	if err := machine.DoRemoteJSON(ctx, c.http, bearer, http.MethodPost, "/api/auth/peer-credential",
 		req, maxSmallBytes, &minted); err != nil {
+		// The mint is not the action it is for: whatever became of it, the
+		// create or send behind it never left, so an unanswered mint is a plain
+		// failure and must not read as an action whose outcome is unknown.
+		var unanswered *machine.UnansweredError
+		if errors.As(err, &unanswered) {
+			err = unanswered.Err
+		}
 		return m, "", fmt.Errorf("mint peer credential on %s: %w", machineID, classify(err))
 	}
 	if minted.Token == "" {

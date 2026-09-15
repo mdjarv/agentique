@@ -76,9 +76,18 @@ type owner struct {
 	key     string
 	bearer  string
 	mints   atomic.Int32
+	// mintHold is how long a credential mint waits before it is served.
+	mintHold atomic.Int64
 }
 
 func newOwner(t *testing.T, withPeerSurface bool) *owner {
+	t.Helper()
+	return newOwnerWith(t, withPeerSurface, &ownerSessions{}, noProjects{})
+}
+
+// newOwnerWith is newOwner with the session service and project list the peer
+// handler acts on.
+func newOwnerWith(t *testing.T, withPeerSurface bool, sessions peer.Sessions, projects peer.Projects) *owner {
 	t.Helper()
 	db, q := openDB(t)
 	// The session the fake service describes exists as a row too, because the
@@ -116,7 +125,7 @@ func newOwner(t *testing.T, withPeerSurface bool) *owner {
 	})
 	if withPeerSurface {
 		svc.RegisterRoutes(mux)
-		peer.New(&ownerSessions{}, noProjects{}, peer.WithSettings(peer.Settings{AcceptActions: true}),
+		peer.New(sessions, projects, peer.WithSettings(peer.Settings{AcceptActions: true}),
 			peer.WithOutbox(peer.NewOutbox(q, nil))).RegisterRoutes(mux)
 	} else {
 		// An older release: identity proof, no peer credential, no peer routes.
@@ -132,6 +141,7 @@ func newOwner(t *testing.T, withPeerSurface bool) *owner {
 	counting := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/auth/peer-credential" {
 			o.mints.Add(1)
+			time.Sleep(time.Duration(o.mintHold.Load()))
 		}
 		mux.ServeHTTP(w, r)
 	})
@@ -238,5 +248,116 @@ func TestClientNeedsAPairing(t *testing.T) {
 	_, err := New(o.server.Client(), catalog).List(context.Background(), ownerMachineID)
 	if !errors.Is(err, ErrNotPaired) {
 		t.Fatalf("err = %v, want ErrNotPaired", err)
+	}
+}
+
+// slowCreates is an owner's session service whose create takes as long as the
+// test says and then completes, whatever became of the request that asked.
+type slowCreates struct {
+	ownerSessions
+	hold atomic.Int64
+
+	mu        sync.Mutex
+	keys      []string
+	completed int
+}
+
+func (s *slowCreates) CreateSession(_ context.Context, p session.CreateSessionParams) (session.CreateSessionResult, error) {
+	time.Sleep(time.Duration(s.hold.Load()))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keys = append(s.keys, p.IdempotencyKey)
+	s.completed++
+	return session.CreateSessionResult{SessionID: "20000000-0000-4000-8000-0000000000d1", Name: "Created"}, nil
+}
+
+func (s *slowCreates) snapshot() ([]string, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.keys...), s.completed
+}
+
+type oneProject struct{}
+
+func (oneProject) ListProjects(context.Context) ([]store.Project, error) {
+	return []store.Project{{ID: remoteProject, Name: "seisiun", Slug: "seisiun"}}, nil
+}
+
+// clientWithTimeout is the owner's test client with its own deadline, the way
+// the acting server's machine client has one.
+func clientWithTimeout(o *owner, d time.Duration) *http.Client {
+	client := *o.server.Client()
+	client.Timeout = d
+	return &client
+}
+
+// A create the owner had and did not answer in time is not a failed create:
+// it is unanswered, because the owner goes on to make the session. And the
+// retry that reuses the request id reaches the owner under the same
+// idempotency key, which is what the owner's session service dedupes on once
+// the first create has finished.
+func TestAnUnansweredCreateIsUnansweredAndItsRetryCarriesTheSameKey(t *testing.T) {
+	sessions := &slowCreates{}
+	o := newOwnerWith(t, true, sessions, oneProject{})
+	catalog := actingCatalog(t, o)
+	ctx := context.Background()
+	req := peer.CreateRequest{ProjectID: remoteProject, RequestID: "request-1"}
+
+	// Mint first, at an ordinary pace, so the deadline below is the create's.
+	if _, err := New(clientWithTimeout(o, 5*time.Second), catalog).List(ctx, ownerMachineID); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	sessions.hold.Store(int64(400 * time.Millisecond))
+	_, err := New(clientWithTimeout(o, 150*time.Millisecond), catalog).Create(ctx, ownerMachineID, req)
+	var unanswered *machine.UnansweredError
+	if !errors.As(err, &unanswered) {
+		t.Fatalf("create = %v, want it unanswered: the owner had the request", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, completed := sessions.snapshot(); completed == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the owner never finished the create it was sent")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	sessions.hold.Store(0)
+	created, err := New(clientWithTimeout(o, 5*time.Second), catalog).Create(ctx, ownerMachineID, req)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if created.Session.ID == "" {
+		t.Fatalf("retry = %+v, want the session", created)
+	}
+	keys, _ := sessions.snapshot()
+	if len(keys) != 2 || keys[0] == "" || keys[0] != keys[1] {
+		t.Errorf("idempotency keys = %q, want the same non-empty key twice", keys)
+	}
+}
+
+// A mint that goes unanswered is a plain failure: the create behind it never
+// left, so it must not read as a create whose outcome is unknown.
+func TestAnUnansweredMintIsNotAnUnansweredAction(t *testing.T) {
+	sessions := &slowCreates{}
+	o := newOwnerWith(t, true, sessions, oneProject{})
+	catalog := actingCatalog(t, o)
+	o.mintHold.Store(int64(400 * time.Millisecond))
+
+	_, err := New(clientWithTimeout(o, 150*time.Millisecond), catalog).Create(context.Background(), ownerMachineID,
+		peer.CreateRequest{ProjectID: remoteProject, RequestID: "request-2"})
+	if err == nil {
+		t.Fatal("create succeeded through a mint that timed out")
+	}
+	var unanswered *machine.UnansweredError
+	if errors.As(err, &unanswered) {
+		t.Errorf("create = %v: an unanswered mint reads as an unanswered create", err)
+	}
+	if _, completed := sessions.snapshot(); completed != 0 {
+		t.Errorf("the owner created %d sessions behind a mint that never finished", completed)
 	}
 }

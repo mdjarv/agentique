@@ -479,6 +479,30 @@ Four rules close it, each at the layer that owns it:
   context detached from the call, and answers "started" at once. The pass's
   `compaction` entry is the result, which the head reads as news. Seven days
   then folded in about 140s after a 0ms answer.
+- **A paired machine that had the request and did not answer is the same
+  unknown.** A remote `create_session` or `run_prompt` that reached the owner
+  and then timed out, reset, or answered 200 with a body that never arrived may
+  have done its work. The owner goes on creating after the acting side's 10s
+  client gives up. So `machine.DoRemoteJSON` records whether the request's
+  headers were written (`httptrace`), and a failure after that is a
+  `machine.UnansweredError`. `peerError`, the one classifier both the create and
+  the send pass through, turns it into `assistant.OutcomeUnknownError`, and the
+  verbs speak it with the same `unknownOutcomeWords` the deadline path uses. An
+  owner's refusal (a status it answered with) and anything that failed before the
+  request left stay definite failures: the identity proof, a refused dial, and
+  the credential mint, which `peerlink` strips of the unanswered mark because the
+  action behind it never left. A created session whose prompt went unanswered is
+  "created, and whether the prompt reached it is unknown", never "the prompt did
+  not go".
+
+  The retry this must not invite is not safe. The owner dedupes a create on
+  credential plus request id (`peer/handler.go`, `IdempotencyKey`), but
+  `createRemote` mints the request id per call, so **the dedupe does not span verb
+  calls**. Even within one id, `session.Service` caches the result only once the
+  first create has finished, so a repeat that arrives while it is still being
+  made is a second session. Not yet covered: a remote *proposal* action
+  (`routedActions.do`: merge, rebase, archive, delete, reclaim) still reports an
+  unanswered request as a failure.
 - **The client waits longer than the verb.** The Claude CLI gives up on an HTTP
   MCP tool call after 60s by default. It then tells the model "The operation
   timed out." and the model moves on while the verb is still running, which is
