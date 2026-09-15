@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -30,5 +31,32 @@ func TestPreambleCarriesReaperMarker(t *testing.T) {
 	persona := buildPersonaPreamble("", "")
 	if !strings.Contains(persona, procctl.CLIProcessMarker) {
 		t.Errorf("buildPersonaPreamble output missing reaper marker %q", procctl.CLIProcessMarker)
+	}
+}
+
+// A persona's preamble is written by its caller, and the assistant's head wrote
+// one without the marker, so its CLI was invisible to the reaper. The manager
+// adds the marker to whatever it is given — once.
+func TestPersonaRuntimeCarriesReaperMarker(t *testing.T) {
+	t.Parallel()
+	for _, preamble := range []string{"", "You are the assistant to a developer.", buildPersonaPreamble("", "")} {
+		conn := &paramsConnector{}
+		mgr := NewManager(nil, nil, nil, &paramsConnector{})
+		mgr.SetPersonaConnector(PersonaToolsNone, conn)
+		rt, err := mgr.StartPersonaRuntime(context.Background(),
+			PersonaRuntimeParams{Preamble: preamble, WorkDir: t.TempDir(), Tools: PersonaToolsNone})
+		if err != nil {
+			t.Fatalf("start persona: %v", err)
+		}
+		_ = rt.Close()
+
+		params, _ := conn.last()
+		if n := strings.Count(params.Preamble, procctl.CLIProcessMarker); n != 1 {
+			t.Errorf("preamble %q reached the CLI with the reaper marker %d times, want once: %q",
+				preamble, n, params.Preamble)
+		}
+		if !strings.Contains(params.Preamble, preamble) {
+			t.Errorf("the caller's preamble %q did not survive: %q", preamble, params.Preamble)
+		}
 	}
 }

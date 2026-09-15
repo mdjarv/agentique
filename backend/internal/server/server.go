@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -382,12 +383,21 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	}
 
 	var connector runtime.CLIConnector
+	// personaConnectors are the routes a sessionless persona is spawned
+	// through, one per tool set: the same claude options every session gets,
+	// plus the ones that take away every tool the set does not name. Their own
+	// connectors rather than a per-call flag, because agentkit carries claudecli
+	// options on the connector (claudeadapter.NewConnector's defaults).
+	personaConnectors := map[session.PersonaTools]runtime.CLIConnector{}
 	var runner session.BlockingRunner
 	var testConnector *testmode.Connector
 
 	if cfg.TestMode {
 		testConnector = testmode.NewConnector()
 		connector = testConnector
+		// The mock runs no tools at all, so it is as contained as a route gets.
+		personaConnectors[session.PersonaToolsNone] = testConnector
+		personaConnectors[session.PersonaToolsWeb] = testConnector
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
@@ -404,6 +414,14 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			claudeOpts = append(claudeOpts, claudecli.WithForwardSubagentText())
 		}
 		connector = claudeadapter.NewConnector(claudeOpts...)
+		// The only persona holding no native tool is the head, and its tools
+		// are the verb table, so that CLI waits on a tool call for as long as a
+		// verb may take. A web persona is handed no MCP tools, so it keeps the
+		// CLI's own timeout.
+		personaConnectors[session.PersonaToolsNone] = claudeadapter.NewConnector(
+			append(slices.Clone(claudeOpts), session.ClaudePersonaOptions(session.PersonaToolsNone, assistant.HeadToolTimeout)...)...)
+		personaConnectors[session.PersonaToolsWeb] = claudeadapter.NewConnector(
+			append(slices.Clone(claudeOpts), session.ClaudePersonaOptions(session.PersonaToolsWeb, 0)...)...)
 		runner = session.RealBlockingRunner()
 	}
 
@@ -441,6 +459,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		accountInspectors["claude"] = ai
 	}
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
+	for tools, conn := range personaConnectors {
+		mgr.SetPersonaConnector(tools, conn)
+	}
 	if !cfg.TestMode {
 		codexConnector := codexadapter.NewConnector()
 		mgr.SetProviderConnector("codex", codexConnector)

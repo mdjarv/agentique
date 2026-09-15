@@ -2,13 +2,16 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/allbin/agentkit/runtime"
 	"github.com/google/uuid"
+	"github.com/mdjarv/agentique/backend/internal/procctl"
 )
 
 // personaRuntime drives one discussion persona's turns, abstracting how the
@@ -72,10 +75,16 @@ func (d *dbSessionPersona) Close() error { return nil }
 // Session's permission pump (which is why it is created through runtime.Manager,
 // not a bare connector.Connect: the claude adapter ignores ConnectParams.AutoApprove,
 // so the pump is the only thing that enforces it).
+//
+// Nobody is at a screen for a persona, so a turn waits on the model and on its
+// tools and on nothing else. A question the model asks through the CLI, or an
+// approval that parks, is refused the moment it is raised (refusePending), and a
+// CLI that ends mid-turn ends the Query with it. Either one left alone waits out
+// the caller's whole budget on something that cannot arrive: on 2026-09-15 the
+// assistant's head called AskUserQuestion and spent its ten minutes that way.
 type sessionlessPersona struct {
-	id   string
-	rt   *runtime.Manager
-	sess *runtime.Session
+	id string
+	rt *runtime.Manager
 
 	// onText, when set, receives assistant text deltas as they stream. Fixed at
 	// construction and never written afterwards, so it needs no lock.
@@ -85,19 +94,38 @@ type sessionlessPersona struct {
 	// "" when the provider withheld the text. Fixed at construction, like onText.
 	onThought func(string)
 
-	// done is the per-turn delivery channel for the turn-complete event, swapped
-	// in by Query and read by onEvent. Guarded by mu.
-	mu   sync.Mutex
-	done chan runtime.TurnCompletedEvent
+	mu sync.Mutex
+	// sess is set once the runtime has created the session. Guarded by mu,
+	// because the runtime can broadcast before Create has returned it.
+	sess *runtime.Session
+	// done is the per-turn delivery channel, swapped in by Query and read by
+	// onEvent. Guarded by mu.
+	done chan personaTurnEnd
+	// tools is what the CLI said it offers, from its init event, and inited
+	// whether that event has arrived. Guarded by mu.
+	tools  []string
+	inited bool
 }
 
-// onEvent is the runtime broadcast hook. It forwards the turn-complete event to
-// the in-flight Query (if any), text deltas to onText and the persona's own
-// thinking blocks to onThought when a caller asked for them; everything else
-// (tool events, state changes) is ignored — a
-// discussion contribution is mirrored to the channel timeline once, on
-// completion, exactly like recordContribution does today. Called synchronously
-// from a runtime goroutine, so it must not block.
+// personaTurnEnd is how one turn ended: its reply, or why there is none.
+type personaTurnEnd struct {
+	text string
+	err  error
+}
+
+// personaNobodyToAsk is what a persona's CLI is told when it asks a person for
+// something. It reaches the model as the tool's result, so it says what to do
+// instead.
+const personaNobodyToAsk = "Nobody can answer this here: there is no screen and no one to approve " +
+	"or choose. Ask your question in your reply instead, as plain text, and stop there."
+
+// onEvent is the runtime broadcast hook. It forwards the turn's end to the
+// in-flight Query (if any), text deltas to onText and the persona's own
+// thinking blocks to onThought when a caller asked for them, and refuses
+// anything that parks on a person. Everything else is ignored — a discussion
+// contribution is mirrored to the channel timeline once, on completion, exactly
+// like recordContribution does today. Called synchronously from a runtime
+// goroutine, so it must not block.
 func (p *sessionlessPersona) onEvent(_ context.Context, e runtime.Event) {
 	// Streaming is opt-in per persona: a discussion contribution is whole, and
 	// only a caller that renders a reply as it arrives (the assistant's thread)
@@ -116,10 +144,39 @@ func (p *sessionlessPersona) onEvent(_ context.Context, e runtime.Event) {
 			return
 		}
 	}
-	tc, ok := e.(runtime.TurnCompletedEvent)
-	if !ok {
-		return
+
+	switch ev := e.(type) {
+	case runtime.SessionInitEvent:
+		p.mu.Lock()
+		p.tools = append([]string(nil), ev.Tools...)
+		p.inited = true
+		p.mu.Unlock()
+		// What a persona can call is a claim its caller makes; the log is where
+		// it can be checked afterwards.
+		slog.Info("persona runtime started", "persona", p.id, "tools", ev.Tools)
+	case runtime.PendingChangeEvent:
+		if ev.HasQuestion || ev.HasApproval {
+			// SubmitAnswer broadcasts, on this same hook: answering off the
+			// broadcasting goroutine is what keeps that from re-entering it.
+			go p.refusePending()
+		}
+	case runtime.StateChangeEvent:
+		if personaEnded(ev.To) {
+			p.endTurn(personaTurnEnd{err: fmt.Errorf("the persona's CLI %s before its turn completed", ev.To)})
+		}
+	case runtime.TurnCompletedEvent:
+		p.endTurn(personaTurnEnd{text: ev.Text})
 	}
+}
+
+// personaEnded reports whether a runtime state means no turn can complete.
+func personaEnded(st runtime.State) bool {
+	return st == runtime.StateFailed || st == runtime.StateDone || st == runtime.StateStopped
+}
+
+// endTurn delivers a turn's end to the Query waiting on it, if any. The first
+// end wins: a completion followed by the CLI exiting is a completed turn.
+func (p *sessionlessPersona) endTurn(end personaTurnEnd) {
 	p.mu.Lock()
 	ch := p.done
 	p.mu.Unlock()
@@ -127,29 +184,82 @@ func (p *sessionlessPersona) onEvent(_ context.Context, e runtime.Event) {
 		return
 	}
 	select {
-	case ch <- tc:
+	case ch <- end:
 	default:
 	}
 }
 
+// refusePending answers, with a no, everything the CLI is waiting on a person
+// for.
+//
+// A question is cancelled rather than answered: an answer would be read as the
+// person's choice, and nobody made one. An approval cannot park on a fullAuto
+// persona today, and is refused all the same, because the rule is that nothing
+// on a persona waits for a person — not that one kind of thing does not.
+func (p *sessionlessPersona) refusePending() {
+	p.mu.Lock()
+	sess := p.sess
+	p.mu.Unlock()
+	if sess == nil {
+		return
+	}
+	for {
+		approval, question := sess.PendingState()
+		if approval == nil && question == nil {
+			return
+		}
+		if question != nil {
+			slog.Info("persona question refused: nobody can answer on a persona", "persona", p.id)
+			if err := sess.SubmitAnswer(question.ID, nil); err != nil && !errors.Is(err, runtime.ErrPendingNotFound) {
+				slog.Warn("persona question not refused", "persona", p.id, "error", err)
+				return
+			}
+		}
+		if approval != nil {
+			slog.Info("persona approval refused: nobody can approve on a persona", "persona", p.id,
+				"tool", approval.ToolName)
+			err := sess.SubmitApproval(approval.ID, runtime.Decision{Allow: false, DenyMessage: personaNobodyToAsk})
+			if err != nil && !errors.Is(err, runtime.ErrPendingNotFound) {
+				slog.Warn("persona approval not refused", "persona", p.id, "error", err)
+				return
+			}
+		}
+	}
+}
+
+// offeredTools is the tool list the CLI reported at init, and whether it has
+// reported one yet.
+func (p *sessionlessPersona) offeredTools() ([]string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.tools...), p.inited
+}
+
 func (p *sessionlessPersona) Query(ctx context.Context, prompt string) (string, error) {
-	done := make(chan runtime.TurnCompletedEvent, 1)
+	done := make(chan personaTurnEnd, 1)
 	p.mu.Lock()
 	p.done = done
+	sess := p.sess
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
 		p.done = nil
 		p.mu.Unlock()
 	}()
+	if sess == nil {
+		return "", errors.New("query: the persona has no runtime session")
+	}
 
-	if err := p.sess.Query(ctx, prompt); err != nil {
+	if err := sess.Query(ctx, prompt); err != nil {
 		return "", fmt.Errorf("query: %w", err)
 	}
 
 	select {
-	case tc := <-done:
-		return strings.TrimSpace(tc.Text), nil
+	case end := <-done:
+		if end.err != nil {
+			return "", end.err
+		}
+		return strings.TrimSpace(end.text), nil
 	case <-time.After(discussionTurnTimeout):
 		return "", fmt.Errorf("turn timed out after %s", discussionTurnTimeout)
 	case <-ctx.Done():
@@ -186,16 +296,22 @@ type PersonaRuntimeParams struct {
 	// and never inline: /proc/<pid>/cmdline is world-readable.
 	MCPConfigs []string
 
-	// DisallowedTools are provider-native tool names this persona must not
-	// have. Empty leaves the CLI's own default set.
+	// Tools is what the persona holds besides its MCPConfigs, and every
+	// sessionless persona names one: the zero value is refused. It goes through
+	// the connector registered for that set with [Manager.SetPersonaConnector],
+	// and a start with no connector for its set is refused rather than served
+	// by the ordinary one, whose CLI carries everything it has.
 	//
 	// It matters because a persona runs fullAuto — the approval pump
 	// auto-allows everything, by design, since there is no screen to ask — so
-	// the tools it holds are the tools it can use without anybody agreeing.
-	// A persona whose whole job is to reach the world through its MCP tools
-	// names the native ones here, and the names are the provider's: this is
-	// claude-only, like the rest of the sessionless path.
-	DisallowedTools []string
+	// the tools it holds are the tools it can use without anybody agreeing. A
+	// set is an allowlist, never a list of names to deny: the CLI adds tools
+	// between releases, and a deny list written against one release is out of
+	// date on the next. The head's said Task and Bash while the CLI was offering
+	// it Agent, Workflow, SendMessage, RemoteTrigger, Artifact, the user's
+	// Google Drive connector and AskUserQuestion, which is the one that hung a
+	// turn.
+	Tools PersonaTools
 
 	// OnText receives assistant text deltas as the reply streams. Optional, and
 	// opting in turns on the provider's partial messages, which is what emits
@@ -206,6 +322,55 @@ type PersonaRuntimeParams struct {
 	// provider sends it encrypted (Claude does). Optional. Called from a runtime
 	// goroutine, so it must not block.
 	OnThought func(text string)
+}
+
+// PersonaTools names the provider-native tools a sessionless persona holds on
+// top of its MCP configs. A closed set: a persona that needs something else is
+// a new member with its own reason, never a caller-supplied list.
+type PersonaTools string
+
+const (
+	// PersonaToolsNone is no native tool at all, so the persona's MCP configs
+	// are its whole tool set. The assistant's head: the verb table is how it
+	// reaches the world, and nothing else may be.
+	PersonaToolsNone PersonaTools = "none"
+	// PersonaToolsWeb is the two tools that read the web, WebSearch and
+	// WebFetch, and nothing that writes, runs a command, spawns a subagent or
+	// asks a person. A web-only discussion persona: it reads arbitrary pages,
+	// so a prompt-injected page must find nothing to act with. It writes
+	// nothing either — its scratch directory is only somewhere to stand.
+	PersonaToolsWeb PersonaTools = "web"
+)
+
+// builtinTools is the CLI's --tools value for a set, "" meaning none.
+func (t PersonaTools) builtinTools() (string, bool) {
+	switch t {
+	case PersonaToolsNone:
+		return "", true
+	case PersonaToolsWeb:
+		return "WebSearch,WebFetch", true
+	}
+	return "", false
+}
+
+// withReaperMarker returns preamble carrying procctl.CLIProcessMarker, adding
+// one sentence at the front when it does not already.
+//
+// The orphan reaper recognises an agentique CLI by that marker in its
+// --append-system-prompt value and by nothing else, so a persona whose caller
+// wrote its own preamble was invisible to it: the assistant's head never
+// carried the marker, and a head orphaned by a server crash was never reaped.
+// The manager owns the process lifecycle, so the guarantee lives here rather
+// than in every caller's prompt.
+func withReaperMarker(preamble string) string {
+	if strings.Contains(preamble, procctl.CLIProcessMarker) {
+		return preamble
+	}
+	line := "You are " + procctl.CLIProcessMarker + "."
+	if preamble == "" {
+		return line
+	}
+	return line + "\n\n" + preamble
 }
 
 // StartPersonaRuntime starts a sessionless web-only persona: a raw runtime CLI
@@ -220,24 +385,32 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	}
 	pr := &sessionlessPersona{id: id, rt: m.rt, onText: p.OnText, onThought: p.OnThought}
 
-	// Serialize the routing handshake under routeMu — see Create. The default
-	// connector is claude (only "codex" is registered as an alternate), so
-	// hinting "claude" falls through to the default. pop() keeps the capture
-	// buffer balanced against concurrent DB-session creates even though a
-	// sessionless persona never needs direct CLI access.
+	// Checked before anything is spawned: a persona that named no set, or a set
+	// with no route, does not start — there is no uncontained fallback.
+	if _, known := p.Tools.builtinTools(); !known {
+		return nil, fmt.Errorf("start persona runtime: tool set %q is not one a persona can hold", p.Tools)
+	}
+	if !m.connWrap.hasPersona(p.Tools) {
+		return nil, fmt.Errorf("start persona runtime (%s): %w", p.Tools, errNoPersonaConnector)
+	}
+
+	// Serialize the routing handshake under routeMu — see Create. A persona is
+	// claude-only and routes by its tool set, never through the default
+	// connector. pop() keeps the capture buffer balanced against concurrent
+	// DB-session creates even though a sessionless persona never needs direct
+	// CLI access.
 	m.routeMu.Lock()
-	m.connWrap.hintNext("claude")
+	m.connWrap.hintPersona(p.Tools)
 	// Detached context: the CLI process lifetime is independent of the request
 	// ctx — see the comment in Create.
 	rtSess, err := m.rt.Create(context.Background(), runtime.CreateParams{
-		SessionID:       id,
-		WorkDir:         p.WorkDir,
-		Preamble:        p.Preamble,
-		Model:           p.Model,
-		AutoApprove:     runtime.AutoApproveAll,
-		Effort:          resolveEffort(p.Effort),
-		MCPConfigs:      p.MCPConfigs,
-		DisallowedTools: p.DisallowedTools,
+		SessionID:   id,
+		WorkDir:     p.WorkDir,
+		Preamble:    withReaperMarker(p.Preamble),
+		Model:       p.Model,
+		AutoApprove: runtime.AutoApproveAll,
+		Effort:      resolveEffort(p.Effort),
+		MCPConfigs:  p.MCPConfigs,
 		// Partial messages are what emit the text deltas, and they also stream
 		// every other inner API event — so they are on only for a caller that
 		// asked to stream.
@@ -256,6 +429,8 @@ func (m *Manager) StartPersonaRuntime(_ context.Context, p PersonaRuntimeParams)
 	m.connWrap.pop() // keep the capture buffer balanced; we don't need direct CLI access
 	m.routeMu.Unlock()
 
+	pr.mu.Lock()
 	pr.sess = rtSess
+	pr.mu.Unlock()
 	return pr, nil
 }

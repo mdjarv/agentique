@@ -84,7 +84,7 @@ Where this diverges from Odysseus:
 | Aspect | Odysseus | Here | Why |
 |---|---|---|---|
 | Orchestration | browser JS, dies on tab close | server-side Go | The loop has to survive the UI going away. |
-| Participants | stateless single-shot LLM calls | real tool-capable CLI sessions | Personas read the repo, search the web, run code. It is research support, not chat. |
+| Participants | stateless single-shot LLM calls | real tool-capable CLI sessions | Repo-backed personas read the repo and run code; web-only ones search and fetch the web and nothing else. It is research support, not chat. |
 | Persona tuning | per-persona `temperature` | system prompt, model, effort, thinking | No sampling knob exists on this path. |
 
 ### No temperature
@@ -151,6 +151,27 @@ reuses the state machine, the watchdog and the approval pump.
 
 Web-only personas are **claude-only**. The sessionless treatment is
 claude-adapter specific.
+
+**Web-only personas hold the web and nothing else.** They start with
+`Tools: PersonaToolsWeb` (`session.PersonaRuntimeParams`), through that tool set's
+own connector: `--tools WebSearch,WebFetch`, `--strict-mcp-config` and
+`--disable-slash-commands`. The live CLI reports exactly `[WebFetch WebSearch]` at
+init (claude 2.1.270, two runs), and a fetch still goes through with nobody to
+approve it. Before 2026-09-15 they ran the CLI's whole default set under fullAuto:
+Bash, Write, Edit, Agent, Workflow, SendMessage, AskUserQuestion, and the
+operator's own claude.ai connectors, including Drive's `trash_file` and
+`share_file`. A persona reads arbitrary pages, so one prompt-injected page was
+enough to act outside this machine. No Write either: the scratch dir is the
+persona's working directory and nothing more. The "read-only access" line in the
+preamble was the only thing keeping a persona out of it.
+
+Two more rules apply to every sessionless persona, not only these. A question or
+approval is refused the moment it is raised, because nobody can answer one, and
+a question left pending would park the round for `discussionTurnTimeout`. And
+the preamble always carries the reaper marker. See `docs/assistant.md`, "A turn
+waits on nothing it cannot have".
+
+Repo-backed personas are real sessions in a shared worktree and are unchanged.
 
 They are also **ephemeral**. A persona runtime is a live subprocess held in
 memory, so a server restart ends any in-flight web-only discussion. Durable resume

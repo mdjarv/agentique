@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/machine"
 	"github.com/mdjarv/agentique/backend/internal/peer"
 	"github.com/mdjarv/agentique/backend/internal/peerlink"
 	"github.com/mdjarv/agentique/backend/internal/project"
@@ -456,6 +457,13 @@ func (d *assistantDirectory) createRemote(ctx context.Context, project assistant
 // unknown model is the question it already is locally, an owner's refusal is a
 // sentence to relay, and anything else is an error.
 func peerError(err error, machineName string) error {
+	// Sent and unanswered is not a failure: the owner may have acted. This is
+	// the one place a create and a send are classified, so the two cannot
+	// disagree about what a timeout means.
+	var unanswered *machine.UnansweredError
+	if errors.As(err, &unanswered) {
+		return &assistant.OutcomeUnknownError{Machine: machineName, Err: err}
+	}
 	var refusal *peerlink.RefusalError
 	if !errors.As(err, &refusal) {
 		if errors.Is(err, peerlink.ErrNoPeerSurface) {

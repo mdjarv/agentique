@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"sync/atomic"
 )
 
 const maxIdentityResponseBytes = 64 << 10
@@ -83,6 +85,24 @@ type RemoteStatusError struct {
 
 func (e *RemoteStatusError) Error() string { return fmt.Sprintf("status %d", e.Status) }
 
+// UnansweredError is a request that reached the wire and got no answer back: a
+// timeout, a reset, a yes whose body did not arrive.
+//
+// Whether the remote acted on it is unknown, which for a request that creates
+// or sends something is a different fact from a failure — the remote may have
+// done it. A failure before the request left (identity proof, a dial that was
+// refused) is never this.
+type UnansweredError struct {
+	Path string
+	Err  error
+}
+
+func (e *UnansweredError) Error() string {
+	return fmt.Sprintf("request %s got no answer: %v", e.Path, e.Err)
+}
+
+func (e *UnansweredError) Unwrap() error { return e.Err }
+
 // DoRemoteJSON is [FetchRemoteJSON] for any method: identity proof first, then
 // the request with the bearer and body (JSON-encoded when non-nil), decoding a
 // 200 into dst. Any other status is a [*RemoteStatusError].
@@ -114,14 +134,28 @@ func DoRemoteJSON(ctx context.Context, client *http.Client, peer RemotePeer, met
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Whether the request left is the fact a caller needs when no answer comes
+	// back, and the error cannot say it: a timeout reads the same before the
+	// connection opened and after the remote had the whole body.
+	var wrote atomic.Bool
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+		WroteHeaders: func() { wrote.Store(true) },
+	}))
 	resp, err := client.Do(req)
 	if err != nil {
+		if wrote.Load() {
+			return &UnansweredError{Path: path, Err: err}
+		}
 		return fmt.Errorf("request %s: %w", path, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+		if resp.StatusCode == http.StatusOK {
+			// It answered yes and the answer did not arrive: whatever it did, it did.
+			return &UnansweredError{Path: path, Err: fmt.Errorf("read: %w", err)}
+		}
+		return &RemoteStatusError{Status: resp.StatusCode}
 	}
 	if int64(len(raw)) > maxBytes {
 		return fmt.Errorf("read %s: response exceeds %d bytes", path, maxBytes)

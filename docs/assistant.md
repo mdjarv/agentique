@@ -420,6 +420,102 @@ text only. Everything a step quotes — an argument, a refusal, a fact — is sh
 as inert text, and nothing on the row acts except the operator's own verdict on
 a fact.
 
+## A turn waits on nothing it cannot have
+
+A head turn holds the conversation's one lock, and `headTurnBudget` (ten
+minutes) is its terminal bound. Anything that turn waits on and cannot get
+spends the whole budget. The operator then gets the generic failure note in
+place of their ask, and every message behind it waits too. So a turn waits on
+exactly two things, the model and its verbs, and each has its own bound.
+
+**What happened on 2026-09-15.** At 05:35 the operator asked for "an agentique
+prompt on review". The server log showed two `create_session` refusals, then
+nothing until `context deadline exceeded` at 05:45:14. The head CLI's own
+transcript (`~/.claude/projects/<assistant-head dir>/<session>.jsonl`) filled
+the gap. After `project-ambiguous` ("Agentique on zbook and Agentique"), the
+model called the CLI's native `AskUserQuestion`. A persona has no screen, the
+runtime's watchdog stands down while a question is pending, and `Query` waited
+for a completion until the budget cancelled it. No verb was slow. The steps
+recorder could not see this, because a native tool never passes
+`ToolHandler`.
+
+Four rules close it, each at the layer that owns it:
+
+- **No native tool.** The head holds `PersonaToolsNone` (see "Security"), so
+  `AskUserQuestion`, plan mode and everything else that parks on a person is not
+  in its tool list. That is the fix. The three below hold even if a tool slips
+  through, or a CLI stops honouring the flag.
+- **A persona refuses what parks on a person, the moment it is raised.** The
+  sessionless persona (`internal/session/persona_runtime.go`) watches the
+  runtime's `PendingChangeEvent`. It cancels a question (it never answers one,
+  because an answer reads as the operator's choice) and denies an approval, and
+  logs each. `Query` also ends when the CLI reaches failed, done or stopped
+  mid-turn, instead of waiting for a completion a dead process cannot send.
+  This covers discussion personas too, which would otherwise park for
+  `discussionTurnTimeout`.
+- **Every verb has its own deadline.** `ToolHandler` runs the verb under
+  `VerbBudget` (90s: above a 45s summary with its locate, and above a paired
+  machine's mint plus create at two 10s requests). The verb runs on its own
+  goroutine with a context that ends at the deadline, so IO that honours it
+  stops. At the deadline the handler answers a refusal (`verb-timed-out:<verb>`,
+  logged through the one refusal path) and settles the step as failed with that
+  sentence. The words depend on the tier. A read says there is no answer. A
+  verb that writes says the outcome is **unknown**: it may have created the
+  session or delivered the prompt a moment before the deadline, so the head
+  is told not to say it did not happen and not to retry, but to look (sessions,
+  journal) first. A verb that answers late is logged with what it answered,
+  since for a write that line is the only record of whether it went through. A
+  caller that went away is not a timeout, and is not reported as one.
+
+  The budget is uniform, so a verb whose normal work does not fit it answers at
+  once and delivers later. It never gets a longer budget of its own. Measured in
+  a sandbox server (real CLI, one or two runs each): `create_session` local
+  1.1–1.3s, `run_prompt` into a stopped session that lazy-resumes 1.5s and 2.0s,
+  `summarize_session` 5.5s and 6.8s (bounded at 45s), `digest` 0–1ms (no
+  model). A paired machine's create is bounded by its client at four 10s
+  requests. The one that did not fit was `compact_journal`: ten foldable days
+  had folded three when the 90s deadline cut the pass, and the cut pass lost its
+  own `compaction` entry. It now takes the one-pass lock, starts the pass on a
+  context detached from the call, and answers "started" at once. The pass's
+  `compaction` entry is the result, which the head reads as news. Seven days
+  then folded in about 140s after a 0ms answer.
+- **A paired machine that had the request and did not answer is the same
+  unknown.** A remote `create_session` or `run_prompt` that reached the owner
+  and then timed out, reset, or answered 200 with a body that never arrived may
+  have done its work. The owner goes on creating after the acting side's 10s
+  client gives up. So `machine.DoRemoteJSON` records whether the request's
+  headers were written (`httptrace`), and a failure after that is a
+  `machine.UnansweredError`. `peerError`, the one classifier both the create and
+  the send pass through, turns it into `assistant.OutcomeUnknownError`, and the
+  verbs speak it with the same `unknownOutcomeWords` the deadline path uses. An
+  owner's refusal (a status it answered with) and anything that failed before the
+  request left stay definite failures: the identity proof, a refused dial, and
+  the credential mint, which `peerlink` strips of the unanswered mark because the
+  action behind it never left. A created session whose prompt went unanswered is
+  "created, and whether the prompt reached it is unknown", never "the prompt did
+  not go".
+
+  The retry this must not invite is not safe. The owner dedupes a create on
+  credential plus request id (`peer/handler.go`, `IdempotencyKey`), but
+  `createRemote` mints the request id per call, so **the dedupe does not span verb
+  calls**. Even within one id, `session.Service` caches the result only once the
+  first create has finished, so a repeat that arrives while it is still being
+  made is a second session. Not yet covered: a remote *proposal* action
+  (`routedActions.do`: merge, rebase, archive, delete, reclaim) still reports an
+  unanswered request as a failure.
+- **The client waits longer than the verb.** The Claude CLI gives up on an HTTP
+  MCP tool call after 60s by default. It then tells the model "The operation
+  timed out." and the model moves on while the verb is still running, which is
+  the unknown-outcome problem with nobody told. Measured on 2.1.270 with a
+  stand-in server: 60.0s twice by default; `MCP_TOOL_TIMEOUT=20000` gave up at
+  20s; at 120000 and 150000 a 100s call answered. So serve builds the contained
+  connector with `ClaudePersonaOptions(PersonaToolsNone, assistant.HeadToolTimeout)`
+  (`VerbBudget` + 30s), which sets `MCP_TOOL_TIMEOUT`. The ordering holds by
+  construction rather than by the CLI's default.
+
+`headTurnBudget` stays the terminal bound. Deadlines on the parts are what keep
+it from being the thing that fires.
+
 ## Multi-machine
 
 One assistant per account, on whichever server enables it, and it works with
@@ -477,6 +573,37 @@ delete, archive, reclaim or reach a main worktree on any machine without a
 person accepting a card, and the owner re-checks the card's facts before it
 performs one. It cannot reach a machine that has not opted in. That residual is
 stated so nobody widens a tier to save a click.
+
+**The head's own tools are an allowlist, and it is empty.** Everything above
+holds only while the verb table is the head's whole reach, and the CLI under it
+brings tools of its own. So the head starts with `Tools: PersonaToolsNone`
+(`session.PersonaRuntimeParams`): it connects through that tool set's own claude
+connector, built by serve from the options every session gets plus
+`session.ClaudePersonaOptions(PersonaToolsNone, HeadToolTimeout)`. Those are
+`--tools ""` (no provider-native tool at all), `--strict-mcp-config` (no MCP
+server but the head's own endpoint), `--disable-slash-commands` (no skill listing
+for skills it cannot run) and the tool timeout below. The head's init event
+reports exactly its `mcp__agentique__*` verbs, and it calls them directly: with
+no `ToolSearch` they arrive loaded, not deferred.
+
+It is an allowlist because the deny list it replaced went out of date without
+anyone touching it. `headDisallowedTools` named Bash, Read, Write, the web
+fetchers and `Task`. On 2026-09-15 the CLI (2.1.270) was offering the head
+`AskUserQuestion`, `Agent`, `Workflow`, `SendMessage`, `ListAgents`,
+`RemoteTrigger`, `Artifact`, `Cron*`, `Monitor`, `PushNotification`,
+`EnterWorktree`, plan mode, `Skill` and `ToolSearch`, plus the operator's own
+claude.ai Google Drive connector (`share_file`, `trash_file`) and every other
+user-level MCP server. The CLI adds tools between releases, and a list of names
+to deny is written against one release. That day `AskUserQuestion` parked a
+whole turn (see "A turn waits on nothing it cannot have").
+
+The route is private: it is not a provider name, so no session row can select
+it (`normalizeProvider` would fold any name to claude first anyway). A persona
+start whose tool set has no connector wired, or that names no set, is
+**refused**. It is never served by the ordinary connector, whose CLI carries
+everything, and no sessionless persona has an uncontained path left. Web-only
+discussion personas hold `PersonaToolsWeb`, the web pair and nothing else
+(`docs/channels.md`).
 
 ## Phasing
 
@@ -876,7 +1003,9 @@ of its verdict: the first tick after local midnight whose
 `Service.Compact(ctx)`; the stamp is written first, so a failing pass is
 retried the next day and never every tick. `Compact` is also a contained
 verb, `compact_journal`, and a WS op `assistant.compact` (mutation, through
-`handleRequestAsync`) for the operator.
+`handleRequestAsync`) for the operator. *Since 2026-09-15 the verb starts the
+pass and answers at once* (see "A turn waits on nothing it cannot have"): a
+pass is a model call per day, which no verb deadline fits.
 
 **What.** For each calendar day (local time) older than `compactAfter`
 (fourteen days, a constant chosen to exceed the in-flight lookback so
@@ -1458,6 +1587,10 @@ is the server's cwd, which is the thing being fixed. Both live in
 `internal/assistant` is provider-neutral by construction — a containment claim
 spelled in a neutral vocabulary is a claim nothing enforces. `HeadParams` says
 so where it says it carries no working directory, for the same reason.
+
+*Superseded 2026-09-15:* the deny list is gone. By then the CLI offered the head
+a dozen tools it did not name, one of which hung a turn. The head is now
+`PersonaToolsNone`, an allowlist of its own MCP endpoint (see "Security").
 
 **The verb table is on the head's own MCP endpoint.** Every verb was registered
 on the one shared `/mcp` handler, and agentkit answers `tools/list` from
