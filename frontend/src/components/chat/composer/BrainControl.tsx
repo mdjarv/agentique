@@ -13,7 +13,7 @@
  * `ModelSwitch` capability; there is no `session.set-effort` anywhere, and the
  * provider did not accept a mid-session change when this was last checked. So
  * inside the menu the models are a list and effort is a **locked ramp** — filled
- * to its stop, no thumb, with one line saying when it was set.
+ * to its stop, inert, with one line saying when it was set.
  *
  * `locked` is the only difference between this and the new-session panel's
  * version, which is why both surfaces can finally render one component instead
@@ -35,6 +35,7 @@ import {
   type EffortLevel,
   RAMP_LEVELS,
 } from "~/lib/composer-constants";
+import { rampLevelAt, stepRampLevel } from "~/lib/effort-ramp";
 import {
   buildModelOptions,
   type ModelId,
@@ -169,8 +170,15 @@ export const BrainControl = memo(function BrainControl({
  * reports is "how much", and a list of five words does not say that.
  *
  * Locked is the common case, so it is the one drawn plainly: the fill stops
- * where the level is and nothing invites a drag. The live version is the same
- * geometry with hit targets, so the two cannot drift apart.
+ * where the level is and nothing invites a drag. Live is the same geometry
+ * made into a slider, so the two cannot drift apart — and it has to be a whole
+ * slider, not a drawing of one with the words as buttons: a track and a thumb
+ * that ignore the pointer read as broken, and 9px labels are not a target.
+ *
+ * So the pointer lands anywhere on the track or the labels and snaps to the
+ * nearest stop, and dragging follows it. The row is a menu item as well, which
+ * is what lets ↑/↓ reach it among the models (a menu keeps Tab for itself);
+ * ←/→ then move the level, the only keys the menu leaves free.
  */
 function EffortRamp({
   effort,
@@ -181,39 +189,121 @@ function EffortRamp({
 }) {
   const current = (effort ?? "") as EffortLevel;
   const idx = RAMP_LEVELS.indexOf(current);
-  const pct = RAMP_LEVELS.length > 1 ? (idx / (RAMP_LEVELS.length - 1)) * 100 : 0;
   const locked = !onEffortChange;
   const color = EFFORT_COLORS[current] ?? "text-muted-foreground";
 
+  const header = (
+    <div className="flex items-baseline justify-between gap-2 pb-1">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Effort</span>
+      <span className="text-[10px] text-muted-foreground">
+        {locked ? "set at creation" : EFFORT_LABELS[current]}
+      </span>
+    </div>
+  );
+  const body = <RampTrack current={current} locked={locked} color={color} />;
+
+  if (locked) {
+    return (
+      <div className="px-2 pt-1.5 pb-2 select-none">
+        {header}
+        {body}
+      </div>
+    );
+  }
+
+  const choose = (next: EffortLevel) => {
+    if (next !== current) onEffortChange(next);
+  };
+  const chooseAt = (el: HTMLElement, clientX: number) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    choose(rampLevelAt((clientX - rect.left) / rect.width));
+  };
+
   return (
-    <div className="px-2 pt-1.5 pb-2 select-none">
-      <div className="flex items-baseline justify-between gap-2 pb-2">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Effort</span>
-        <span className="text-[10px] text-muted-foreground">
-          {locked ? "set at creation" : EFFORT_LABELS[current]}
-        </span>
+    <DropdownMenuItem
+      role="slider"
+      aria-label="Effort"
+      aria-orientation="horizontal"
+      aria-valuemin={0}
+      aria-valuemax={RAMP_LEVELS.length - 1}
+      aria-valuenow={idx < 0 ? undefined : idx}
+      aria-valuetext={EFFORT_LABELS[current]}
+      textValue="Effort"
+      // Picking a level is not picking a menu entry; the menu stays open.
+      onSelect={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        choose(stepRampLevel(current, e.key === "ArrowRight" ? 1 : -1));
+      }}
+      className="block px-2 pt-1.5 pb-2"
+    >
+      {header}
+      <div
+        className="touch-none cursor-pointer"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          chooseAt(e.currentTarget, e.clientX);
+        }}
+        onPointerMove={(e) => {
+          if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) return;
+          chooseAt(e.currentTarget, e.clientX);
+        }}
+      >
+        {body}
       </div>
-      <div className="relative h-1 rounded-full bg-border">
-        <div
-          className={cn(
-            "absolute inset-y-0 left-0 rounded-full",
-            locked ? "bg-muted-foreground" : cn(color, "bg-current"),
+    </DropdownMenuItem>
+  );
+}
+
+/**
+ * The ramp's drawing: track, fill, thumb, and a label under each stop.
+ *
+ * An unset level draws no fill and no thumb, on the meter's rule that
+ * "Default" is not a rung.
+ */
+function RampTrack({
+  current,
+  locked,
+  color,
+}: {
+  current: EffortLevel;
+  locked: boolean;
+  color: string;
+}) {
+  const idx = RAMP_LEVELS.indexOf(current);
+  const pct = idx < 0 ? 0 : (idx / (RAMP_LEVELS.length - 1)) * 100;
+  const ink = locked ? "bg-muted-foreground" : cn(color, "bg-current");
+  const motion = "transition-[width,left] duration-100 motion-reduce:transition-none";
+
+  return (
+    <>
+      <div className="py-1">
+        <div className="relative h-1 rounded-full bg-border">
+          <div
+            className={cn("absolute inset-y-0 left-0 rounded-full", ink, motion)}
+            style={{ width: `${pct}%` }}
+          />
+          {idx >= 0 && (
+            <span
+              className={cn(
+                "absolute -top-1 size-2.5 rounded-full border-2 border-popover",
+                ink,
+                motion,
+              )}
+              style={{ left: `calc(${pct}% - 5px)` }}
+            />
           )}
-          style={{ width: `${pct}%` }}
-        />
-        <span
-          className={cn(
-            "absolute -top-1 size-2.5 rounded-full border-2 border-popover",
-            locked ? "bg-muted-foreground" : cn(color, "bg-current"),
-          )}
-          style={{ left: `calc(${pct}% - 5px)` }}
-        />
+        </div>
       </div>
-      <div className="flex justify-between pt-1.5">
+      <div className="flex justify-between pt-0.5">
         {RAMP_LEVELS.map((lvl) => {
           const on = lvl === current;
-          const text = (
+          return (
             <span
+              key={lvl}
               className={cn(
                 "text-[9px] font-mono",
                 on && !locked && color,
@@ -224,22 +314,8 @@ function EffortRamp({
               {EFFORT_LABELS[lvl]}
             </span>
           );
-          if (locked) return <span key={lvl}>{text}</span>;
-          return (
-            <button
-              key={lvl}
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                onEffortChange(lvl);
-              }}
-              className="cursor-pointer hover:brightness-125"
-            >
-              {text}
-            </button>
-          );
         })}
       </div>
-    </div>
+    </>
   );
 }
