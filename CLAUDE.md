@@ -1854,6 +1854,15 @@ rule exists to prevent.
 
 ### The assistant — `docs/assistant.md`
 
+**The head's native tools are an allowlist, and it is empty.** The head starts
+`Contained`, through the private contained connector (`--tools ""`,
+`--strict-mcp-config`, `--disable-slash-commands`), so its own MCP endpoint is
+its whole tool set. Never go back to a deny list. The CLI adds tools between
+releases, and on 2026-09-15 the head's list named Task and Bash while it was
+offered Agent, Workflow, SendMessage, RemoteTrigger, the user's Drive connector
+and `AskUserQuestion`, which parked a turn for ten minutes. A contained start
+with no contained connector is refused, never downgraded.
+
 **Uncontained means proposed, never performed.** The assistant's verb table
 (`internal/assistant`) carries a tier per verb, and the eight uncontained ones —
 merge, rebase, archive, delete, reclaim, dissolve, another session's model or

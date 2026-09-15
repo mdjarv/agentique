@@ -33,14 +33,15 @@ import (
 // /proc/<pid>/cmdline is world-readable and inline JSON would put the credential
 // in argv for every local user to read.
 //
-// This is also where the head's containment is actually built, because this is
+// This is also where the head's containment is asked for, because this is
 // where its subprocess is. The verb table is what the assistant may DO, and it
 // is worth nothing while the CLI underneath it carries a shell: the head runs
 // fullAuto (there is no screen to approve anything on) and it is fed untrusted
-// agent text on every single turn, as news and as reports. So the native tools
-// are denied here and the working directory is a scratch directory of its own.
-// internal/assistant cannot spell either: it is provider-neutral, and the tool
-// names are claude's.
+// agent text on every single turn, as news and as reports. So the head starts
+// Contained — its MCP endpoint is its whole tool set, with no native tool and
+// no MCP server from the user's own configuration — and the working directory
+// is a scratch directory of its own. internal/assistant cannot spell either: it
+// is provider-neutral, and what "no native tool" takes is claude's.
 
 // assistantMCPPath is where the head's own MCP endpoint is mounted, under the
 // session endpoint's path rather than beside it: both are outside /api/ and both
@@ -58,24 +59,6 @@ func assistantMCPURL(base string) string {
 		return ""
 	}
 	return base + "/assistant"
-}
-
-// headDisallowedTools are the provider-native tools the head must not have.
-//
-// Everything that reads or writes the filesystem, runs a command, or reaches
-// the network. The head has no project, no worktree and no repository to read,
-// so none of them is a capability it is losing — where the data directory it
-// would be sitting beside holds every paired machine's outbound bearer, and
-// CLAUDE.md is explicit that the data dir is not protected from an agent.
-//
-// Task goes too: a subagent is a second context with its own tool set, and a
-// deny list that a spawn can step around is not one.
-var headDisallowedTools = []string{
-	"Bash", "BashOutput", "KillShell", "KillBash",
-	"Read", "Write", "Edit", "MultiEdit", "NotebookEdit",
-	"Glob", "Grep",
-	"WebFetch", "WebSearch",
-	"Task", "SlashCommand",
 }
 
 // assistantHeads starts the assistant's head. It implements
@@ -110,15 +93,20 @@ func (a *assistantHeads) StartHead(ctx context.Context, p assistant.HeadParams) 
 	configs, cleanup := a.headMCPConfig(id)
 
 	rt, err := a.mgr.StartPersonaRuntime(ctx, session.PersonaRuntimeParams{
-		ID:              id,
-		Preamble:        p.Preamble,
-		Model:           p.Model,
-		Effort:          p.Effort,
-		WorkDir:         workDir,
-		MCPConfigs:      configs,
-		DisallowedTools: headDisallowedTools,
-		OnText:          p.OnText,
-		OnThought:       p.OnThought,
+		ID:         id,
+		Preamble:   p.Preamble,
+		Model:      p.Model,
+		Effort:     p.Effort,
+		WorkDir:    workDir,
+		MCPConfigs: configs,
+		// An allowlist, and the list is the MCP endpoint: no native tool, and no
+		// MCP server from the user's own configuration. A deny list here named
+		// Task and Bash while the CLI offered the head Agent, Workflow,
+		// SendMessage, RemoteTrigger, the user's Drive connector and
+		// AskUserQuestion — which parked a whole turn on 2026-09-15.
+		Contained: true,
+		OnText:    p.OnText,
+		OnThought: p.OnThought,
 	})
 	if err != nil {
 		cleanup()

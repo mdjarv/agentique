@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -178,6 +179,13 @@ func (m *Manager) SetProviderConnector(provider string, connector runtime.CLICon
 	m.connWrap.setProvider(provider, connector)
 }
 
+// SetContainedConnector registers the connector a Contained persona is spawned
+// through (PersonaRuntimeParams.Contained). It is a separate route rather than
+// a provider name, so no session can select it: see capturingConnector.
+func (m *Manager) SetContainedConnector(connector runtime.CLIConnector) {
+	m.connWrap.setContained(connector)
+}
+
 // capturingConnector wraps the configured runtime.CLIConnector and stashes
 // each connected CLISession on a buffer. agentique.Manager then snaps the
 // most recent CLISession into the agentique Session right after rt.Create or
@@ -196,6 +204,38 @@ type capturingConnector struct {
 	captured  []runtime.CLISession
 	providers map[string]runtime.CLIConnector
 	next      string // provider key to route the next Connect call
+
+	// contained is the route a Contained persona connects through. It is kept
+	// out of providers on purpose: that map is keyed by names a session row
+	// carries, and a name is not a thing that can be allowed to choose
+	// containment — nor to escape it. Only hintContained reaches it.
+	contained     runtime.CLIConnector
+	nextContained bool
+}
+
+// errNoContainedConnector is what a contained start answers when the server
+// wired no contained route. Refused, never downgraded to the ordinary
+// connector: a caller asking for containment is counting on it.
+var errNoContainedConnector = errors.New("no contained connector is wired, so a contained persona cannot start")
+
+func (c *capturingConnector) setContained(conn runtime.CLIConnector) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.contained = conn
+}
+
+func (c *capturingConnector) hasContained() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.contained != nil
+}
+
+// hintContained routes the next Connect through the contained connector.
+func (c *capturingConnector) hintContained() {
+	c.mu.Lock()
+	c.nextContained = true
+	c.next = ""
+	c.mu.Unlock()
 }
 
 func (c *capturingConnector) setProvider(name string, conn runtime.CLIConnector) {
@@ -216,13 +256,20 @@ func (c *capturingConnector) hintNext(provider string) {
 func (c *capturingConnector) Connect(ctx context.Context, p runtime.ConnectParams) (runtime.CLISession, error) {
 	c.mu.Lock()
 	pick := c.inner
-	if c.next != "" {
+	switch {
+	case c.nextContained:
+		pick = c.contained
+		c.nextContained = false
+	case c.next != "":
 		if alt, ok := c.providers[c.next]; ok {
 			pick = alt
 		}
 		c.next = ""
 	}
 	c.mu.Unlock()
+	if pick == nil {
+		return nil, errNoContainedConnector
+	}
 
 	cli, err := pick.Connect(ctx, p)
 	if err != nil {

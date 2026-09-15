@@ -1,33 +1,93 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
-	"slices"
+	"sync"
 	"testing"
 
+	"github.com/allbin/agentkit/runtime"
 	"github.com/mdjarv/agentique/backend/internal/assistant"
+	"github.com/mdjarv/agentique/backend/internal/mcphttp"
 	"github.com/mdjarv/agentique/backend/internal/paths"
+	"github.com/mdjarv/agentique/backend/internal/session"
+	"github.com/mdjarv/agentique/backend/internal/testutil"
 )
 
-// The head's containment is built here, because this is where its subprocess
-// is: it runs fullAuto with untrusted agent text in every turn, so the native
-// tools it holds are tools it can use with nobody agreeing. docs/assistant.md's
+// recordingCLIConnector hands out mock CLI sessions and keeps what each Connect
+// was asked for.
+type recordingCLIConnector struct {
+	mu     sync.Mutex
+	params []runtime.ConnectParams
+}
+
+func (c *recordingCLIConnector) Connect(_ context.Context, p runtime.ConnectParams) (runtime.CLISession, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.params = append(c.params, p)
+	return testutil.NewMockCLISession(), nil
+}
+
+func (c *recordingCLIConnector) connects() []runtime.ConnectParams {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]runtime.ConnectParams(nil), c.params...)
+}
+
+// The head's containment is asked for here, because this is where its
+// subprocess is: it runs fullAuto with untrusted agent text in every turn, so
+// every tool it holds is one it can use with nobody agreeing. docs/assistant.md's
 // security section states it cannot reach a main worktree or a paired machine,
-// and a CLI carrying a shell beside the data directory makes that untrue.
-func TestTheHeadHasNoNativeToolsOfItsOwn(t *testing.T) {
-	for _, tool := range []string{
-		"Bash",      // a shell is every other tool at once
-		"Read",      // the data dir holds every paired machine's outbound bearer
-		"Write",     // nothing it could write is anything it owns
-		"Edit",      //
-		"WebFetch",  // a way out for anything it read
-		"WebSearch", //
-		"Task",      // a subagent is a second context with its own tool set
-	} {
-		if !slices.Contains(headDisallowedTools, tool) {
-			t.Errorf("the head is allowed %s; it reaches the world through the verb table and nothing else", tool)
-		}
+// which is untrue of a CLI carrying a shell, an Agent tool or the user's own MCP
+// servers. So the head goes through the contained route, with its own MCP
+// endpoint as the only tools it is handed — still as a 0600 file path.
+func TestTheHeadStartsContained(t *testing.T) {
+	t.Setenv("AGENTIQUE_HOME", t.TempDir())
+	ordinary, contained := &recordingCLIConnector{}, &recordingCLIConnector{}
+	mgr := session.NewManager(nil, nil, nil, ordinary)
+	mgr.SetContainedConnector(contained)
+	heads := &assistantHeads{mgr: mgr, tokens: mcphttp.NewTokenStore(), mcpURL: "http://127.0.0.1:1/mcp/assistant"}
+
+	rt, err := heads.StartHead(context.Background(), assistant.HeadParams{Preamble: "you are the head"})
+	if err != nil {
+		t.Fatalf("StartHead() = %v", err)
+	}
+	t.Cleanup(func() { _ = rt.Close() })
+
+	if n := len(ordinary.connects()); n != 0 {
+		t.Errorf("the head connected through the ordinary route %d times", n)
+	}
+	got := contained.connects()
+	if len(got) != 1 {
+		t.Fatalf("the head connected through the contained route %d times, want 1", len(got))
+	}
+	if len(got[0].MCPConfigs) != 1 {
+		t.Fatalf("MCPConfigs = %q, want the one config file", got[0].MCPConfigs)
+	}
+	info, err := os.Stat(got[0].MCPConfigs[0])
+	if err != nil {
+		t.Fatalf("the MCP config is not a file: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("MCP config mode = %o, want 0600: it holds the head's bearer", perm)
+	}
+}
+
+// With no contained route the head does not start — it is not started with the
+// CLI's own tool set instead.
+func TestTheHeadIsNeverStartedUncontained(t *testing.T) {
+	t.Setenv("AGENTIQUE_HOME", t.TempDir())
+	ordinary := &recordingCLIConnector{}
+	heads := &assistantHeads{mgr: session.NewManager(nil, nil, nil, ordinary)}
+
+	rt, err := heads.StartHead(context.Background(), assistant.HeadParams{Preamble: "you are the head"})
+	if err == nil {
+		_ = rt.Close()
+		t.Fatal("the head started with no contained route")
+	}
+	if n := len(ordinary.connects()); n != 0 {
+		t.Errorf("the ordinary route was used %d times", n)
 	}
 }
 

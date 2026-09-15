@@ -478,6 +478,35 @@ person accepting a card, and the owner re-checks the card's facts before it
 performs one. It cannot reach a machine that has not opted in. That residual is
 stated so nobody widens a tier to save a click.
 
+**The head's own tools are an allowlist, and it is empty.** Everything above
+holds only while the verb table is the head's whole reach, and the CLI under it
+brings tools of its own. So the head starts `Contained`
+(`session.PersonaRuntimeParams`): it connects through a second claude connector,
+built by serve from the options every session gets plus
+`session.ClaudeContainedOptions()`. Those are `--tools ""` (no provider-native
+tool at all), `--strict-mcp-config` (no MCP server but the head's own endpoint),
+and `--disable-slash-commands` (no skill listing for skills it cannot run). The
+head's init event reports exactly its `mcp__agentique__*` verbs, and it calls
+them directly: with no `ToolSearch` they arrive loaded, not deferred.
+
+It is an allowlist because the deny list it replaced went out of date without
+anyone touching it. `headDisallowedTools` named Bash, Read, Write, the web
+fetchers and `Task`. On 2026-09-15 the CLI (2.1.270) was offering the head
+`AskUserQuestion`, `Agent`, `Workflow`, `SendMessage`, `ListAgents`,
+`RemoteTrigger`, `Artifact`, `Cron*`, `Monitor`, `PushNotification`,
+`EnterWorktree`, plan mode, `Skill` and `ToolSearch`, plus the operator's own
+claude.ai Google Drive connector (`share_file`, `trash_file`) and every other
+user-level MCP server. The CLI adds tools between releases, and a list of names
+to deny is written against one release. That day `AskUserQuestion` parked a
+whole turn (see "A turn waits on nothing it cannot have").
+
+The route is private: it is not a provider name, so no session row can select
+it (`normalizeProvider` would fold any name to claude first anyway). A contained
+start with no contained connector wired is **refused**, never served by the
+ordinary connector: the head counts on its containment. Discussion personas are
+not contained, because reading the web is their job and the operator is
+watching the conversation they run in.
+
 ## Phasing
 
 - **M1, the core and the thread.** `internal/assistant` with the directory,
@@ -1458,6 +1487,10 @@ is the server's cwd, which is the thing being fixed. Both live in
 `internal/assistant` is provider-neutral by construction — a containment claim
 spelled in a neutral vocabulary is a claim nothing enforces. `HeadParams` says
 so where it says it carries no working directory, for the same reason.
+
+*Superseded 2026-09-15:* the deny list is gone. By then the CLI offered the head
+a dozen tools it did not name, one of which hung a turn. The head is now
+`Contained`, an allowlist of its own MCP endpoint (see "Security").
 
 **The verb table is on the head's own MCP endpoint.** Every verb was registered
 on the one shared `/mcp` handler, and agentkit answers `tools/list` from

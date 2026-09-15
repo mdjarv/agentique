@@ -27,6 +27,34 @@ func ClaudeBaselineOptions() []claudecli.Option {
 	}
 }
 
+// ClaudeContainedOptions are what a contained persona's connector adds on top
+// of [ClaudeBaselineOptions] (see PersonaRuntimeParams.Contained).
+//
+// Each one takes away a way to reach something other than the MCP servers the
+// persona is handed:
+//
+//   - WithBuiltinTools("") is `--tools ""`: no provider-native tool at all.
+//     That covers the ones that run code or touch files, and also the ones that
+//     park on a person (AskUserQuestion, plan mode), spawn a second context
+//     (Agent, Workflow), or act outside the machine (RemoteTrigger, SendMessage,
+//     Artifact). It is also what removes ToolSearch, so MCP tools arrive loaded
+//     rather than deferred behind a lookup.
+//   - WithStrictMCPConfig ignores every MCP server but the --mcp-config ones: the
+//     user's own servers and claude.ai connectors (Drive, Gmail) are not the
+//     persona's.
+//   - WithDisableSlashCommands drops the skill listing, which describes
+//     capabilities a persona with no Skill tool does not have.
+//
+// Verified against claude 2.1.270: a CLI started this way reports exactly its
+// MCP tools in its init event and calls them directly.
+func ClaudeContainedOptions() []claudecli.Option {
+	return []claudecli.Option{
+		claudecli.WithBuiltinTools(""),
+		claudecli.WithStrictMCPConfig(),
+		claudecli.WithDisableSlashCommands(),
+	}
+}
+
 // BlockingRunner runs a single blocking Claude CLI invocation. Used by the
 // auto-title path — separate from the runtime.Manager-managed sessions.
 type BlockingRunner interface {

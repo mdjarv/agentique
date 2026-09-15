@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -376,12 +377,20 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	}
 
 	var connector runtime.CLIConnector
+	// containedConnector is the route a contained persona — the assistant's
+	// head — is spawned through: the same claude options every session gets,
+	// plus the ones that take away every tool it is not handed. Its own
+	// connector rather than a per-call flag, because agentkit carries claudecli
+	// options on the connector (claudeadapter.NewConnector's defaults).
+	var containedConnector runtime.CLIConnector
 	var runner session.BlockingRunner
 	var testConnector *testmode.Connector
 
 	if cfg.TestMode {
 		testConnector = testmode.NewConnector()
 		connector = testConnector
+		// The mock runs no tools at all, so it is as contained as a route gets.
+		containedConnector = testConnector
 		runner = testmode.NewBlockingRunner()
 		slog.Info("test mode enabled: using mock CLI connector")
 	} else {
@@ -398,6 +407,8 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 			claudeOpts = append(claudeOpts, claudecli.WithForwardSubagentText())
 		}
 		connector = claudeadapter.NewConnector(claudeOpts...)
+		containedConnector = claudeadapter.NewConnector(
+			append(slices.Clone(claudeOpts), session.ClaudeContainedOptions()...)...)
 		runner = session.RealBlockingRunner()
 	}
 
@@ -435,6 +446,7 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 		accountInspectors["claude"] = ai
 	}
 	mgr := session.NewManager(cfg.DB, queries, bus, connector)
+	mgr.SetContainedConnector(containedConnector)
 	if !cfg.TestMode {
 		codexConnector := codexadapter.NewConnector()
 		mgr.SetProviderConnector("codex", codexConnector)
