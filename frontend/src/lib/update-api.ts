@@ -171,3 +171,39 @@ export function autoUpdateSummary(cli: UpdateCLIStatus): string | null {
 export function needsManualNudge(cli: UpdateCLIStatus): boolean {
   return cli.selfManaged && cli.autoUpdate !== undefined && !cli.autoUpdate.enabled;
 }
+
+/**
+ * What a CLI row says about the version its own release channel publishes.
+ *
+ * Closed, because the wire's `published.status` is three-valued and the row
+ * has to keep "nobody looked" and "looked, no verdict" apart from "current":
+ * none of those two may ever read as up to date.
+ *
+ * `behind` splits once more on who has to act. A self-managed install whose
+ * updater is on and last succeeded is already being handled — it gets the
+ * numbers and no call to action. Everything else behind is the operator's.
+ * The client does no version arithmetic: the verdict is the provider's.
+ */
+export type CLIPublishedVerdict =
+  | { kind: "unchecked" }
+  | { kind: "unknown"; version?: string; channel?: string; reason?: string }
+  | { kind: "current"; version: string; channel?: string }
+  | { kind: "behind"; version: string; channel?: string; handled: boolean };
+
+export function cliPublishedVerdict(cli: UpdateCLIStatus): CLIPublishedVerdict {
+  const pub = cli.published;
+  if (!pub) return { kind: "unchecked" };
+  const { version, channel, reason } = pub;
+  if (pub.status === "current" && version) return { kind: "current", version, channel };
+  if (pub.status === "behind" && version) {
+    return { kind: "behind", version, channel, handled: updatesItself(cli) };
+  }
+  return { kind: "unknown", version, channel, reason };
+}
+
+/** A self-managed install whose own updater is on and whose last attempt the
+ *  provider recorded as a success. The one case "behind" needs no person. */
+function updatesItself(cli: UpdateCLIStatus): boolean {
+  const au = cli.autoUpdate;
+  return cli.selfManaged && au?.enabled === true && au.lastSucceeded === true;
+}

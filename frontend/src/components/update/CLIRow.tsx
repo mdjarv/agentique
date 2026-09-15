@@ -3,9 +3,13 @@
  *
  * The row states what this machine would spawn for its next session, how that
  * install got there, and — where it is not ours to touch — the command that
- * would update it. There is deliberately no "update available" and no button:
- * nothing in the stack can compute a verdict yet, and a badge that says
- * "up to date" because nobody looked is worse than no badge (C15).
+ * would update it, and whether it is behind what its own release channel
+ * publishes. That verdict is the provider library's and it is three-valued
+ * (`cliPublishedVerdict`): nobody looked and no verdict both render nothing
+ * reassuring, because "up to date" because nobody looked is worse than no
+ * badge (C15). "Behind" asks for action only where a person has to act — an
+ * install whose own updater is on and last succeeded gets the number, quietly.
+ * None of this reaches the footer's `UpdateMark`, which is about agentique.
  *
  * Two things earn prominence over the version number. A second copy on PATH
  * means the version shown has stopped describing the binary that runs, and a
@@ -15,7 +19,12 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import type { UpdateCLIStatus } from "~/lib/generated-types";
-import { autoUpdateSummary, needsManualNudge } from "~/lib/update-api";
+import {
+  autoUpdateSummary,
+  type CLIPublishedVerdict,
+  cliPublishedVerdict,
+  needsManualNudge,
+} from "~/lib/update-api";
 import { cn, copyToClipboard } from "~/lib/utils";
 
 /** How the install is managed, in the user's terms rather than the enum's.
@@ -51,6 +60,40 @@ function CopyCommand({ command }: { command: string }) {
   );
 }
 
+function channelSuffix(channel: string | undefined): string {
+  return channel ? ` · ${channel} channel` : "";
+}
+
+/** The published version beside the installed one. Loud only when someone has
+ *  to act; no verdict shows no word at all, with its reason on hover. */
+function PublishedNote({ verdict }: { verdict: CLIPublishedVerdict }) {
+  switch (verdict.kind) {
+    case "unchecked":
+      return null;
+    case "unknown":
+      return verdict.reason ? (
+        <span className="sr-only">no published version to compare: {verdict.reason}</span>
+      ) : null;
+    case "current":
+      return (
+        <span className="shrink-0 text-[11px] text-muted-foreground-faint">
+          up to date{channelSuffix(verdict.channel)}
+        </span>
+      );
+    case "behind":
+      return (
+        <span
+          className={cn(
+            "shrink-0 text-[11px]",
+            verdict.handled ? "text-muted-foreground-faint" : "text-amber-600 dark:text-amber-500",
+          )}
+        >
+          {verdict.version} published{channelSuffix(verdict.channel)}
+        </span>
+      );
+  }
+}
+
 export function CLIRow({ cli }: { cli: UpdateCLIStatus }) {
   // A version the CLI could not report is not "0" or "unknown version" — say
   // that we could not read it, since the binary is still there and still runs.
@@ -59,17 +102,35 @@ export function CLIRow({ cli }: { cli: UpdateCLIStatus }) {
   // started. They differ legitimately while an updated CLI has not been picked
   // up yet, so this is worth showing but never an error.
   const drifted = cli.lastRan && cli.installed && cli.lastRan !== cli.installed;
+  const verdict = cliPublishedVerdict(cli);
+  // Behind with nobody handling it: the command belongs on the row even for a
+  // self-managed install, whose updater is then off or failing.
+  const needsAction = verdict.kind === "behind" && !verdict.handled;
+  const lastFailed =
+    needsAction &&
+    cli.autoUpdate?.enabled &&
+    !cli.autoUpdate.lastSucceeded &&
+    cli.autoUpdate.lastOutcome
+      ? cli.autoUpdate.lastOutcome
+      : null;
+  const unknownReason = verdict.kind === "unknown" ? verdict.reason : undefined;
 
   return (
     <div className="flex flex-col gap-1 py-1.5 pl-3">
       <div className="flex min-w-0 items-baseline gap-2">
         <span className="w-12 shrink-0 text-[11px] font-medium text-foreground">{cli.tool}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground">{version}</span>
+        <span
+          className="truncate font-mono text-[11px] text-muted-foreground"
+          title={unknownReason ? `No published version to compare: ${unknownReason}` : undefined}
+        >
+          {version}
+        </span>
+        <PublishedNote verdict={verdict} />
         <span className="truncate text-[11px] text-muted-foreground-faint">{methodLabel(cli)}</span>
       </div>
 
-      {/* What updating it looks like. Self-managed installs say so and stop —
-          the tool handles itself, and V5c will put the button here. */}
+      {/* What updating it looks like. Self-managed installs say so and stop
+          while the tool is handling itself — V5c will put the button here. */}
       <div className="flex min-w-0 flex-col gap-1 pl-14">
         {cli.selfManaged ? (
           <>
@@ -77,9 +138,15 @@ export function CLIRow({ cli }: { cli: UpdateCLIStatus }) {
               {autoUpdateSummary(cli) ?? "updates itself"}
             </span>
             {/* Self-managed only means the tool owns updating it. If its
-                updater is switched off it will not act on its own, so the
-                command has to be here after all. */}
-            {needsManualNudge(cli) && cli.updateCmd ? (
+                updater is switched off, or it is behind and its last attempt
+                did not succeed, it is not handling itself, so the command has
+                to be here after all. */}
+            {lastFailed ? (
+              <span className="text-[11px] text-amber-600 dark:text-amber-500">
+                its last update attempt: {lastFailed}
+              </span>
+            ) : null}
+            {(needsManualNudge(cli) || needsAction) && cli.updateCmd ? (
               <CopyCommand command={cli.updateCmd} />
             ) : null}
           </>
