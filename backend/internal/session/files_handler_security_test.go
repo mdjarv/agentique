@@ -29,7 +29,7 @@ func TestSessionFilesServeAgentHTMLAsInertDownload(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&FilesHandler{}).HandleServe)
+	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&ContentHandler{Source: LocalContent{}}).HandleFile)
 
 	serve := func(name string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestSessionFilesRefuseDirectoryListings(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&FilesHandler{}).HandleServe)
+	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&ContentHandler{Source: LocalContent{}}).HandleFile)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/sessions/"+sid+"/files/sub", nil))

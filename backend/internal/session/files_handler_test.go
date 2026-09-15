@@ -26,7 +26,7 @@ func TestFilesHandlerAllowsFilenamesContainingDots(t *testing.T) {
 	req.SetPathValue("filepath", "notes..md")
 	w := httptest.NewRecorder()
 
-	(&FilesHandler{}).HandleServe(w, req)
+	(&ContentHandler{Source: LocalContent{}}).HandleFile(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -44,7 +44,7 @@ func TestFilesHandlerRejectsPathTraversal(t *testing.T) {
 	req.SetPathValue("filepath", "../secret.md")
 	w := httptest.NewRecorder()
 
-	(&FilesHandler{}).HandleServe(w, req)
+	(&ContentHandler{Source: LocalContent{}}).HandleFile(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())

@@ -5,13 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
-
-	"github.com/google/uuid"
-	"github.com/mdjarv/agentique/backend/internal/httperror"
-	"github.com/mdjarv/agentique/backend/internal/store"
 )
 
 // A history snapshot never carries image bytes.
@@ -22,26 +16,12 @@ import (
 // boot, over one serial socket, before the session it had actually opened.
 //
 // So the history builder replaces each inline image with a reference to
-// this endpoint, which extracts the bytes from the persisted event row on
+// the event image route (content.go), which extracts the bytes from the persisted event row on
 // demand. The row is the source of truth and is left untouched — the rewrite
 // happens at read time, which is what makes it cover every session ever
 // recorded rather than only those persisted after the change. Live events
 // still stream the data URL inline: one image at a time is the size the
 // transcript already handles, and the next history load turns it into a ref.
-
-// inlineImageTypes is the set of media types this endpoint will serve
-// inline. It mirrors the raster half of the session-files allowlist
-// (httpsecurity/untrusted_file.go) for the same reason: these bytes are agent-written
-// and served from the app's own origin, so only types that cannot execute
-// are rendered; anything else is a download.
-var inlineImageTypes = map[string]bool{
-	"image/png":  true,
-	"image/jpeg": true,
-	"image/gif":  true,
-	"image/webp": true,
-	"image/avif": true,
-	"image/bmp":  true,
-}
 
 // maxImageIndex bounds the block index a URL may name. A tool result with
 // more image blocks than this does not exist in practice, and the bound
@@ -171,62 +151,4 @@ func decodeDataURL(u string) (mediaType string, body []byte, err error) {
 		return "", nil, fmt.Errorf("decode data URL: %w", err)
 	}
 	return mediaType, body, nil
-}
-
-// EventImageHandler serves the inline images of persisted events.
-type EventImageHandler struct {
-	Queries *store.Queries
-}
-
-// HandleServe answers GET /api/sessions/{id}/events/{eventId}/images/{idx}.
-func (h *EventImageHandler) HandleServe(w http.ResponseWriter, r *http.Request) {
-	// Every path parameter is validated for what it is before it reaches a
-	// query: a {param} is not one path segment (see FilesHandler).
-	sessionID := r.PathValue("id")
-	if uuid.Validate(sessionID) != nil {
-		httperror.RespondError(w, httperror.BadRequest("session id must be a UUID"))
-		return
-	}
-	eventID, err := strconv.ParseInt(r.PathValue("eventId"), 10, 64)
-	if err != nil || eventID <= 0 {
-		httperror.RespondError(w, httperror.BadRequest("event id must be a positive integer"))
-		return
-	}
-	idx, err := strconv.Atoi(r.PathValue("idx"))
-	if err != nil || idx < 0 || idx >= maxImageIndex {
-		httperror.RespondError(w, httperror.BadRequest("image index out of range"))
-		return
-	}
-
-	// The session id is part of the key, so an event of another session is
-	// not found rather than served.
-	row, err := h.Queries.GetSessionEvent(r.Context(), store.GetSessionEventParams{ID: eventID, SessionID: sessionID})
-	if err != nil {
-		httperror.RespondError(w, httperror.NotFound("event not found"))
-		return
-	}
-	dataURL, ok := inlineImageAt(row.Type, row.Data, idx)
-	if !ok {
-		httperror.RespondError(w, httperror.NotFound("image not found"))
-		return
-	}
-	mediaType, body, err := decodeDataURL(dataURL)
-	if err != nil {
-		httperror.RespondError(w, httperror.NotFound("image not found"))
-		return
-	}
-
-	if inlineImageTypes[mediaType] {
-		w.Header().Set("Content-Type", mediaType)
-	} else {
-		// Not provably inert: hand it over as a download, never as a document
-		// on this origin.
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="event-`+strconv.FormatInt(eventID, 10)+`-`+strconv.Itoa(idx)+`"`)
-	}
-	// An event row is never rewritten, so the bytes behind a URL never change.
-	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
 }

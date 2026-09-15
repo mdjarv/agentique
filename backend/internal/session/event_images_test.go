@@ -131,9 +131,9 @@ func seedImageEvents(t *testing.T) (*store.Queries, string, int64) {
 	return q, sess.ID, rows[0].ID
 }
 
-func serveImage(h *EventImageHandler, sessionID, eventID, idx string) *httptest.ResponseRecorder {
+func serveImage(h *ContentHandler, sessionID, eventID, idx string) *httptest.ResponseRecorder {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", h.HandleServe)
+	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", h.HandleEventImage)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+sessionID+"/events/"+eventID+"/images/"+idx, nil)
 	mux.ServeHTTP(rec, req)
@@ -143,7 +143,7 @@ func serveImage(h *EventImageHandler, sessionID, eventID, idx string) *httptest.
 func TestEventImageHandler_ServesInlineImage(t *testing.T) {
 	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
-	h := &EventImageHandler{Queries: q}
+	h := &ContentHandler{Source: LocalContent{Queries: q}}
 	rec := serveImage(h, sid, itoa(eid), "1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
@@ -162,7 +162,7 @@ func TestEventImageHandler_ServesInlineImage(t *testing.T) {
 func TestEventImageHandler_NonImageTypeIsADownload(t *testing.T) {
 	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
-	h := &EventImageHandler{Queries: q}
+	h := &ContentHandler{Source: LocalContent{Queries: q}}
 	rec := serveImage(h, sid, itoa(eid), "2")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
@@ -178,7 +178,7 @@ func TestEventImageHandler_NonImageTypeIsADownload(t *testing.T) {
 func TestEventImageHandler_RefusesWhatItCannotName(t *testing.T) {
 	t.Parallel()
 	q, sid, eid := seedImageEvents(t)
-	h := &EventImageHandler{Queries: q}
+	h := &ContentHandler{Source: LocalContent{Queries: q}}
 	cases := []struct {
 		name          string
 		sid, eid, idx string

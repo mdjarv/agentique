@@ -3,6 +3,7 @@ package filebrowser
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mdjarv/agentique/backend/internal/content"
 	"github.com/mdjarv/agentique/backend/internal/httpsecurity"
 	"github.com/mdjarv/agentique/backend/internal/store"
 )
@@ -47,8 +49,11 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	relPath := r.URL.Query().Get("path")
-	absPath, err := safePath(project.Path, relPath)
-	if errors.Is(err, errPathEscape) {
+	// The listing is confined the way content is (content.OpenRoot): an
+	// agent writes this tree, so a symlink is followed only while it stays
+	// inside the project, and one that leaves it is left out of the listing.
+	root, name, err := content.OpenRoot(project.Path, relPath)
+	if errors.Is(err, content.ErrInvalidPath) {
 		respondError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
@@ -56,8 +61,19 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "path not found")
 		return
 	}
+	defer root.Close()
 
-	info, err := os.Stat(absPath)
+	dir, err := root.Open(name)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			respondError(w, http.StatusNotFound, "path not found")
+		} else {
+			respondError(w, http.StatusBadRequest, "invalid path")
+		}
+		return
+	}
+	defer dir.Close()
+	info, err := dir.Stat()
 	if err != nil {
 		respondError(w, http.StatusNotFound, "path not found")
 		return
@@ -67,7 +83,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dirEntries, err := os.ReadDir(absPath)
+	dirEntries, err := dir.ReadDir(-1)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "cannot read directory")
 		return
@@ -75,8 +91,8 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]fileEntry, 0, len(dirEntries))
 	for _, de := range dirEntries {
-		name := de.Name()
-		if name == ".git" {
+		entryName := de.Name()
+		if entryName == ".git" {
 			continue
 		}
 
@@ -85,18 +101,17 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Resolve symlinks to get the real type.
-		fullPath := filepath.Join(absPath, name)
+		// Resolve symlinks to get the real type, inside the root only.
 		if de.Type()&os.ModeSymlink != 0 {
-			resolved, err := os.Stat(fullPath)
+			resolved, err := root.Stat(filepath.Join(name, entryName))
 			if err != nil {
-				continue // broken symlink
+				continue // broken, or pointing out of the project
 			}
 			fi = resolved
 		}
 
 		entries = append(entries, fileEntry{
-			Name:    name,
+			Name:    entryName,
 			IsDir:   fi.IsDir(),
 			Size:    fi.Size(),
 			ModTime: fi.ModTime(),
@@ -123,7 +138,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleContent serves a file's raw content within a project's root. Only
-// provably inert types render inline; see httpsecurity.SetUntrustedFileHeaders.
+// provably inert types render inline; see content.Serve.
 // GET /api/projects/{id}/files/content?path=relative/path
 func (h *Handler) HandleContent(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
@@ -139,50 +154,27 @@ func (h *Handler) HandleContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absPath, err := safePath(project.Path, relPath)
-	if errors.Is(err, errPathEscape) {
-		respondError(w, http.StatusBadRequest, "invalid path")
-		return
-	}
-	if err != nil {
-		respondError(w, http.StatusNotFound, "file not found")
-		return
-	}
-
-	fi, err := os.Stat(absPath)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "file not found")
-		return
-	}
-	if fi.IsDir() {
-		respondError(w, http.StatusBadRequest, "path is a directory")
-		return
-	}
-
-	contentType, _ := httpsecurity.UntrustedFileDisposition(absPath)
-	limit := maxTextBytes
+	contentType, _ := httpsecurity.UntrustedFileDisposition(relPath)
+	limit := int64(maxTextBytes)
 	if isImageContentType(contentType) {
 		limit = maxImageBytes
 	}
 
-	if fi.Size() > int64(limit) {
-		respondError(w, http.StatusRequestEntityTooLarge, "file too large")
-		return
-	}
-
-	f, err := os.Open(absPath)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "cannot open file")
-		return
-	}
-	defer f.Close()
-
 	// A project directory is written by agents, and this route answers on the
-	// app's own origin, so the type comes from the allowlist and never from
-	// the extension table or the sniffer. The file browser fetches the bytes
-	// itself, so a download disposition costs it nothing.
-	httpsecurity.SetUntrustedFileHeaders(w, absPath)
-	http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
+	// app's own origin, so the bytes go through the one untrusted-file path:
+	// the type comes from the allowlist and never from the sniffer. The file
+	// browser fetches the bytes itself, so a download disposition costs it
+	// nothing.
+	item, err := content.OpenInRoot(project.Path, relPath, limit)
+	switch {
+	case errors.Is(err, content.ErrNotFound):
+		respondError(w, http.StatusNotFound, "file not found")
+		return
+	case err != nil:
+		content.RespondError(w, err)
+		return
+	}
+	content.Serve(w, r, item)
 }
 
 func isImageContentType(ct string) bool {

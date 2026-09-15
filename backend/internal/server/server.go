@@ -969,10 +969,9 @@ func New(queries *store.Queries, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/sessions/{id}/query", sh.HandleQuery)
 	mux.HandleFunc("DELETE /api/sessions/{id}", sh.HandleDelete)
 
-	fh := &session.FilesHandler{}
-	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", fh.HandleServe)
-	eih := &session.EventImageHandler{Queries: queries}
-	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", eih.HandleServe)
+	ch := &session.ContentHandler{Source: session.LocalContent{Queries: queries}}
+	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", ch.HandleFile)
+	mux.HandleFunc("GET /api/sessions/{id}/events/{eventId}/images/{idx}", ch.HandleEventImage)
 
 	sth := &storage.Handler{
 		Queries: queries,

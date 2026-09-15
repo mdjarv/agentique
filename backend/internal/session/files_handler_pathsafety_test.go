@@ -27,7 +27,7 @@ func TestSessionFilesRejectsTraversingSessionID(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&FilesHandler{}).HandleServe)
+	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&ContentHandler{Source: LocalContent{}}).HandleFile)
 
 	for _, raw := range []string{
 		"/api/sessions/..%2F/files/agentique.db",
@@ -57,7 +57,7 @@ func TestSessionFilesServesItsOwnFiles(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&FilesHandler{}).HandleServe)
+	mux.HandleFunc("GET /api/sessions/{id}/files/{filepath...}", (&ContentHandler{Source: LocalContent{}}).HandleFile)
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+sid+"/files/nested/shot.png", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

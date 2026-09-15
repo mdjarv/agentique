@@ -158,8 +158,10 @@ func TestHandleContent_Directory(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.HandleContent(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
+	// A directory is not a file, and content.OpenInRoot answers that the
+	// same way on every route: nothing by that name to serve.
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 
@@ -272,4 +274,53 @@ func serveContent(t *testing.T, h *filebrowser.Handler, pid, path string) *httpt
 	w := httptest.NewRecorder()
 	h.HandleContent(w, req)
 	return w
+}
+
+// The listing follows a symlink only while it stays inside the project: one
+// that leaves it is not described, not even as a type and size.
+func TestHandleList_SymlinkOutOfProjectIsLeftOut(t *testing.T) {
+	h, pid, root := setup(t)
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "secret"), []byte("x"), 0o644)
+	os.MkdirAll(filepath.Join(root, "real"), 0o755)
+	os.Symlink(outside, filepath.Join(root, "out"))
+	os.Symlink("real", filepath.Join(root, "in"))
+
+	req := httptest.NewRequest("GET", "/api/projects/"+pid+"/files", nil)
+	req.SetPathValue("id", pid)
+	w := httptest.NewRecorder()
+	h.HandleList(w, req)
+	if w.Code != 200 {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Entries []struct {
+			Name  string `json:"name"`
+			IsDir bool   `json:"isDir"`
+		} `json:"entries"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	names := map[string]bool{}
+	for _, e := range resp.Entries {
+		names[e.Name] = e.IsDir
+	}
+	if _, listed := names["out"]; listed {
+		t.Errorf("a symlink out of the project was listed: %+v", resp.Entries)
+	}
+	if !names["in"] {
+		t.Errorf("a symlink inside the project should list as a directory: %+v", resp.Entries)
+	}
+}
+
+func TestHandleList_TraversalThroughSymlink(t *testing.T) {
+	h, pid, root := setup(t)
+	os.Symlink(t.TempDir(), filepath.Join(root, "out"))
+
+	req := httptest.NewRequest("GET", "/api/projects/"+pid+"/files?path=out", nil)
+	req.SetPathValue("id", pid)
+	w := httptest.NewRecorder()
+	h.HandleList(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
 }
