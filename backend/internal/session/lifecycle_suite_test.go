@@ -278,3 +278,43 @@ func (s *LifecycleSuite) TestResumePreservesGitVersion() {
 	s.GreaterOrEqual(newSess.GitVersion(), versionAtFailure,
 		"resumed session must continue from old version to avoid stale-update rejection on the frontend")
 }
+
+// A restart loses every in-memory version counter, and the client keeps the
+// highest version it saw from the old process. A session resumed by the new
+// process must still out-version it, or every push is dropped as stale and the
+// row keeps showing the state it had before the restart ("failed" over a
+// running turn).
+func (s *LifecycleSuite) TestVersionsSurviveServerRestart() {
+	ctx := context.Background()
+
+	gitSvc := NewGitService(s.mgr, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner())
+	s.svc.SetGitService(gitSvc)
+
+	sess := s.createSession()
+	s.Require().NoError(s.Queries.UpdateClaudeSessionID(ctx, store.UpdateClaudeSessionIDParams{
+		ClaudeSessionID: sqlNullString("test-restart-123"),
+		ID:              sess.ID,
+	}))
+	s.Require().NoError(sess.Query(ctx, "hello", nil))
+	mock := s.Connector.Last()
+	s.Require().NoError(mock.Inject(testutil.ErrorEvent("exit 143", true)))
+	s.waitForState(sess, StateFailed, 2*time.Second)
+	versionBeforeRestart := sess.GitVersion()
+
+	// The new process: fresh manager, service and git service on the same DB,
+	// with a clock that has moved on.
+	mgr2 := NewManager(s.DB, s.Queries, s.Broadcaster, connectorAdapter{s.Connector})
+	mgr2.versionEpoch = s.mgr.versionEpoch + int64(time.Second/time.Microsecond)
+	svc2 := NewService(mgr2, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner())
+	svc2.SetGitService(NewGitService(mgr2, s.Queries, s.Broadcaster, testutil.NewMockBlockingRunner()))
+
+	info, err := svc2.GetSessionInfo(ctx, sess.ID)
+	s.Require().NoError(err)
+	s.Greater(info.GitVersion, versionBeforeRestart, "an offline session's listed version must out-version the old process")
+
+	_, err = svc2.ResumeSession(ctx, sess.ID)
+	s.Require().NoError(err)
+	resumed := mgr2.Get(sess.ID)
+	s.Require().NotNil(resumed)
+	s.Greater(resumed.GitVersion(), versionBeforeRestart, "a resumed session's pushes must out-version the old process")
+}

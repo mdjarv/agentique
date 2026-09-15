@@ -92,7 +92,9 @@ func (g *GitService) nextVersion(sessionID string) int64 {
 	if live := g.mgr.Get(sessionID); live != nil {
 		return live.nextGitVersion()
 	}
-	val, _ := g.gitVersions.LoadOrStore(sessionID, &atomic.Int64{})
+	floor := &atomic.Int64{}
+	floor.Store(g.mgr.versionFloor(0))
+	val, _ := g.gitVersions.LoadOrStore(sessionID, floor)
 	return val.(*atomic.Int64).Add(1)
 }
 
@@ -106,12 +108,14 @@ func (g *GitService) SeedVersion(sessionID string, version int64) {
 }
 
 // LastVersion returns the last known version for a session (from the fallback map).
-// Returns 0 if no version is stored.
+// Returns the process floor if no version is stored.
 func (g *GitService) LastVersion(sessionID string) int64 {
 	if val, ok := g.gitVersions.Load(sessionID); ok {
 		return val.(*atomic.Int64).Load()
 	}
-	return 0
+	// Nothing seen this process: the floor, which out-versions whatever the
+	// previous process last pushed for this session.
+	return g.mgr.versionFloor(0)
 }
 
 // CleanupVersion removes the version counter for a deleted session.

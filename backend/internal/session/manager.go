@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/allbin/agentkit/devurls"
 	"github.com/allbin/agentkit/eventbus"
@@ -104,6 +105,16 @@ type Manager struct {
 	mcpTokens      *mcphttp.TokenStore
 	mcpInternalURL string
 	devURLs        *devurls.Store
+
+	// versionEpoch is the floor under every session state version this process
+	// hands out, so versions stay monotonic across a restart. Counters live in
+	// memory and a new process would otherwise start them at zero, while each
+	// client keeps the highest version it saw from the old one and drops every
+	// lower push as stale — a resumed session then keeps its pre-restart state
+	// on screen for the whole turn. Microseconds since the epoch outgrow any
+	// counter the previous process can have reached (one push per microsecond
+	// of uptime), and stay under 2^53, the client's integer limit.
+	versionEpoch int64
 }
 
 // NewManager creates a new session manager backed by the given runtime CLI connector.
@@ -115,6 +126,7 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 		broadcaster:  broadcaster,
 		gitStatus:    RealBranchStatusQuerier(),
 		branchStatus: newBranchStatusCache(),
+		versionEpoch: time.Now().UnixMicro(),
 	}
 	m.connWrap = &capturingConnector{inner: connector}
 	m.rt = runtime.NewManager(m.connWrap,
@@ -131,6 +143,12 @@ func NewManager(db *sql.DB, queries managerQueries, broadcaster eventbus.Broadca
 		}),
 	)
 	return m
+}
+
+// versionFloor lifts a version carried over from earlier in this process to at
+// least this process's epoch. See versionEpoch.
+func (m *Manager) versionFloor(v int64) int64 {
+	return max(v, m.versionEpoch)
 }
 
 // SetOnCLIVersion registers a sink for the version a provider CLI reports when
@@ -326,8 +344,11 @@ func (m *Manager) Create(ctx context.Context, params CreateParams) (*Session, er
 		broadcast:    m.broadcastFunc(params.ProjectID),
 		turnIndex:    -1, // first Query() will increment to 0
 		workDir:      params.WorkDir,
-		gitStatus:    m.gitStatus,
-		branchStatus: m.branchStatus,
+		// A new id can still be an old session's (params.ID), so it starts at
+		// the floor like a resume does.
+		initialGitVersion: m.versionFloor(0),
+		gitStatus:         m.gitStatus,
+		branchStatus:      m.branchStatus,
 	})
 	m.wireIdle(sess)
 
@@ -495,7 +516,7 @@ func (m *Manager) Resume(ctx context.Context, p ResumeParams) (*Session, error) 
 		broadcast:         m.broadcastFunc(p.ProjectID),
 		turnIndex:         turnIndex,
 		workDir:           p.WorkDir,
-		initialGitVersion: p.InitialGitVersion,
+		initialGitVersion: m.versionFloor(p.InitialGitVersion),
 		gitStatus:         m.gitStatus,
 		branchStatus:      m.branchStatus,
 	})
@@ -592,7 +613,7 @@ func (m *Manager) Reconnect(ctx context.Context, p ResumeParams) (*Session, erro
 		broadcast:         m.broadcastFunc(p.ProjectID),
 		turnIndex:         -1, // fresh conversation
 		workDir:           p.WorkDir,
-		initialGitVersion: p.InitialGitVersion,
+		initialGitVersion: m.versionFloor(p.InitialGitVersion),
 		gitStatus:         m.gitStatus,
 		branchStatus:      m.branchStatus,
 	})
